@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — VLESS-over-WebSocket proxy session engine.
+ * EDGE PANEL — VLESS-over-WebSocket proxy session engine.
  *
  * The heavy lifting (target classification, private-IP blocking, SMTP-port
  * blocking, UDP-53-only policy, DNS-over-HTTPS relay with resolver failover,

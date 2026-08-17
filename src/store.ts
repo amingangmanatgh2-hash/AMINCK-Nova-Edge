@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — Durable Object store.
+ * EDGE PANEL — Durable Object store.
  *
  * Single SQLite-backed Durable Object holding ALL state: settings, users,
  * admins, sessions, audit log, login throttling and live session counters.
@@ -8,10 +8,15 @@
  * This object is THE enforcement point: it verifies sessions, permissions,
  * role integrity and power-level caps. Even a direct API call can never
  * exceed a Limited admin's 5-path cap because the cap is applied here.
+ *
+ * The browser admin UI is intentionally disabled — management is API-only.
+ * One-click hot-update regenerates subscription paths without changing the
+ * Worker domain / custom hostname binding.
  */
 import type {
   Admin,
   AdminRole,
+  AntiDetectSettings,
   AuditAction,
   AuditEvent,
   ConfigFormat,
@@ -27,6 +32,8 @@ import type {
   User,
 } from './types';
 import {
+  DEFAULT_ANTI_DETECT,
+  DEFAULT_FAKE_DOMAINS,
   MAX_AUDIT_EVENTS,
   MAX_ENDPOINTS,
   POWER_LEVELS,
@@ -41,7 +48,9 @@ import {
   DEFAULT_NAME_TEMPLATE,
   buildFormats,
   buildRoutes,
+  expandRoutesMultiPort,
   planRoutes,
+  resolveAntiDetect,
   validateNameTemplate,
 } from './config';
 
@@ -76,9 +85,9 @@ const AUDIT_CHUNK_SIZE = 200;
 
 export function defaultSettings(): PanelSettings {
   return {
-    title: 'AMINCK Nova Edge',
-    brand: 'AMINCK',
-    supportUrl: 'https://t.me/AMINCK',
+    title: 'EDGE PANEL',
+    brand: 'EDGE PANEL',
+    supportUrl: 'https://t.me/EDGEPANEL',
     doh: 'https://cloudflare-dns.com/dns-query',
     dohAlt: ['https://one.one.one.one/dns-query', 'https://dns.google/dns-query'],
     healthUrl: '',
@@ -87,11 +96,36 @@ export function defaultSettings(): PanelSettings {
     updateIntervalHours: 24,
     fingerprint: 'chrome',
     profileMode: 'auto',
-    speedPreset: 'balanced',
+    speedPreset: 'god',
     tlsPorts: [443, 2053, 2083, 2087, 2096, 8443],
+    fakeDomains: [...DEFAULT_FAKE_DOMAINS],
+    antiDetect: { ...DEFAULT_ANTI_DETECT },
+    configGeneration: 1,
     endpoints: [],
     probeResults: {},
     lastProbeAt: 0,
+  };
+}
+
+/** Merge legacy stored settings with new EDGE PANEL fields. */
+export function normalizeSettings(raw: PanelSettings | null | undefined): PanelSettings {
+  const d = defaultSettings();
+  if (!raw || typeof raw !== 'object') return d;
+  const anti: AntiDetectSettings = {
+    ...DEFAULT_ANTI_DETECT,
+    ...(raw.antiDetect && typeof raw.antiDetect === 'object' ? raw.antiDetect : {}),
+  };
+  return {
+    ...d,
+    ...raw,
+    brand: raw.brand || d.brand,
+    title: raw.title || d.title,
+    fakeDomains: Array.isArray(raw.fakeDomains) && raw.fakeDomains.length > 0 ? raw.fakeDomains : d.fakeDomains,
+    antiDetect: anti,
+    configGeneration: Number(raw.configGeneration) > 0 ? Number(raw.configGeneration) : 1,
+    tlsPorts: Array.isArray(raw.tlsPorts) && raw.tlsPorts.length > 0 ? raw.tlsPorts : d.tlsPorts,
+    endpoints: Array.isArray(raw.endpoints) ? raw.endpoints : [],
+    probeResults: raw.probeResults && typeof raw.probeResults === 'object' ? raw.probeResults : {},
   };
 }
 
@@ -252,7 +286,7 @@ export class AMINCKStore {
       this.state.storage.get<SessionRow[]>(K.sessions),
       this.state.storage.get<string[]>(K.userIndex),
     ]);
-    this.settingsCache = settings ?? defaultSettings();
+    this.settingsCache = normalizeSettings(settings);
     this.adminsCache = adminsRaw ?? [];
     this.sessionsCache = sessionsRaw ?? [];
     const ids = indexRaw ?? [];
@@ -697,8 +731,8 @@ export class AMINCKStore {
       if (!need('backup:export')) return deny();
       await this.audit(me.username, 'backup.export', 'backup', 'صدور بکاپ کامل', ip);
       return json({
-        app: 'AMINCK Nova Edge',
-        version: 'AMINCK GOD Edition',
+        app: 'EDGE PANEL',
+        version: 'EDGE PANEL GOD',
         exportedAt: Date.now(),
         settings: this.settingsCache,
         users: this.usersCache,
@@ -708,7 +742,58 @@ export class AMINCKStore {
       });
     }
 
+    // One-click hot update: regenerate all user paths / anti-detect without
+    // touching the Worker domain or custom hostname (zero domain downtime).
+    if (route === 'hot-update' || route === 'panel-update') {
+      if (!need('settings:manage')) return deny();
+      return this.hotUpdate(body, me, ip);
+    }
+
     return json({ error: 'not-found' }, 404);
+  }
+
+  /** Bump config generation + rebuild every subscriber's routes in-place. */
+  private async hotUpdate(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    const s = this.settingsCache!;
+    s.configGeneration = (s.configGeneration || 0) + 1;
+    if (body.speedPreset !== undefined && String(body.speedPreset) in SPEED_PRESETS) {
+      s.speedPreset = body.speedPreset as SpeedPreset;
+    }
+    if (body.tlsPorts !== undefined && Array.isArray(body.tlsPorts)) {
+      const ports = [...new Set((body.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
+      if (ports.length > 0) s.tlsPorts = ports.slice(0, 10);
+    }
+    if (body.fakeDomains !== undefined && Array.isArray(body.fakeDomains)) {
+      s.fakeDomains = (body.fakeDomains as unknown[])
+        .map((d) => String(d).trim().toLowerCase())
+        .filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))
+        .slice(0, 30);
+    }
+    if (body.antiDetect && typeof body.antiDetect === 'object') {
+      s.antiDetect = { ...resolveAntiDetect(s), ...(body.antiDetect as Partial<AntiDetectSettings>) };
+    }
+    let rebuilt = 0;
+    for (const user of this.usersCache) {
+      const n = Math.max(1, user.routes.length || s.defaultPaths);
+      user.routes = this.buildRoutesFor(user, n);
+      rebuilt += 1;
+    }
+    await this.persistSettings();
+    await this.persistUsers();
+    await this.audit(
+      me.username,
+      'panel.hot_update',
+      'panel',
+      `آپدیت بدون قطعی دامنه — gen=${s.configGeneration} — ${rebuilt} مشترک`,
+      ip,
+    );
+    return json({
+      ok: true,
+      configGeneration: s.configGeneration,
+      rebuiltUsers: rebuilt,
+      domainUnchanged: true,
+      message: 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
+    });
   }
 
   // ------------------------------------------------------------- users routes
@@ -848,8 +933,11 @@ export class AMINCKStore {
   }
 
   private buildRoutesFor(user: User, count: number): Route[] {
-    const eps = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults);
-    return buildRoutes(user.id, planRoutes(eps, Math.max(1, count)));
+    const s = this.settings!;
+    const eps = orderEndpointsByProbe(s.endpoints, s.probeResults);
+    // Stored routes stay 1:1 with requested path count. Multi-port (Zooz/BPB)
+    // expands ports only when emitting configs (see expandRoutesForOutput).
+    return buildRoutes(user.id, planRoutes(eps, Math.max(1, count)), s);
   }
 
   // ------------------------------------------------------------ config build
@@ -880,8 +968,16 @@ export class AMINCKStore {
 
   private ctx(user: User, host: string): BuildContext {
     const s = this.settings!;
+    // Zooz/BPB multi-port: clone each route across selected TLS ports for
+    // subscription output only — stored path count is unchanged.
+    const anti = resolveAntiDetect(s);
+    let routes = user.routes;
+    if (anti.multiPort && s.tlsPorts.length > 1) {
+      routes = expandRoutesMultiPort(user.routes, s.tlsPorts);
+    }
+    const view: User = { ...user, routes };
     return {
-      user,
+      user: view,
       settings: s,
       speedPreset: user.speedPreset,
       fingerprint: s.fingerprint,
@@ -915,7 +1011,7 @@ export class AMINCKStore {
     user.profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
-    user.routes = buildRoutes(user.id, planRoutes(ordered, paths));
+    user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
     this.usersCache.push(user);
     return this.persistUsers()
       .then(() => {
@@ -979,8 +1075,8 @@ export class AMINCKStore {
   private async settingsUpdate(patch: Partial<PanelSettings> | undefined, me: audience, ip: string): Promise<Response> {
     if (!patch || typeof patch !== 'object') return json({ error: 'bad-settings' }, 400);
     const s = this.settingsCache!;
-    if (patch.title !== undefined) s.title = String(patch.title).trim().slice(0, 80) || 'AMINCK Nova Edge';
-    if (patch.brand !== undefined) s.brand = String(patch.brand).trim().slice(0, 40) || 'AMINCK';
+    if (patch.title !== undefined) s.title = String(patch.title).trim().slice(0, 80) || 'EDGE PANEL';
+    if (patch.brand !== undefined) s.brand = String(patch.brand).trim().slice(0, 40) || 'EDGE PANEL';
     if (patch.supportUrl !== undefined) s.supportUrl = String(patch.supportUrl).trim().slice(0, 300);
     if (patch.healthUrl !== undefined) {
       const u = String(patch.healthUrl).trim();
@@ -1017,6 +1113,34 @@ export class AMINCKStore {
       const ports = [...new Set((patch.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
       if (ports.length === 0) return json({ error: 'bad-ports', message: 'حداقل یک پورت TLS لازم است' }, 400);
       s.tlsPorts = ports.slice(0, 10);
+    }
+    if (patch.fakeDomains !== undefined && Array.isArray(patch.fakeDomains)) {
+      const domains = (patch.fakeDomains as unknown[])
+        .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+        .filter((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d) && d.length <= 200)
+        .slice(0, 30);
+      if (domains.length === 0) return json({ error: 'bad-domains', message: 'حداقل یک دامنه جعلی معتبر لازم است' }, 400);
+      s.fakeDomains = domains;
+    }
+    if (patch.antiDetect !== undefined && typeof patch.antiDetect === 'object' && patch.antiDetect) {
+      const a = patch.antiDetect as Partial<AntiDetectSettings>;
+      const cur = resolveAntiDetect(s);
+      if (typeof a.pathPadding === 'boolean') cur.pathPadding = a.pathPadding;
+      if (typeof a.pathJitter === 'boolean') cur.pathJitter = a.pathJitter;
+      if (typeof a.fragment === 'boolean') cur.fragment = a.fragment;
+      if (typeof a.hostCamouflage === 'boolean') cur.hostCamouflage = a.hostCamouflage;
+      if (typeof a.multiPort === 'boolean') cur.multiPort = a.multiPort;
+      if (Array.isArray(a.fragmentLength) && a.fragmentLength.length === 2) {
+        const lo = Math.max(1, Math.floor(Number(a.fragmentLength[0]) || 100));
+        const hi = Math.max(lo, Math.floor(Number(a.fragmentLength[1]) || 200));
+        cur.fragmentLength = [lo, Math.min(hi, 1500)];
+      }
+      if (Array.isArray(a.fragmentInterval) && a.fragmentInterval.length === 2) {
+        const lo = Math.max(1, Math.floor(Number(a.fragmentInterval[0]) || 10));
+        const hi = Math.max(lo, Math.floor(Number(a.fragmentInterval[1]) || 20));
+        cur.fragmentInterval = [lo, Math.min(hi, 500)];
+      }
+      s.antiDetect = cur;
     }
     await this.persistSettings();
     await this.audit(me.username, 'settings.update', 'settings', 'بهروزرسانی تنظیمات', ip);

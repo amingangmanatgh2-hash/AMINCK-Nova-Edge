@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — pure helpers (no Cloudflare runtime dependencies,
+ * EDGE PANEL — pure helpers (no Cloudflare runtime dependencies,
  * fully unit-testable in Node).
  */
 import type { Permission } from './types';

@@ -1,4 +1,4 @@
-# Security Policy — AMINCK Nova Edge
+# Security Policy — EDGE PANEL
 
 ## Supported versions
 

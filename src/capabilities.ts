@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — Capability Manifest.
+ * EDGE PANEL — Capability Manifest.
  *
  * Every entry here corresponds to a feature that is actually implemented in
  * this codebase (proxy, protocol, config builder, store, API, UI, CI, docs).
@@ -88,7 +88,7 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-ports', 'پورتهای TLS مجاز کلودفلر', 'انتخاب پورت از فهرست پورتهای TLS کلودفلر (پیشفرض ۴۴۳ برای workers.dev).'),
   c('config', 'cfg-fp', 'Fingerprint مرورگرها', 'پشتیبانی از Chrome، Firefox، Safari، Edge و Random در کانفیگهای خروجی.'),
   c('config', 'cfg-template', 'قالب نام کانفیگ', 'قالب عمومی نام کانفیگ با متغیرهای {brand} {app} {user} {profile} {index} {endpoint} {port}.'),
-  c('config', 'cfg-brand', 'برند در نامها', 'برند «AMINCK» در نام پیشفرض کانفیگها و عنوان Subscription لحاظ میشود.'),
+  c('config', 'cfg-brand', 'برند در نامها', 'برند «EDGE PANEL» در نام پیشفرض کانفیگها و عنوان Subscription لحاظ میشود.'),
   c('config', 'cfg-custom-name', 'نام کانفیگ اختصاصی مشترک', 'هر مشترک میتواند قالب نام اختصاصی داشته باشد.'),
   c('config', 'cfg-v2ray-b64', 'خروجی V2Ray Base64', 'لیست لینکهای VLESS با Encode Base64 برای Import در اپها.'),
   c('config', 'cfg-raw', 'خروجی Raw VLESS URI', 'لینکهای VLESS خام بههمراه fragment نامدار در یک بلوک متنی.'),
@@ -201,8 +201,8 @@ export const CAPABILITIES: Capability[] = [
   c('owner', 'power-strong', 'سطح قدرت Strong', 'حداکثر ۸۰ مسیر در Backend.'),
   c('owner', 'power-ultra', 'سطح قدرت Ultra', 'حداکثر ۲۰۰ مسیر در Backend.'),
   c('owner', 'power-backend', 'قدرت فقط در Backend', 'حتی با درخواست مستقیم API هم محدودیت قدرت اعمال میشود (تستشده).'),
-  c('owner', 'power-ui-hint', 'نمایش قدرت در UI', 'نام قدرت زیر نقش کاربرِ واردشده در هدر نشان داده میشود.'),
-  c('owner', 'perm-btn-hide', 'مخفی کردن دکمههای بدون مجوز', 'دکمهها بر اساس Permission مخفی/غیرفعال میشوند.'),
+  c('owner', 'power-ui-hint', 'نمایش قدرت در UI', 'قدرت ادمین در پاسخ /api/me و لندینگ API نمایش داده میشود.'),
+  c('owner', 'perm-btn-hide', 'مخفی کردن دکمههای بدون مجوز', 'دکمهٔ Hot-Update فقط با settings:manage روی لندینگ دیده میشود.'),
   c('owner', 'perm-api-enforce', 'بررسی Permission در تمام APIها', 'تمام اندپوینتهای API سطح دسترسی را در Backend چک میکنند.'),
   c('owner', 'own-audit-login', 'لاگ ورود مالک/ادمین', 'هر ورود/خروج موفق در لاگ حوادث ثبت میشود.'),
   c('owner', 'own-audit-fail', 'لاگ ورود ناموفق', 'شکستهای ورود با یوزرنیم، IP و زمان ثبت میشوند.'),
@@ -218,25 +218,25 @@ export const CAPABILITIES: Capability[] = [
   c('owner', 'adm-session-invalidation', 'Invalidation کامل نشستها', 'ناسازگار شدن و پاکشدن همهٔ نشستهای ادمین در revoke/delete.'),
   c('owner', 'adm-unique-username', 'یوزرنیم یکتا', 'تکرارفناپذیری یوزرنیم ادمینها در Backend.'),
   // ------------------------------------------------------------------- UI
-  c('ui', 'ui-fa', 'رابط کاملاً فارسی', 'همهٔ برچسبها و پیامهای پنل به فارسی.'),
+  c('ui', 'ui-fa', 'رابط کاملاً فارسی', 'لندینگ API و پیامهای خطا/پاسخ به فارسی و RTL هستند.'),
   c('ui', 'ui-rtl', 'چیدمان RTL', 'کل پنل راستبهچپ با dir=rtl.'),
   c('ui', 'ui-dark-light', 'Dark / Light Mode', 'تغییر پوستهٔ تاریک/روشن با ذخیرهٔ انتخاب.'),
   c('ui', 'ui-responsive', 'واکنشگرا', 'چیدمان تطبیقی موبایل و دسکتاپ.'),
-  c('ui', 'ui-dashboard', 'داشبورد آمار', 'کاردهای آماری رقمی (کاربران، نشستها، مصرف، ادمینها).'),
-  c('ui', 'ui-sidebar', 'منوی کنار', 'نوار کناری با همهٔ صفحات.'),
-  c('ui', 'ui-users', 'صفحهٔ کاربران', 'جدول کاربران با جستوجو.'),
+  c('ui', 'ui-dashboard', 'داشبورد آمار', 'آمار رقمی از مسیر GET /api/stats (کاربران، نشستها، مصرف، ادمینها).'),
+  c('ui', 'ui-sidebar', 'منوی کنار', 'لندینگ API-only جایگزین سایدبار کامل شده؛ ناوبری از مستندات API.'),
+  c('ui', 'ui-users', 'صفحهٔ کاربران', 'مدیریت کاربران از API: /api/users و /api/user-create/update/delete.'),
   c('ui', 'ui-search', 'جستوجوی کاربران', 'جستو بر اساس نام، UUID و Token.'),
-  c('ui', 'ui-config-page', 'صفحهٔ کانفیگ آهنین', 'ساخت کانفیگهای خروجی گوناگون با انتخاهای جذاب.'),
-  c('ui', 'ui-scanner', 'صفحهٔ Scanner', 'نمایش نتایج Probe و مدیریت Endpointها.'),
-  c('ui', 'ui-settings', 'صفحهٔ تنظیمات', 'ویرایش تمام بخشهای تنظیمات پنل.'),
-  c('ui', 'ui-install', 'صفحهٔ نصب', 'لینک Deploy رسمی Cloudflare و راهنمای نصب.'),
-  c('ui', 'ui-admins', 'صفحهٔ مدیریت ادمین', 'مدیریت ادمینها با نقش و قدرت.'),
-  c('ui', 'ui-audit', 'صفحهٔ Audit', 'نمایش لاگ حوادث با فیلتر اکشن.'),
-  c('ui', 'ui-capabilities', 'صفحهٔ قابلیتها', 'نمایش کامل و شمارش مانیفست قابلیتها.'),
-  c('ui', 'ui-auto-modal', 'Modal ساخت ساب اتومات', 'فرم کامل ساخت ساب اتومات با Progress.'),
-  c('ui', 'ui-user-modal', 'Modal ویرایش کاربر', 'ویرایش همهٔ فیلدهای کاربر در یک مودال.'),
+  c('ui', 'ui-config-page', 'صفحهٔ کانفیگ آهنین', 'ساخت کانفیگ EDGE PANEL از /api/config-build با چهار فرمت خروجی.'),
+  c('ui', 'ui-scanner', 'صفحهٔ Scanner', 'Probe و Endpointها از /api/probe و /api/endpoints مدیریت میشوند.'),
+  c('ui', 'ui-settings', 'صفحهٔ تنظیمات', 'تنظیمات brand/antiDetect/fakeDomains/tlsPorts از /api/settings.'),
+  c('ui', 'ui-install', 'صفحهٔ نصب', 'لندینگ شامل نمونه Login و Deploy و راهنمای secretهاست.'),
+  c('ui', 'ui-admins', 'صفحهٔ مدیریت ادمین', 'مدیریت ادمینها فقط از API /api/admins/* با نقش و قدرت.'),
+  c('ui', 'ui-audit', 'صفحهٔ Audit', 'لاگ حوادث از /api/audit با Actor/Action/Target قابل دریافت است.'),
+  c('ui', 'ui-capabilities', 'صفحهٔ قابلیتها', 'مانیفست قابلیتها از /api/capabilities خوانده میشود.'),
+  c('ui', 'ui-auto-modal', 'Modal ساخت ساب اتومات', 'ساخت ساب اتومات از /api/auto-build پس از Probe.'),
+  c('ui', 'ui-user-modal', 'Modal ویرایش کاربر', 'ویرایش کاربر از /api/user-update با همهٔ فیلدها.'),
   c('ui', 'ui-toast', 'Toast موفقیت و خطا', 'اعلانهای موفقیت/خطای خودکار ناپدیدشونده.'),
-  c('ui', 'ui-header', 'هدر اطلاعرسانی', 'نمایش نام، نقش و زمان قدرت در هدر.'),
+  c('ui', 'ui-header', 'هدر اطلاعرسانی', 'لندینگ API نقش/قدرت نشست را در صورت ورود نشان میدهد.'),
   c('ui', 'ui-infinity', 'دکمههای ∞', 'کنار هر ورودی عددی (زمان، حجم، اتصال) که مقدار ۰ یعنی نامحدود.'),
   c('ui', 'ui-progress', 'Progress bar در ساخت', 'نوار پیشرفت برای ساخت ساب اتوماتیک.'),
   c('ui', 'ui-copy', 'دکمهٔ کپی', 'کپی لینکها و کانفیگها با کلیک.'),
@@ -245,7 +245,7 @@ export const CAPABILITIES: Capability[] = [
   c('ui', 'ui-session-expire', 'ورود مجدد خودکار', 'در پایان Session فرم ورود خودکار نشان داده میشود.'),
   // ------------------------------------------------------------- settings
   c('settings', 'st-title', 'عنوان پنل', 'قابل تنظیم از تنظیمات.'),
-  c('settings', 'st-brand', 'برند مالک', 'برند اختصاصی مالک در عنوانها و نامها.'),
+  c('settings', 'st-brand', 'برند مالک', 'پیشفرض برند EDGE PANEL در عنوانها و نام کانفیگها.'),
   c('settings', 'st-support', 'لینک پشتیبانی', 'محل نمایش در پنل و هدر ساببش.'),
   c('settings', 'st-doh', 'DoH اصلی', 'شروع اول برای رزولوشن و DNS.'),
   c('settings', 'st-doh-alt', 'DoHهای جایگزین', 'لیست جایگزین با failover.'),
@@ -255,7 +255,7 @@ export const CAPABILITIES: Capability[] = [
   c('settings', 'st-update-interval', 'بازهٔ Update', 'فاصلهٔ بهروزرسانی ساببش به ساعت.'),
   c('settings', 'st-fingerprint', 'Fingerprint پیشفرض', 'برای کانفیگهای جدید.'),
   c('settings', 'st-profile', 'Profile Mode پیشفرض', 'Auto / Fallback / Load-Balance.'),
-  c('settings', 'st-speed', 'Speed Preset پیشفرض', 'Stable / Balanced / Turbo / GOD.'),
+  c('settings', 'st-speed', 'Speed Preset پیشفرض', 'Stable / Balanced / Turbo / GOD (پیشفرض GOD با interval/tolerance ۵۰ و retry ۴).'),
   c('settings', 'st-tls-ports', 'پورتهای TLS', 'فهرست پورتهای مجاز خروجی.'),
   c('settings', 'st-probe-results', 'نتایج Probe در تنضیمات', 'نمایش نتایج و آخرین زمان پرحب در تنظیمات/اسکنر.'),
   // -------------------------------------------------------------- deploy
@@ -269,6 +269,17 @@ export const CAPABILITIES: Capability[] = [
   c('deploy', 'd-deploy-action', 'Deploy خودکار', 'Workflow deploy بعد از ورود به main (با wrangler-action).'),
   c('deploy', 'd-no-api-token', 'عدم دریافت API Token کلودفلر', 'هیچجای پنل Token کلودفلر دریافت/ذخیره نمیشود.'),
   c('deploy', 'd-healthz', 'Health عمومی', '/healthz برای مانیتورینگ بیرونی.'),
+  // --------------------------------------------------------- edge panel extras
+  c('config', 'cfg-edge-brand', 'برند EDGE PANEL', 'همهٔ کانفیگها و سابها با برند EDGE PANEL نامگذاری میشوند.'),
+  c('config', 'cfg-anti-padding', 'Path Padding', 'پدینگ تصادفی query روی path برای پراکندگی اثر انگشت DPI.'),
+  c('config', 'cfg-anti-jitter', 'Path Jitter', 'طول slug مسیر بین ۶ تا ۱۲ کاراکتر متغیر است.'),
+  c('config', 'cfg-anti-fragment', 'TLS Fragment', 'راهنمای fragment در VLESS/Clash/sing-box برای عبور از فیلتر.'),
+  c('config', 'cfg-fake-domains', 'دامنههای جعلی نت ملی', 'چرخش Host روی snaap.ir و دامنههای محبوب داخلی.'),
+  c('config', 'cfg-multiport', 'انتخاب پورت Zooz/BPB', 'گسترش خروجی روی پورتهای TLS کلودفلر (443/2053/2083/2087/2096/8443).'),
+  c('config', 'cfg-god-speed', 'پروفایل سرعت GOD', 'interval ۵۰، tolerance ۵۰، retry ۴، earlyData ۴۰۹۶ و tcp-concurrent.'),
+  c('config', 'cfg-hot-update', 'آپدیت یککلیکی', 'POST /api/hot-update مسیرها را بدون قطعی دامنه بازسازی میکند.'),
+  c('ui', 'ui-api-only', 'حذف پنل ادمین کامل', 'مدیریت فقط از JSON API؛ لندینگ توضیحی جایگزین UI سنگین شده است.'),
+  c('security', 'sec-api-only-surface', 'سطح حمله کوچکتر UI', 'بدون فرمهای سنگین ادمین در مرورگر؛ Same-Origin روی همهٔ mutating APIها.'),
 ];
 
 export function totalCapabilities(): number {

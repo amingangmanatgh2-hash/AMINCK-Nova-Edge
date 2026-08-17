@@ -1,6 +1,6 @@
 /**
- * AMINCK Nova Edge — shared domain types.
- * The whole panel, proxy and config builder operate on these contracts.
+ * EDGE PANEL — shared domain types.
+ * The whole API, proxy and config builder operate on these contracts.
  */
 
 // ---------------------------------------------------------------------------
@@ -109,9 +109,9 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
   god: {
     label: 'GOD',
     earlyData: 4096,
-    tcpRetries: 3,
-    healthInterval: 45,
-    tolerance: 75,
+    tcpRetries: 4,
+    healthInterval: 50,
+    tolerance: 50,
     tcpConcurrent: true,
     dnsFailover: true,
     probeTimeoutMs: 5000,
@@ -133,6 +133,24 @@ export const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge
 /** TLS ports Cloudflare accepts for HTTPS traffic (plus 8443 for Enterprise). */
 export const CLOUDFLARE_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 
+/**
+ * Popular Iranian / national-net friendly domains used as WS Host camouflage
+ * and optional clean-IP front hosts (Zooz/BPB-style). Connection still lands
+ * on the real Worker endpoint; these only shape client-side SNI/Host noise.
+ */
+export const DEFAULT_FAKE_DOMAINS = [
+  'snaap.ir',
+  'www.digikala.com',
+  'www.aparat.com',
+  'www.varzesh3.com',
+  'www.bankmellat.ir',
+  'www.irna.ir',
+  'www.isna.ir',
+  'www.hamshahrionline.ir',
+  'www.telewebion.com',
+  'www.filimo.com',
+];
+
 export interface Endpoint {
   id: string;
   label: string;
@@ -141,6 +159,35 @@ export interface Endpoint {
   /** Injected later, never from a client. */
   createdAt?: number;
 }
+
+/** Anti-detection knobs honoured by the config builder. */
+export interface AntiDetectSettings {
+  /** Enable random path padding segments. */
+  pathPadding: boolean;
+  /** Enable path-length jitter (variable slug length). */
+  pathJitter: boolean;
+  /** Enable TLS/WS fragment hints in Clash Meta + sing-box. */
+  fragment: boolean;
+  /** Fragment packet length range (bytes), inclusive. */
+  fragmentLength: [number, number];
+  /** Fragment interval range (ms), inclusive. */
+  fragmentInterval: [number, number];
+  /** Rotate WS Host header across fakeDomains. */
+  hostCamouflage: boolean;
+  /** When true, emit one config line per selected TLS port (Zooz/BPB style). */
+  multiPort: boolean;
+}
+
+export const DEFAULT_ANTI_DETECT: AntiDetectSettings = {
+  pathPadding: true,
+  pathJitter: true,
+  fragment: true,
+  fragmentLength: [100, 200],
+  fragmentInterval: [10, 20],
+  hostCamouflage: true,
+  /** Off by default so path count stays exact; enable for Zooz/BPB multi-port. */
+  multiPort: false,
+};
 
 export interface ProbeResult {
   endpointId: string;
@@ -180,8 +227,14 @@ export interface PanelSettings {
   profileMode: ProfileMode;
   /** Default speed preset for new users. */
   speedPreset: SpeedPreset;
-  /** Allowed outbound TLS ports. */
+  /** Allowed outbound TLS ports (Zooz/BPB multi-port selection). */
   tlsPorts: number[];
+  /** Camouflage / national-net domains (Host header rotation). */
+  fakeDomains: string[];
+  /** Anti-detection: padding, jitter, fragment, multi-port. */
+  antiDetect: AntiDetectSettings;
+  /** Monotonic panel config generation — bumped on one-click hot update. */
+  configGeneration: number;
   /** Endpoints known to this deployment (max MAX_ENDPOINTS). */
   endpoints: Endpoint[];
   /** Probe results keyed by endpoint id (scanner page). */
@@ -195,7 +248,7 @@ export interface PanelSettings {
 // ---------------------------------------------------------------------------
 
 export interface Route {
-  /** URL path segment the client connects to (e.g. `/k7q2...-<uuid>`). */
+  /** URL path segment the client connects to (e.g. `/e{slug}{userId}`). */
   path: string;
   /** Endpoint id this route belongs to. */
   endpointId: string;
@@ -205,6 +258,10 @@ export interface Route {
   index: number;
   /** Precomputed TLS SNI = the public host the client really reached. */
   sni?: string;
+  /** Optional WS Host camouflage domain (anti-detect). */
+  wsHost?: string;
+  /** Optional padding query appended only in client configs (ignored by Worker). */
+  padding?: string;
 }
 
 export interface User {
@@ -333,7 +390,8 @@ export type AuditAction =
   | 'settings.update'
   | 'endpoints.probe'
   | 'endpoints.update'
-  | 'backup.export';
+  | 'backup.export'
+  | 'panel.hot_update';
 
 export interface AuditEvent {
   id: string;

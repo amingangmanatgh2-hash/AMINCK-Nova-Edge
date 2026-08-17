@@ -36,7 +36,7 @@ describe('health & headers', () => {
     expect(html.status).toBe(200);
     const text = await html.text();
     expect(text).toContain('dir="rtl"');
-    expect(text).toContain('AMINCK Nova Edge');
+    expect(text).toContain('EDGE PANEL');
     expect(html.headers.get('content-security-policy')).toContain("script-src 'self'");
 
     const js = await w.mf.dispatchFetch(`${w.base}/app.js`);
@@ -382,13 +382,13 @@ describe('backup', () => {
   it('exports the full JSON backup', async () => {
     const r = await w.api(ownerCookie, '/api/backup', {});
     expect(r.status).toBe(200);
-    expect(r.data.app).toBe('AMINCK Nova Edge');
-    expect(r.data.version).toBe('AMINCK GOD Edition');
+    expect(r.data.app).toBe('EDGE PANEL');
+    expect(r.data.version).toBe('EDGE PANEL GOD');
     expect(Array.isArray(r.data.users)).toBe(true);
     expect(r.data.users.length).toBeGreaterThanOrEqual(4);
     expect(Array.isArray(r.data.admins)).toBe(true);
     expect(Array.isArray(r.data.audit)).toBe(true);
-    expect(r.data.settings.brand).toBe('AMINCK');
+    expect(r.data.settings.brand).toBe('EDGE PANEL');
   });
 });
 
@@ -396,7 +396,7 @@ describe('settings', () => {
   it('owner can update settings; values are validated', async () => {
     const ok = await w.api(ownerCookie, '/api/settings', {
       settings: {
-        brand: 'AMINCK',
+        brand: 'EDGE PANEL',
         configNameTemplate: '{brand} {profile} {index}',
         defaultPaths: 4,
         updateIntervalHours: 12,
@@ -524,5 +524,61 @@ describe('config rebuild with save', () => {
     expect(built.data.configs[0].paths).toBe(6);
     const list = await w.api(ownerCookie, '/api/users', { q: 'بازسازی' });
     expect(list.data.users[0].routes.length).toBe(6);
+  });
+});
+
+describe('EDGE PANEL hot-update & anti-detect', () => {
+  it('one-click hot-update rebuilds routes without domain change', async () => {
+    const before = await w.api(ownerCookie, '/api/users', { q: 'نامحدود' });
+    const user = before.data.users[0];
+    const oldPath = user.routes[0].path;
+    const r = await w.api(ownerCookie, '/api/hot-update', { speedPreset: 'god' });
+    expect(r.status).toBe(200);
+    expect(r.data.ok).toBe(true);
+    expect(r.data.domainUnchanged).toBe(true);
+    expect(r.data.configGeneration).toBeGreaterThanOrEqual(2);
+    const after = await w.api(ownerCookie, '/api/users', { q: 'نامحدود' });
+    const nu = after.data.users[0];
+    expect(nu.routes.length).toBe(user.routes.length);
+    // paths regenerated (anti-detect random)
+    expect(nu.routes[0].path).not.toBe(oldPath);
+  });
+
+  it('settings accept fakeDomains and antiDetect', async () => {
+    const r = await w.api(ownerCookie, '/api/settings', {
+      settings: {
+        fakeDomains: ['snaap.ir', 'www.digikala.com'],
+        antiDetect: {
+          pathPadding: true,
+          pathJitter: true,
+          fragment: true,
+          hostCamouflage: true,
+          multiPort: false,
+        },
+        speedPreset: 'god',
+      },
+    });
+    expect(r.status).toBe(200);
+    expect(r.data.settings.fakeDomains).toContain('snaap.ir');
+    expect(r.data.settings.antiDetect.fragment).toBe(true);
+    expect(r.data.settings.speedPreset).toBe('god');
+  });
+
+  it('subscription raw lines brand EDGE PANEL and include anti-detect host', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'edge-anti',
+      paths: 2,
+      speedPreset: 'god',
+    });
+    expect(created.status).toBe(200);
+    const token = created.data.user.token;
+    const res = await w.mf.dispatchFetch(`${w.base}/sub/${token}/raw`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('vless://');
+    expect(text).toContain('EDGE PANEL');
+    // host camouflage or sni present
+    expect(text).toContain('security=tls');
+    expect(text).toContain('type=ws');
   });
 });
