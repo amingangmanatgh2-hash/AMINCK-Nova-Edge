@@ -1,0 +1,48 @@
+// AMINCK Nova Edge — Cloudflare Workers configuration
+// Bindings:
+//   AMINCK_STORE  — Durable Object (SQLite-backed) that holds ALL state:
+//                   settings, users, admins, audit log, sessions, probe results.
+//                   No D1, no KV and no manual provisioning required: the
+//                   migration below creates the class automatically on deploy.
+// Secrets (set via `wrangler secret put` or the dashboard, NOT in this file):
+//   ADMIN_PASSWORD — password of the owner (username: AMINCK)
+//   SESSION_SECRET — HMAC-SHA256 key used to sign session cookies
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aminck-nova-edge",
+  "main": "src/index.ts",
+  // Panel UI as Workers Static Assets (generated from src/ui.ts via
+  // `npm run build:public`). run_worker_first keeps ALL requests in the
+  // Worker so security headers and auth apply to every response; the
+  // Worker serves the files through the ASSETS binding.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": [],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AMINCK_STORE",
+        "class_name": "AMINCKStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AMINCKStore"]
+    }
+  ],
+  // Automatic TCP/TLS reachability scan of the panel endpoints every 30 minutes.
+  "triggers": {
+    "crons": ["*/30 * * * *"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "minify": true,
+  "logpush": false
+}

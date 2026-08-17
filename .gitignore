@@ -1,0 +1,27 @@
+# Secrets — never commit
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Dependencies
+node_modules/
+
+# Build / output
+dist/
+out/
+.wrangler/
+coverage/
+*.tsbuildinfo
+
+# Local artifacts
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+tmp/
+# Miniflare test workdir
+.nova-test-workdir/
+
+# esbuild temp output for scripts/build-public.mjs
+.nova-build/
