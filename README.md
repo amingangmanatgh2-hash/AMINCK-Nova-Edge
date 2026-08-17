@@ -50,7 +50,9 @@
 
 مخزن: `https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge`
 
-Durable Object با migration خودکار Provision می‌شود — هیچ D1 یا KV دستی لازم نیست.
+Durable Object با migration خودکار Provision می‌شود — هیچ D1 یا KV دستی لازم نیست. رابط کاربری پنل به‌صورت Workers Static Assets (دایرکتوری `public/`، تولیدشده از `src/ui.ts`) Deploy می‌شود؛ چون `run_worker_first` فعال است، همهٔ درخواست‌ها از Worker عبور می‌کنند و هدرهای امنیتی روی همهٔ پاسخ‌ها می‌مانند.
+
+> اگر بعد از تغییر UI خروجی فایل‌های استاتیک را به‌روز کنید: `npm run build:public` (و در CI هم‌گامی آن تست می‌شود).
 
 ### گزینه ۲ — CLI
 
@@ -89,7 +91,9 @@ src/
   ui.ts           پنل (CSS + HTML + JavaScript خالص بدون CDN)
 test/             تست‌های واحد + یکپارچه (Miniflare) + چک‌های CI
 .github/workflows ci.yml و deploy.yml
-wrangler.jsonc    تنظیمات Worker: DO migration، Cron، Observability
+wrangler.jsonc    تنظیمات Worker: DO migration، Cron، Observability، Static Assets
+public/           فایل‌های استاتیک پنل (تولیدشده از src/ui.ts با npm run build:public)
+scripts/          build-public.mjs و check-ui.mjs
 ```
 
 ## API خلاصه

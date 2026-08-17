@@ -22,3 +22,6 @@ coverage/
 tmp/
 # Miniflare test workdir
 .nova-test-workdir/
+
+# esbuild temp output for scripts/build-public.mjs
+.nova-build/

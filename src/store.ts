@@ -49,6 +49,8 @@ export interface Env {
   ADMIN_PASSWORD?: string;
   SESSION_SECRET?: string;
   AMINCK_STORE: DurableObjectNamespace;
+  /** Workers Static Assets binding (present when wrangler assets config is active). */
+  ASSETS?: Fetcher;
 }
 
 export const OWNER_USERNAME = 'AMINCK';

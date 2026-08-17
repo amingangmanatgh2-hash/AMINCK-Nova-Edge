@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UI_APP_JS } from '../src/ui';
+import { UI_APP_CSS, UI_APP_JS, UI_SHELL_HTML } from '../src/ui';
 
 describe('artifact checks (runtime smoke steps)', () => {
   it('browser JavaScript passes node --check', () => {
@@ -20,6 +20,17 @@ describe('artifact checks (runtime smoke steps)', () => {
   it('git diff --check is clean (no whitespace errors)', () => {
     const out = execFileSync('git', ['diff', '--check'], { encoding: 'utf8', cwd: process.cwd() });
     expect(out.trim()).toBe('');
+  });
+
+  it('public/ static assets match the embedded UI strings (single source of truth)', () => {
+    const js = readFileSync('public/app.js', 'utf8');
+    const css = readFileSync('public/app.css', 'utf8');
+    const html = readFileSync('public/index.html', 'utf8');
+    expect(js).toBe(UI_APP_JS);
+    expect(css).toBe(UI_APP_CSS);
+    expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'AMINCK Nova Edge'));
+    // the committed assets are also valid JS
+    execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
   });
 
   it('no secrets or .dev.vars are tracked in git', () => {

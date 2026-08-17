@@ -10,6 +10,7 @@
     "check": "npm run check:ts && npm run check:ui",
     "check:ts": "tsc --noEmit",
     "check:ui": "node scripts/check-ui.mjs",
+    "build:public": "node scripts/build-public.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy": "wrangler deploy",

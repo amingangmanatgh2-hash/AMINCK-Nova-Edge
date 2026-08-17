@@ -41,20 +41,23 @@ export default {
       );
     }
 
-    if (request.method === 'GET' && path === '/') {
-      return withHeaders(html(uiShell('AMINCK Nova Edge')), {});
-    }
-    if (request.method === 'GET' && path === '/app.js') {
-      return withHeaders(
-        new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
-        {},
-      );
-    }
-    if (request.method === 'GET' && path === '/app.css') {
-      return withHeaders(
-        new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }),
-        {},
-      );
+    if (request.method === 'GET' && (path === '/' || path === '/app.js' || path === '/app.css')) {
+      // With the assets binding the panel is served from public/ (same bytes,
+      // generated from src/ui.ts) — but through the Worker so every response
+      // still carries the security headers.
+      if (env.ASSETS) {
+        const assetRes = await env.ASSETS.fetch(request);
+        if (assetRes.status !== 404) return withHeaders(assetRes, {});
+      }
+      // Fallback (tests / bare deployments): serve the embedded strings.
+      if (path === '/') return withHeaders(html(uiShell('AMINCK Nova Edge')), {});
+      if (path === '/app.js') {
+        return withHeaders(
+          new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
+          {},
+        );
+      }
+      return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
     }
     if (request.method === 'GET' && (path === '/favicon.ico' || path === '/robots.txt')) {
       return new Response('', { status: 204 });
