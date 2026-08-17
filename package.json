@@ -1,0 +1,34 @@
+{
+  "name": "aminck-nova-edge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AMINCK Nova Edge (AMINCK GOD Edition) — Persian RTL serverless panel for managing VLESS + WebSocket + TLS subscriptions on Cloudflare Workers. State lives in a single automatic Durable Object (binding AMINCK_STORE) — no D1/KV setup needed.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "npm run check",
+    "check": "npm run check:ts && npm run check:ui",
+    "check:ts": "tsc --noEmit",
+    "check:ui": "node scripts/check-ui.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^5.20260817.1",
+    "wrangler": "^4.123.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "miniflare": "^4.20260730.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "undici": "7.29.0"
+  }
+}
