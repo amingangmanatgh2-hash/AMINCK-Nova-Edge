@@ -1,11 +1,15 @@
 /**
- * AMINCK Nova Edge — subscription / config builder.
+ * EDGE PANEL — subscription / config builder.
  * Pure module. Produces:
  *   - VLESS URI lines (raw + V2Ray base64)
  *   - Clash Meta YAML with NOVA-AUTO / NOVA-FALLBACK / NOVA-BALANCE / NOVA-SMART
- *   - sing-box JSON with TUN + Mixed + DoH + smart routing
+ *   - sing-box JSON with TUN + Mixed + DoH + smart routing + fragment
+ *
+ * Anti-detection: random path padding, path jitter, Host camouflage via
+ * national-net friendly domains, multi-port (Zooz/BPB style), TLS fragment.
  */
 import type {
+  AntiDetectSettings,
   BuiltConfig,
   ConfigFormat,
   Endpoint,
@@ -17,11 +21,17 @@ import type {
   SpeedSpec,
   User,
 } from './types';
-import { CLOUDFLARE_TLS_PORTS, FINGERPRINTS, SPEED_PRESETS } from './types';
+import {
+  CLOUDFLARE_TLS_PORTS,
+  DEFAULT_ANTI_DETECT,
+  DEFAULT_FAKE_DOMAINS,
+  FINGERPRINTS,
+  SPEED_PRESETS,
+} from './types';
 import { base64Encode, clamp } from './utils';
 
-export const APP_NAME = 'AMINCK Nova Edge';
-export const BRAND = 'AMINCK';
+export const APP_NAME = 'EDGE PANEL';
+export const BRAND = 'EDGE PANEL';
 export const DEFAULT_NAME_TEMPLATE = '{brand} {profile} {index}';
 export const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
 export const DEFAULT_DOH_ALT = [
@@ -102,7 +112,7 @@ export function validateTlsPorts(ports: number[]): { ok: true; value: number[] }
 }
 
 // ---------------------------------------------------------------------------
-// Route generation
+// Anti-detect helpers
 // ---------------------------------------------------------------------------
 
 const SLUG_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -115,14 +125,66 @@ export function randomSlug(len = 8): string {
   return out;
 }
 
-/** URL path a client connects to: `/e<slug><userId-hex>` — unique per route. */
+/** Cryptographic random int in [lo, hi] inclusive. */
+export function randomInt(lo: number, hi: number): number {
+  if (hi <= lo) return lo;
+  const span = hi - lo + 1;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return lo + (buf[0]! % span);
+}
+
+export function randomPadding(len = 16): string {
+  return randomSlug(clamp(len, 4, 48));
+}
+
+export function resolveAntiDetect(settings?: PanelSettings | null): AntiDetectSettings {
+  const base = settings?.antiDetect;
+  return {
+    pathPadding: base?.pathPadding ?? DEFAULT_ANTI_DETECT.pathPadding,
+    pathJitter: base?.pathJitter ?? DEFAULT_ANTI_DETECT.pathJitter,
+    fragment: base?.fragment ?? DEFAULT_ANTI_DETECT.fragment,
+    fragmentLength: base?.fragmentLength ?? DEFAULT_ANTI_DETECT.fragmentLength,
+    fragmentInterval: base?.fragmentInterval ?? DEFAULT_ANTI_DETECT.fragmentInterval,
+    hostCamouflage: base?.hostCamouflage ?? DEFAULT_ANTI_DETECT.hostCamouflage,
+    multiPort: base?.multiPort ?? DEFAULT_ANTI_DETECT.multiPort,
+  };
+}
+
+export function fakeDomainList(settings?: PanelSettings | null): string[] {
+  const list = settings?.fakeDomains?.filter((d) => typeof d === 'string' && d.length > 0) ?? [];
+  return list.length > 0 ? list : [...DEFAULT_FAKE_DOMAINS];
+}
+
+export function pickFakeDomain(settings: PanelSettings | null | undefined, index: number): string {
+  const list = fakeDomainList(settings);
+  return list[index % list.length]!;
+}
+
+/**
+ * URL path a client connects to: `/e<slug><userId-hex>`.
+ * With jitter enabled the slug length varies (6–12) so DPI path fingerprints scatter.
+ */
 export function makeRoutePath(userId: string, slug: string): string {
   return `/e${slug}${userId.replace(/-/g, '')}`;
 }
 
+/** Build a fresh random path for a user, honouring anti-detect jitter. */
+export function makeRandomRoutePath(userId: string, anti?: AntiDetectSettings, seq = 0): string {
+  const a = anti ?? DEFAULT_ANTI_DETECT;
+  const baseLen = 6 + (seq % 3);
+  const len = a.pathJitter ? randomInt(6, 12) : baseLen;
+  return makeRoutePath(userId, randomSlug(len));
+}
+
+// ---------------------------------------------------------------------------
+// Route generation
+// ---------------------------------------------------------------------------
+
 export interface RoutePlan {
   endpoint: Endpoint;
   index: number;
+  port?: number;
 }
 
 /** Distribute `paths` routes across the given endpoints (round-robin). */
@@ -137,19 +199,81 @@ export function planRoutes(endpoints: Endpoint[], paths: number): RoutePlan[] {
   return list;
 }
 
+/**
+ * Zooz/BPB-style multi-port plan: expand each logical path across selected
+ * TLS ports (capped so total routes never exceed 200).
+ */
+export function planRoutesMultiPort(
+  endpoints: Endpoint[],
+  paths: number,
+  ports: number[],
+): RoutePlan[] {
+  const validPorts = (ports.length > 0 ? ports : [443]).filter((p) =>
+    CLOUDFLARE_TLS_PORTS.includes(p),
+  );
+  const portList = validPorts.length > 0 ? validPorts : [443];
+  const base = planRoutes(endpoints, paths);
+  if (portList.length <= 1) {
+    return base.map((p) => ({ ...p, port: portList[0] ?? p.endpoint.port }));
+  }
+  const out: RoutePlan[] = [];
+  let idx = 0;
+  for (const plan of base) {
+    for (const port of portList) {
+      if (out.length >= 200) return out;
+      idx += 1;
+      out.push({ endpoint: plan.endpoint, index: idx, port });
+    }
+  }
+  return out;
+}
+
+/**
+ * Expand stored routes across selected TLS ports for subscription output
+ * (Zooz/BPB style). Cap at 200 emitted proxies. Does NOT mutate storage.
+ */
+export function expandRoutesMultiPort(routes: Route[], ports: number[]): Route[] {
+  const valid = (ports.length > 0 ? ports : [443]).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p));
+  const portList = valid.length > 0 ? valid : [443];
+  if (portList.length <= 1) {
+    return routes.map((r) => ({ ...r, port: portList[0] ?? r.port }));
+  }
+  const out: Route[] = [];
+  let idx = 0;
+  for (const r of routes) {
+    for (const port of portList) {
+      if (out.length >= 200) return out;
+      idx += 1;
+      out.push({ ...r, port, index: idx });
+    }
+  }
+  return out;
+}
+
 /** Create Route objects from a plan (each call gets fresh random paths). */
-export function buildRoutes(userId: string, plan: RoutePlan[]): Route[] {
+export function buildRoutes(
+  userId: string,
+  plan: RoutePlan[],
+  settings?: PanelSettings | null,
+): Route[] {
+  const anti = resolveAntiDetect(settings);
+  const fakes = fakeDomainList(settings);
   let seq = 0;
   return plan.map((p) => {
     seq += 1;
-    const port = p.endpoint.port > 0 ? p.endpoint.port : 443;
+    const port = p.port && p.port > 0 ? p.port : p.endpoint.port > 0 ? p.endpoint.port : 443;
+    const path = makeRandomRoutePath(userId, anti, seq);
+    const wsHost = anti.hostCamouflage && fakes.length > 0 ? fakes[(seq - 1) % fakes.length]! : p.endpoint.host;
+    const padding = anti.pathPadding ? randomPadding(randomInt(8, 20)) : undefined;
     return {
-      path: makeRoutePath(userId, randomSlug(6 + (seq % 3))),
+      path,
       endpointId: p.endpoint.id,
       host: p.endpoint.host,
       port,
       index: p.index,
       sni: p.endpoint.host,
+      wsHost,
+      padding,
     };
   });
 }
@@ -159,17 +283,28 @@ export function buildRoutes(userId: string, plan: RoutePlan[]): Route[] {
 // ---------------------------------------------------------------------------
 
 export function vlessUriFor(user: User, route: Route, o: UriOptions): string {
+  const wsHost = route.wsHost || route.host;
+  const pathWithPad =
+    o.padding && route.padding
+      ? `${route.path}?ed=${o.earlyData}&pad=${route.padding}`
+      : route.path;
   const params = [
     ['encryption', 'none'],
     ['security', 'tls'],
     ['sni', route.host],
     ['fp', fingerprintName(o.fingerprint)],
     ['type', 'ws'],
-    ['host', route.host],
-    ['path', encodeURIComponent(route.path)],
+    ['host', wsHost],
+    ['path', encodeURIComponent(pathWithPad)],
   ];
   params.push(['ed', String(o.earlyData)]);
   params.push(['allowInsecure', '0']);
+  if (o.fragment) {
+    // xray/v2ray fragment hint (clients that support it)
+    const fl = o.fragmentLength ?? [100, 200];
+    const fi = o.fragmentInterval ?? [10, 20];
+    params.push(['fragment', `${fl[0]}-${fl[1]},${fi[0]}-${fi[1]},tlshello`]);
+  }
   const query = params.map(([k, v]) => `${k}=${v}`).join('&');
   const frag = encodeURIComponent(o.name).replace(/%20/g, ' ');
   return `vless://${user.uuid}@${route.host}:${route.port}?${query}#${frag}`;
@@ -179,6 +314,10 @@ export interface UriOptions {
   fingerprint: Fingerprint;
   earlyData: number;
   name: string;
+  padding?: boolean;
+  fragment?: boolean;
+  fragmentLength?: [number, number];
+  fragmentInterval?: [number, number];
 }
 
 // ---------------------------------------------------------------------------
@@ -234,9 +373,10 @@ interface RouteNames {
 }
 
 function routeNames(ctx: BuildContext): RouteNames {
+  const brand = ctx.settings.brand || BRAND;
   const names = ctx.user.routes.map((r) =>
     renderConfigName(ctx.nameTemplate, {
-      brand: ctx.settings.brand,
+      brand,
       app: APP_NAME,
       user: ctx.user.name,
       profile: ctx.profileMode,
@@ -253,11 +393,16 @@ function buildVlessLines(ctx: BuildContext, speed: SpeedSpec): {
   names: string[];
 } {
   const { names } = routeNames(ctx);
+  const anti = resolveAntiDetect(ctx.settings);
   const lines = ctx.user.routes.map((r, i) =>
     vlessUriFor(ctx.user, r, {
       fingerprint: ctx.fingerprint,
       earlyData: speed.earlyData,
       name: names[i]!,
+      padding: anti.pathPadding,
+      fragment: anti.fragment,
+      fragmentLength: anti.fragmentLength,
+      fragmentInterval: anti.fragmentInterval,
     }),
   );
   return { lines, names };
@@ -271,6 +416,7 @@ export function buildClashYaml(ctx: BuildContext): string {
   const speed = SPEED_PRESETS[ctx.speedPreset];
   const { names, health } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
+  const anti = resolveAntiDetect(ctx.settings);
   const lines: string[] = [];
   lines.push(
     'mixed-port: 7890',
@@ -280,7 +426,7 @@ export function buildClashYaml(ctx: BuildContext): string {
     'ipv6: false',
     'unified-delay: true',
     'find-process-mode: off',
-    'cache-file: "nova-cache.db"',
+    'cache-file: "edge-cache.db"',
     'profile:',
     '  store-selected: true',
     '  store-fake-ip: false',
@@ -288,6 +434,11 @@ export function buildClashYaml(ctx: BuildContext): string {
     'proxies:',
   );
   ctx.user.routes.forEach((r, i) => {
+    const wsHost = r.wsHost || r.host;
+    const wsPath =
+      anti.pathPadding && r.padding
+        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
+        : r.path;
     lines.push(
       `  - name: ${yamlStr(names[i]!)}`,
       '    type: vless',
@@ -300,16 +451,24 @@ export function buildClashYaml(ctx: BuildContext): string {
       '    udp: true',
       `    client-fingerprint: ${fp}`,
       '    ws-opts:',
-      `      path: ${yamlStr(r.path)}`,
+      `      path: ${yamlStr(wsPath)}`,
       '      headers:',
-      `        Host: ${yamlStr(r.host)}`,
+      `        Host: ${yamlStr(wsHost)}`,
     );
     if (speed.tcpConcurrent) lines.push('    tcp-concurrent: true');
     if (speed.earlyData > 0) {
       lines.push(`    max-early-data: ${speed.earlyData}`, '    early-data-header-name: Sec-WebSocket-Protocol');
     }
+    if (anti.fragment) {
+      lines.push(
+        '    smux:',
+        '      enabled: false',
+        '    dialer-proxy: ""',
+      );
+    }
     lines.push('');
   });
+
   lines.push(
     'proxy-groups:',
     '  - name: NOVA-AUTO',
@@ -348,27 +507,51 @@ export function buildSingBoxJson(ctx: BuildContext): string {
   const speed = SPEED_PRESETS[ctx.speedPreset];
   const { names } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
-  const outbounds: Record<string, unknown>[] = ctx.user.routes.map((r, i) => ({
-    type: 'vless',
-    tag: names[i]!,
-    server: r.host,
-    server_port: r.port,
-    uuid: ctx.user.uuid,
-    flow: '',
-    tls: {
-      enabled: true,
-      server_name: r.host,
-      insecure: false,
-      utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
-    },
-    transport: {
-      type: 'ws',
-      path: r.path,
-      headers: { Host: r.host },
-      max_early_data: speed.earlyData,
-      early_data_header_name: 'Sec-WebSocket-Protocol',
-    },
-  }));
+  const anti = resolveAntiDetect(ctx.settings);
+  const outbounds: Record<string, unknown>[] = ctx.user.routes.map((r, i) => {
+    const wsHost = r.wsHost || r.host;
+    const wsPath =
+      anti.pathPadding && r.padding
+        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
+        : r.path;
+    const ob: Record<string, unknown> = {
+      type: 'vless',
+      tag: names[i]!,
+      server: r.host,
+      server_port: r.port,
+      uuid: ctx.user.uuid,
+      flow: '',
+      tls: {
+        enabled: true,
+        server_name: r.host,
+        insecure: false,
+        utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
+      },
+      transport: {
+        type: 'ws',
+        path: wsPath,
+        headers: { Host: wsHost },
+        max_early_data: speed.earlyData,
+        early_data_header_name: 'Sec-WebSocket-Protocol',
+      },
+    };
+    if (anti.fragment) {
+      ob.tls = {
+        ...(ob.tls as object),
+        // fragment is applied via dial_fields in newer sing-box; keep tlshello style
+      };
+      ob.multiplex = { enabled: false };
+      ob.tcp_fast_open = false;
+      ob.tcp_multi_path = false;
+      // sing-box 1.8+ dial fields
+      ob.tls_fragment = {
+        enabled: true,
+        size: `${anti.fragmentLength[0]}-${anti.fragmentLength[1]}`,
+        sleep: `${anti.fragmentInterval[0]}-${anti.fragmentInterval[1]}`,
+      };
+    }
+    return ob;
+  });
   outbounds.push(
     {
       type: 'urltest',
@@ -404,7 +587,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
       {
         type: 'tun',
         tag: 'tun-in',
-        interface_name: 'NovaTun',
+        interface_name: 'EdgeTun',
         address: ['172.19.0.1/30', 'fd00::1/126'],
         mtu: 1500,
         auto_route: true,

@@ -1,4 +1,4 @@
-# AMINCK Nova Edge — local development secrets
+# EDGE PANEL — local development secrets
 # Copy this file to `.dev.vars` (NEVER commit `.dev.vars` — it is git-ignored).
 # On Cloudflare, set the same two secrets with:
 #   wrangler secret put ADMIN_PASSWORD

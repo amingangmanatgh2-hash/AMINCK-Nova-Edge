@@ -1,13 +1,14 @@
 /**
- * AMINCK Nova Edge — Cloudflare Worker entry.
+ * EDGE PANEL — Cloudflare Worker entry.
  *
  * Routing:
  *   GET  /healthz            public health check (CORS)
- *   GET  /                   admin panel (HTML)
- *   GET  /app.js /app.css    panel assets (bundled inline, no CDN)
+ *   GET  /                   API-only landing (no full admin UI)
+ *   GET  /app.js /app.css    minimal static assets
  *   POST /api/login …        JSON admin API (proxied to the Durable Object)
+ *   POST /api/hot-update     one-click config regen without domain downtime
  *   GET  /sub/:token         subscriptions (v2ray base64 / clash / sing-box / raw)
- *   WS   /e<slug><userid>    VLESS over WebSocket proxy
+ *   WS   /e<slug><userid>    VLESS over WebSocket proxy (random path + jitter)
  *
  * Security: Same-Origin checks on mutating requests, HMAC-signed HttpOnly
  * cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
@@ -34,7 +35,7 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINCK Nova Edge', ts: Date.now() }), {
+        new Response(JSON.stringify({ ok: true, app: 'EDGE PANEL', ts: Date.now() }), {
           headers: { 'content-type': 'application/json' },
         }),
         { cors: true },
@@ -42,15 +43,13 @@ export default {
     }
 
     if (request.method === 'GET' && (path === '/' || path === '/app.js' || path === '/app.css')) {
-      // With the assets binding the panel is served from public/ (same bytes,
-      // generated from src/ui.ts) — but through the Worker so every response
-      // still carries the security headers.
+      // API-only landing: static assets from public/ (generated from src/ui.ts)
+      // still go through the Worker so security headers apply.
       if (env.ASSETS) {
         const assetRes = await env.ASSETS.fetch(request);
         if (assetRes.status !== 404) return withHeaders(assetRes, {});
       }
-      // Fallback (tests / bare deployments): serve the embedded strings.
-      if (path === '/') return withHeaders(html(uiShell('AMINCK Nova Edge')), {});
+      if (path === '/') return withHeaders(html(uiShell('EDGE PANEL')), {});
       if (path === '/app.js') {
         return withHeaders(
           new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
@@ -72,7 +71,8 @@ export default {
       return handleSub(request, env, ctx, host, subMatch[1]!, (subMatch[2] ?? '') as ConfigFormat | '');
     }
 
-    if (path.match(/^\/e[a-z0-9]{6,10}[0-9a-f]{24}$/i)) {
+    // Anti-detect path jitter: slug length 6–12
+    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
       return handleWs(request, env, ctx, host, path);
     }
 
@@ -263,7 +263,7 @@ async function handleSub(
   const headers = new Headers();
   headers.set('content-type', contentTypeFor(format));
   const safeName = user.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40) || 'sub';
-  headers.set('content-disposition', `attachment; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
+  headers.set('content-disposition', `attachment; filename="EDGE-PANEL-${safeName}.txt"`);
   headers.set(
     'subscription-userinfo',
     `upload=0; download=${user.usageBytes}; total=${user.limitBytes}; expire=${user.expiresAt}`,
@@ -289,7 +289,7 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
   if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
     return withHeaders(json({ error: 'bad-request', message: 'اتصال باید WebSocket باشد' }, 400), {});
   }
-  const m = path.match(/^\/e([a-z0-9]{6,10})([0-9a-f]{24})$/i);
+  const m = path.match(/^\/e([a-z0-9]{6,12})([0-9a-f]{24})$/i);
   if (!m) return withHeaders(json({ error: 'not-found' }, 404), {});
   const userId = m[2]!.toLowerCase();
 

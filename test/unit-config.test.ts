@@ -4,6 +4,7 @@ import {
   BRAND,
   buildFormats,
   buildRoutes,
+  expandRoutesMultiPort,
   planRoutes,
   renderConfigName,
   validateNameTemplate,
@@ -27,7 +28,7 @@ function ctx(user = userFixture(), settings = settingsFixture()) {
 }
 
 describe('config builder — brand & naming', () => {
-  it('uses the AMINCK brand in default names', () => {
+  it('uses the EDGE PANEL brand in default names', () => {
     const user = userFixture();
     const settings = settingsFixture({ configNameTemplate: '{brand} {index}' });
     const built = buildFormats(ctx(user, settings), ['raw']);
@@ -36,7 +37,7 @@ describe('config builder — brand & naming', () => {
     for (const line of lines) {
       expect(line.startsWith('vless://')).toBe(true);
       const frag = decodeURIComponent(line.split('#')[1] ?? '');
-      expect(frag).toContain('AMINCK');
+      expect(frag).toContain('EDGE PANEL');
     }
   });
 
@@ -77,7 +78,7 @@ describe('config builder — 200 routes', () => {
     const settings = settingsFixture();
     const plan = planRoutes(settings.endpoints, 200);
     expect(plan.length).toBe(200);
-    const routes = buildRoutes('u'.repeat(24), plan);
+    const routes = buildRoutes('u'.repeat(24), plan, settings);
     expect(routes.length).toBe(200);
     const paths = new Set(routes.map((r) => r.path));
     expect(paths.size).toBe(200); // unique paths
@@ -106,7 +107,7 @@ describe('config builder — output formats', () => {
   it('emits vless URI with the expected parameters (workers.dev default port 443)', () => {
     const user = userFixture();
     const route = user.routes[0]!;
-    const uri = vlessUriFor(user, route, { fingerprint: 'chrome', earlyData: 2048, name: 'AMINCK' });
+    const uri = vlessUriFor(user, route, { fingerprint: 'chrome', earlyData: 2048, name: 'EDGE PANEL' });
     expect(uri.startsWith('vless://')).toBe(true);
     expect(uri).toContain(`@${route.host}:443`);
     expect(uri).toContain('security=tls');
@@ -115,7 +116,7 @@ describe('config builder — output formats', () => {
     expect(uri).toContain('ed=2048');
     expect(uri).toContain(`sni=${encodeURIComponent(route.host)}`);
     expect(uri).toContain('encryption=none');
-    expect(uri.endsWith('#AMINCK')).toBe(true);
+    expect(uri.endsWith('#EDGE PANEL')).toBe(true);
   });
 
   it('clash yaml contains NOVA groups, unified-delay and store-selected', () => {
@@ -145,8 +146,11 @@ describe('config builder — output formats', () => {
     const stable = userFixture({ speedPreset: 'stable' });
     const clashStable = buildFormats(ctx(stable), ['clash'])[0]!.payload;
     expect(clashStable).not.toContain('tcp-concurrent:');
-    // GOD has larger early data
+    // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(50);
+    expect(SPEED_PRESETS.god.tolerance).toBe(50);
+    expect(SPEED_PRESETS.god.tcpRetries).toBe(4);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 
@@ -206,10 +210,10 @@ describe('config builder — output formats', () => {
   it('buildVlessUri encodes path and name fragment', () => {
     const user = userFixture();
     const route = user.routes[0]!;
-    const uri = vlessUriFor(user, route, { fingerprint: 'edge', earlyData: 1024, name: 'AMINCK 1' });
+    const uri = vlessUriFor(user, route, { fingerprint: 'edge', earlyData: 1024, name: 'EDGE PANEL 1' });
     expect(uri).toContain('path=');
     expect(uri).toContain(encodeURIComponent(route.path));
-    expect(uri.endsWith('#AMINCK 1')).toBe(true);
+    expect(uri.endsWith('#EDGE PANEL 1')).toBe(true);
   });
 });
 
@@ -221,7 +225,55 @@ describe('config builder — ports', () => {
 
 describe('renderConfigName edge cases', () => {
   it('falls back to the default template', () => {
-    const name = renderConfigName('', { brand: 'AMINCK' });
-    expect(name).toContain('AMINCK');
+    const name = renderConfigName('', { brand: 'EDGE PANEL' });
+    expect(name).toContain('EDGE PANEL');
+  });
+});
+
+describe('config builder — anti-detect & multi-port', () => {
+  it('emits random path lengths within jitter range', () => {
+    const settings = settingsFixture();
+    const plan = planRoutes(settings.endpoints, 20);
+    const userId = 'a'.repeat(24); // 24 hex chars like real newId()
+    const routes = buildRoutes(userId, plan, settings);
+    for (const r of routes) {
+      const m = r.path.match(/^\/e([a-z0-9]+)([0-9a-f]{24})$/i);
+      expect(m).toBeTruthy();
+      expect(m![1]!.length).toBeGreaterThanOrEqual(6);
+      expect(m![1]!.length).toBeLessThanOrEqual(12);
+      expect(m![2]).toBe(userId);
+    }
+  });
+
+  it('attaches national-net fake domains as wsHost', () => {
+    const settings = settingsFixture();
+    const plan = planRoutes(settings.endpoints, 5);
+    const routes = buildRoutes('u'.repeat(24), plan, settings);
+    expect(routes.some((r) => r.wsHost && r.wsHost.includes('snaap.ir') || (r.wsHost ?? '').includes('.'))).toBe(true);
+    expect(routes.every((r) => !!r.wsHost)).toBe(true);
+  });
+
+  it('vless URI includes fragment and padding when anti-detect is on', () => {
+    const user = userFixture();
+    const route = { ...user.routes[0]!, padding: 'abcd1234', wsHost: 'snaap.ir' };
+    const uri = vlessUriFor(user, route, {
+      fingerprint: 'chrome',
+      earlyData: 4096,
+      name: 'EDGE PANEL',
+      padding: true,
+      fragment: true,
+      fragmentLength: [100, 200],
+      fragmentInterval: [10, 20],
+    });
+    expect(uri).toContain('fragment=');
+    expect(uri).toContain('host=snaap.ir');
+    expect(uri.includes('pad=') || uri.includes('pad%3D')).toBe(true);
+  });
+
+  it('expandRoutesMultiPort multiplies ports Zooz/BPB style', () => {
+    const user = userFixture();
+    const expanded = expandRoutesMultiPort(user.routes, [443, 2053, 2083]);
+    expect(expanded.length).toBe(user.routes.length * 3);
+    expect(new Set(expanded.map((r) => r.port)).size).toBe(3);
   });
 });

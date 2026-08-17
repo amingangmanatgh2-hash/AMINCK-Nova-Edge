@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — endpoint scanner (probe).
+ * EDGE PANEL — endpoint scanner (probe).
  *
  * Measures TCP connect + TLS handshake latency from the Cloudflare edge using
  * `cloudflare:sockets`. The runtime seam (connector + resolver) is injectable

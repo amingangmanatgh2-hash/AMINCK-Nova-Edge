@@ -49,13 +49,13 @@ export function userFixture(overrides: Partial<User> = {}): User {
   const user = { ...base, ...overrides };
   if (user.routes.length === 0) {
     const plan = planRoutes(FIXTURE_ENDPOINTS, 3);
-    user.routes = buildRoutes(user.id, plan);
+    user.routes = buildRoutes(user.id, plan, settingsFixture());
   }
   return user;
 }
 
 export function routesFor(userId: string, endpoints = FIXTURE_ENDPOINTS, count = 3): Route[] {
-  return buildRoutes(userId, planRoutes(endpoints, count));
+  return buildRoutes(userId, planRoutes(endpoints, count), settingsFixture());
 }
 
 export const OWNER_PASSWORD = 'OwnerPass123!';

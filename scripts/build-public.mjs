@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * AMINCK Nova Edge — generate the `public/` static assets directory.
+ * EDGE PANEL — generate the `public/` static assets directory.
  *
  * The panel UI lives as strings inside src/ui.ts (single source of truth).
  * This script compiles src/ui.ts with esbuild and writes the *evaluated*
@@ -39,9 +39,9 @@ try {
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'app.js'), mod.UI_APP_JS, 'utf8');
   writeFileSync(join(out, 'app.css'), mod.UI_APP_CSS, 'utf8');
-  writeFileSync(join(out, 'index.html'), mod.uiShell('AMINCK Nova Edge'), 'utf8');
+  writeFileSync(join(out, 'index.html'), mod.uiShell('EDGE PANEL'), 'utf8');
   console.log(
-    `build-public: OK — app.js (${Buffer.byteLength(mod.UI_APP_JS)} B), app.css (${Buffer.byteLength(mod.UI_APP_CSS)} B), index.html (${Buffer.byteLength(mod.uiShell('AMINCK Nova Edge'))} B)`,
+    `build-public: OK — app.js (${Buffer.byteLength(mod.UI_APP_JS)} B), app.css (${Buffer.byteLength(mod.UI_APP_CSS)} B), index.html (${Buffer.byteLength(mod.uiShell('EDGE PANEL'))} B)`,
   );
 } finally {
   rmSync(buildDir, { recursive: true, force: true });

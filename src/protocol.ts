@@ -1,5 +1,5 @@
 /**
- * AMINCK Nova Edge — VLESS protocol handling and DNS wire helpers.
+ * EDGE PANEL — VLESS protocol handling and DNS wire helpers.
  * Pure module: no Cloudflare runtime APIs, directly unit-tested.
  */
 
