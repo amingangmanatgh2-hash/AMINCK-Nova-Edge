@@ -284,6 +284,8 @@ export function buildRoutes(
 
 export function vlessUriFor(user: User, route: Route, o: UriOptions): string {
   const wsHost = route.wsHost || route.host;
+  const addr = route.frontIp || route.host;
+  const sni = route.sni || route.host;
   const pathWithPad =
     o.padding && route.padding
       ? `${route.path}?ed=${o.earlyData}&pad=${route.padding}`
@@ -291,23 +293,23 @@ export function vlessUriFor(user: User, route: Route, o: UriOptions): string {
   const params = [
     ['encryption', 'none'],
     ['security', 'tls'],
-    ['sni', route.host],
+    ['sni', sni],
     ['fp', fingerprintName(o.fingerprint)],
     ['type', 'ws'],
     ['host', wsHost],
     ['path', encodeURIComponent(pathWithPad)],
+    ['alpn', encodeURIComponent('h2,http/1.1')],
   ];
   params.push(['ed', String(o.earlyData)]);
   params.push(['allowInsecure', '0']);
   if (o.fragment) {
-    // xray/v2ray fragment hint (clients that support it)
-    const fl = o.fragmentLength ?? [100, 200];
+    const fl = o.fragmentLength ?? [50, 120];
     const fi = o.fragmentInterval ?? [10, 20];
     params.push(['fragment', `${fl[0]}-${fl[1]},${fi[0]}-${fi[1]},tlshello`]);
   }
   const query = params.map(([k, v]) => `${k}=${v}`).join('&');
   const frag = encodeURIComponent(o.name).replace(/%20/g, ' ');
-  return `vless://${user.uuid}@${route.host}:${route.port}?${query}#${frag}`;
+  return `vless://${user.uuid}@${addr}:${route.port}?${query}#${frag}`;
 }
 
 export interface UriOptions {
@@ -420,6 +422,8 @@ export function buildClashYaml(ctx: BuildContext): string {
   const lines: string[] = [];
   lines.push(
     'mixed-port: 7890',
+    'socks-port: 10808',
+    'port: 10809',
     'allow-lan: false',
     'mode: rule',
     'log-level: info',
@@ -435,6 +439,8 @@ export function buildClashYaml(ctx: BuildContext): string {
   );
   ctx.user.routes.forEach((r, i) => {
     const wsHost = r.wsHost || r.host;
+    const server = r.frontIp || r.host;
+    const sni = r.sni || r.host;
     const wsPath =
       anti.pathPadding && r.padding
         ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
@@ -442,18 +448,20 @@ export function buildClashYaml(ctx: BuildContext): string {
     lines.push(
       `  - name: ${yamlStr(names[i]!)}`,
       '    type: vless',
-      `    server: ${yamlStr(r.host)}`,
+      `    server: ${yamlStr(server)}`,
       `    port: ${r.port}`,
       `    uuid: ${yamlStr(ctx.user.uuid)}`,
       '    network: ws',
       '    tls: true',
-      `    servername: ${yamlStr(r.host)}`,
+      `    servername: ${yamlStr(sni)}`,
+      '    alpn: [h2, http/1.1]',
       '    udp: true',
       `    client-fingerprint: ${fp}`,
       '    ws-opts:',
       `      path: ${yamlStr(wsPath)}`,
       '      headers:',
       `        Host: ${yamlStr(wsHost)}`,
+      '        User-Agent: "Mozilla/5.0"',
     );
     if (speed.tcpConcurrent) lines.push('    tcp-concurrent: true');
     if (speed.earlyData > 0) {
@@ -515,6 +523,11 @@ export function buildClashYaml(ctx: BuildContext): string {
     `    interval: ${speed.healthInterval}`,
     `    tolerance: ${speed.tolerance}`,
     `    proxies: ${yamlList(names)}`,
+    '  - name: AMINCK-TUNNEL',
+    '    type: fallback',
+    `    url: ${yamlStr(health)}`,
+    `    interval: ${speed.healthInterval}`,
+    `    proxies: ${yamlList(['NOVA-AUTO', 'NOVA-FALLBACK', ...names])}`,
     '',
     'rules:',
     '  - DOMAIN-SUFFIX,youtube.com,AMINCK-YOUTUBE',
@@ -547,20 +560,25 @@ export function buildSingBoxJson(ctx: BuildContext): string {
     const ob: Record<string, unknown> = {
       type: 'vless',
       tag: names[i]!,
-      server: r.host,
+      server: r.frontIp || r.host,
       server_port: r.port,
       uuid: ctx.user.uuid,
       flow: '',
       tls: {
         enabled: true,
-        server_name: r.host,
+        server_name: r.sni || r.host,
         insecure: false,
+        alpn: ['h2', 'http/1.1'],
         utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
       },
       transport: {
         type: 'ws',
         path: wsPath,
-        headers: { Host: wsHost },
+        headers: {
+          Host: wsHost,
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
         max_early_data: speed.earlyData,
         early_data_header_name: 'Sec-WebSocket-Protocol',
       },
@@ -625,6 +643,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
         stack: 'system',
       },
       { type: 'mixed', tag: 'mixed-in', listen: '127.0.0.1', listen_port: 2080 },
+      { type: 'socks', tag: 'aminck-in', listen: '127.0.0.1', listen_port: 10808, udp: true },
     ],
     outbounds,
     route: {
@@ -692,13 +711,39 @@ export function buildOne(ctx: BuildContext, format: ConfigFormat): BuiltConfig {
 export const CLEAN_IP_CATALOG: Array<{ ip: string; label: string; region: string }> = [
   { ip: '162.159.36.1', label: 'CF anycast A', region: 'anycast' },
   { ip: '162.159.46.1', label: 'CF anycast B', region: 'anycast' },
-  { ip: '172.67.68.93', label: 'CF edge C', region: 'anycast' },
-  { ip: '104.17.148.22', label: 'CF edge D', region: 'anycast' },
-  { ip: '104.18.2.2', label: 'CF edge E', region: 'anycast' },
-  { ip: '104.21.45.12', label: 'CF edge F', region: 'anycast' },
-  { ip: '188.114.96.2', label: 'CF edge G', region: 'anycast' },
-  { ip: '188.114.97.2', label: 'CF edge H', region: 'anycast' },
+  { ip: '162.159.137.4', label: 'CF anycast C', region: 'anycast' },
+  { ip: '162.159.152.4', label: 'CF anycast D', region: 'anycast' },
+  { ip: '172.67.68.93', label: 'CF edge 67a', region: 'anycast' },
+  { ip: '172.67.74.226', label: 'CF edge 67b', region: 'anycast' },
+  { ip: '104.16.132.229', label: 'CF 104-16a', region: 'anycast' },
+  { ip: '104.16.133.229', label: 'CF 104-16b', region: 'anycast' },
+  { ip: '104.17.148.22', label: 'CF 104-17a', region: 'anycast' },
+  { ip: '104.17.149.22', label: 'CF 104-17b', region: 'anycast' },
+  { ip: '104.18.2.2', label: 'CF 104-18a', region: 'anycast' },
+  { ip: '104.18.32.7', label: 'CF 104-18b', region: 'anycast' },
+  { ip: '104.21.45.12', label: 'CF 104-21', region: 'anycast' },
+  { ip: '104.24.0.5', label: 'CF 104-24', region: 'anycast' },
+  { ip: '188.114.96.2', label: 'CF 188-96', region: 'anycast' },
+  { ip: '188.114.97.2', label: 'CF 188-97', region: 'anycast' },
+  { ip: '190.93.244.59', label: 'CF 190', region: 'anycast' },
+  { ip: '197.234.240.1', label: 'CF 197', region: 'anycast' },
 ];
+
+/** Front a copy of each route through clean IPs (SNI stays Worker host). */
+export function expandTunnelFronts(routes: Route[], ips: string[], cap = 200): Route[] {
+  const clean = ips.map((x) => x.trim()).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
+  if (clean.length === 0) return routes;
+  const out: Route[] = [...routes];
+  let idx = routes.length;
+  for (const r of routes) {
+    for (const ip of clean) {
+      if (out.length >= cap) return out;
+      idx += 1;
+      out.push({ ...r, frontIp: ip, index: idx, sni: r.sni || r.host });
+    }
+  }
+  return out;
+}
 
 /** Xray / V2RayNG / MahsaNG / NapsternetV compatible outbound JSON. */
 export function buildXrayJson(ctx: BuildContext): string {
@@ -718,7 +763,7 @@ export function buildXrayJson(ctx: BuildContext): string {
       settings: {
         vnext: [
           {
-            address: r.host,
+            address: r.frontIp || r.host,
             port: r.port,
             users: [{ id: ctx.user.uuid, encryption: 'none', flow: '' }],
           },

@@ -51,6 +51,7 @@ import {
   buildIronPack,
   buildRoutes,
   expandRoutesMultiPort,
+  expandTunnelFronts,
   planRoutes,
   resolveAntiDetect,
   validateNameTemplate,
@@ -1042,8 +1043,13 @@ export class AMINCKStore {
       .then(() => {
         const host = String(body.reqHost ?? body.host ?? '');
         const prev = this.settings!.antiDetect.multiPort;
-        this.settings!.antiDetect.multiPort = true;
-        const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']);
+        const fronts = CLEAN_IP_CATALOG.slice(0, 8).map((c) => c.ip);
+        const tunneled: User = {
+          ...user,
+          routes: expandTunnelFronts(expandRoutesMultiPort(user.routes, this.settings!.tlsPorts), fronts, 200),
+        };
+        this.settings!.antiDetect.multiPort = false;
+        const built = buildFormats(this.ctx(tunneled, host), ['v2ray', 'raw', 'clash', 'singbox']);
         this.settings!.antiDetect.multiPort = prev;
         const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
         const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];

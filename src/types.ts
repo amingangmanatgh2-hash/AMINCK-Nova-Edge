@@ -188,7 +188,7 @@ export const DEFAULT_ANTI_DETECT: AntiDetectSettings = {
   pathPadding: true,
   pathJitter: true,
   fragment: true,
-  fragmentLength: [100, 200],
+  fragmentLength: [50, 120],
   fragmentInterval: [10, 20],
   hostCamouflage: true,
   /** Off by default so path count stays exact; enable for Zooz/BPB multi-port. */
@@ -268,6 +268,8 @@ export interface Route {
   wsHost?: string;
   /** Optional padding query appended only in client configs (ignored by Worker). */
   padding?: string;
+  /** Optional Cloudflare clean-IP front (client dials IP, SNI stays Worker host). */
+  frontIp?: string;
 }
 
 export interface User {

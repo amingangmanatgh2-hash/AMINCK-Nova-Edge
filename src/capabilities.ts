@@ -310,6 +310,14 @@ export const CAPABILITIES: Capability[] = [
   c('sub', 'sub-auto-iron', 'آهنین همراه ساخت اتومات', 'auto-build می‌تواند ironCount ۱ تا ۵ را در همان پاسخ بدهد.'),
   c('sub', 'sub-count-select', 'تعداد مسیر در auto-build', 'paths در auto-build با سقف قدرت ادمین محدود می‌شود.'),
   c('config', 'cfg-200-in-one', 'تا ۲۰۰ پروکسی در یک ساب', 'خروجی ساب تا ۲۰۰ مسیر/پورت را در یک لینک جمع می‌کند.'),
+  c('config', 'cfg-dpi-alpn', 'ALPN h2 برای DPI', 'خروجی VLESS/Clash/sing-box با alpn h2,http/1.1 برای شبیه‌سازی ترافیک وب.'),
+  c('config', 'cfg-dpi-ua', 'User-Agent مرورگر روی WS', 'هدر User-Agent کروم روی WebSocket تا اثر انگشت کلاینت پراکسی کم شود.'),
+  c('config', 'cfg-dpi-frag50', 'Fragment کوتاه tlshello', 'بازه fragment پیشفرض ۵۰–۱۲۰ بایت برای عبور از بازرسی hello.'),
+  c('config', 'cfg-clean-front', 'فرانت IP تمیز', 'expandTunnelFronts آدرس را IP کلودفلر می‌کند و SNI همان Worker می‌ماند.'),
+  c('config', 'cfg-aminck-tunnel', 'گروه AMINCK-TUNNEL', 'گروه fallback اختصاصی تانل در Clash.'),
+  c('config', 'cfg-in-socks', 'اینباند SOCKS اختصاصی', 'Clash socks-port 10808 و sing-box tag aminck-in.'),
+  c('config', 'cfg-in-http', 'اینباند HTTP اختصاصی', 'Clash port 10809 کنار mixed-port.'),
+  c('scanner', 'scan-clean-18', 'هجده IP تمیز anycast', 'مخزن CLEAN_IP_CATALOG حداقل ۱۸ آدرس anycast کلودفلر دارد.'),
 ];
 
 export function totalCapabilities(): number {

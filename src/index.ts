@@ -72,7 +72,7 @@ export default {
     }
 
     // Anti-detect path jitter: slug length 6–12
-    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
+    if (path.match(/^\/[et][a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
       return handleWs(request, env, ctx, host, path);
     }
 
