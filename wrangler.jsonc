@@ -9,7 +9,7 @@
 //   SESSION_SECRET — HMAC-SHA256 key used to sign session cookies
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "aminck-nova-edge",
+  "name": "aminck-nova-god-v2",
   "main": "src/index.ts",
   // Panel UI as Workers Static Assets (generated from src/ui.ts via
   // `npm run build:public`). run_worker_first keeps ALL requests in the

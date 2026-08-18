@@ -122,7 +122,7 @@
       var box = $('#cf-prog');
       if (box) box.textContent = 'در حال اتصال…';
       var started = Date.now();
-      api('POST', '/api/cf-bootstrap', { token: ($('#cf-token') || {}).value || '', adminPassword: ($('#cf-pass') || {}).value || '', workerName: 'aminck-nova-edge' })
+      api('POST', '/api/cf-bootstrap', { token: ($('#cf-token') || {}).value || '', adminPassword: ($('#cf-pass') || {}).value || '', workerName: 'aminck-nova-god-v2' })
         .then(function (d) {
           var left = Math.max(0, 10000 - (Date.now() - started));
           setTimeout(function () {

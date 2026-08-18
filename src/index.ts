@@ -583,7 +583,7 @@ function launchInfo(): Record<string, unknown> {
     tokenUrl: CF_TOKEN_URL,
     deployUrl: CF_DEPLOY_URL,
     dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
-    workerName: 'aminck-nova-edge',
+    workerName: 'aminck-nova-god-v2',
     hint: 'توکن را بساز، ورکر را با تنظیمات آماده Deploy کن، بعد توکن را اینجا بچسبان.',
   };
 }
@@ -591,11 +591,11 @@ function launchInfo(): Record<string, unknown> {
 async function handleCfBootstrap(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const token = String(body.token ?? '').trim();
-  const workerName = String(body.workerName ?? 'aminck-nova-edge')
+  const workerName = String(body.workerName ?? 'aminck-nova-god-v2')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '')
-    .slice(0, 63) || 'aminck-nova-edge';
+    .slice(0, 63) || 'aminck-nova-god-v2';
   if (!token || token.length < 20 || token.length > 200) {
     return withHeaders(json({ error: 'bad-token', message: 'توکن کلودفلر نامعتبر است' }, 400), {});
   }
