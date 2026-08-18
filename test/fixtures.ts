@@ -34,6 +34,8 @@ export function userFixture(overrides: Partial<User> = {}): User {
     limitBytes: 0,
     limitSeconds: 0,
     maxConnections: 0,
+    limitRequests: 0,
+    requestCount: 0,
     active: true,
     speedPreset: 'balanced',
     profileMode: 'auto',

@@ -32,7 +32,7 @@ import { base64Encode, clamp } from './utils';
 
 export const APP_NAME = 'AMINCK Nova Edge';
 export const BRAND = 'AMINCK GOD Edition';
-export const DEFAULT_NAME_TEMPLATE = '{brand} {profile} {index}';
+export const DEFAULT_NAME_TEMPLATE = '{brand} AMINCK {profile} {index}';
 export const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
 export const DEFAULT_DOH_ALT = [
   'https://one.one.one.one/dns-query',
@@ -490,9 +490,39 @@ export function buildClashYaml(ctx: BuildContext): string {
     `    proxies: ${yamlList(names)}`,
     '  - name: NOVA-SMART',
     '    type: select',
-    `    proxies: ${yamlList(['NOVA-AUTO', 'NOVA-FALLBACK', 'NOVA-BALANCE', ...names])}`,
+    `    proxies: ${yamlList(['NOVA-AUTO', 'NOVA-FALLBACK', 'NOVA-BALANCE', 'AMINCK-MULTI', ...names])}`,
+    '  - name: AMINCK-MULTI',
+    '    type: load-balance',
+    `    url: ${yamlStr(health)}`,
+    `    interval: ${speed.healthInterval}`,
+    '    strategy: consistent-hashing',
+    `    proxies: ${yamlList(names)}`,
+    '  - name: AMINCK-YOUTUBE',
+    '    type: url-test',
+    `    url: ${yamlStr(health)}`,
+    `    interval: ${speed.healthInterval}`,
+    `    tolerance: ${speed.tolerance}`,
+    `    proxies: ${yamlList(names)}`,
+    '  - name: AMINCK-INSTA',
+    '    type: url-test',
+    `    url: ${yamlStr(health)}`,
+    `    interval: ${speed.healthInterval}`,
+    `    tolerance: ${speed.tolerance}`,
+    `    proxies: ${yamlList(names)}`,
+    '  - name: AMINCK-TIKTOK',
+    '    type: url-test',
+    `    url: ${yamlStr(health)}`,
+    `    interval: ${speed.healthInterval}`,
+    `    tolerance: ${speed.tolerance}`,
+    `    proxies: ${yamlList(names)}`,
     '',
     'rules:',
+    '  - DOMAIN-SUFFIX,youtube.com,AMINCK-YOUTUBE',
+    '  - DOMAIN-SUFFIX,googlevideo.com,AMINCK-YOUTUBE',
+    '  - DOMAIN-SUFFIX,instagram.com,AMINCK-INSTA',
+    '  - DOMAIN-SUFFIX,cdninstagram.com,AMINCK-INSTA',
+    '  - DOMAIN-SUFFIX,tiktok.com,AMINCK-TIKTOK',
+    '  - DOMAIN-SUFFIX,tiktokcdn.com,AMINCK-TIKTOK',
     '  - MATCH,NOVA-SMART',
     '',
   );

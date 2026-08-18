@@ -93,7 +93,7 @@ export function defaultSettings(): PanelSettings {
     doh: 'https://cloudflare-dns.com/dns-query',
     dohAlt: ['https://one.one.one.one/dns-query', 'https://dns.google/dns-query'],
     healthUrl: '',
-    configNameTemplate: '{brand} {profile} {index}',
+    configNameTemplate: '{brand} AMINCK {profile} {index}',
     defaultPaths: 3,
     updateIntervalHours: 24,
     fingerprint: 'chrome',
@@ -170,6 +170,7 @@ export interface SanitizedLimits {
   limitBytes: number;
   limitSeconds: number;
   maxConnections: number;
+  limitRequests: number;
 }
 
 /**
@@ -186,6 +187,7 @@ export function sanitizeLimits(body: Record<string, unknown>): SanitizedLimits {
     limitBytes: toNum(body.limitBytes),
     limitSeconds: toNum(body.limitSeconds),
     maxConnections: toNum(body.maxConnections),
+    limitRequests: toNum(body.limitRequests),
   };
 }
 
@@ -624,6 +626,10 @@ export class AMINCKStore {
     if (!user) return json({ error: 'not-found' }, 404);
     if (!user.active) return json({ error: 'disabled' }, 403);
     if (user.expiresAt > 0 && user.expiresAt <= Date.now()) return json({ error: 'expired' }, 410);
+    user.requestCount = (user.requestCount || 0) + 1;
+    if (user.limitRequests > 0 && user.requestCount > user.limitRequests) {
+      return json({ error: 'request-limit', message: 'سقف درخواست ساب پر شد' }, 429);
+    }
     user.lastSubAt = Date.now();
     await this.persistUsers();
     await this.audit('system', 'config.sub_fetch', user.name, `دریافت ساب (${ua.slice(0, 60) || 'بدون UA'})`, ip);
@@ -890,6 +896,7 @@ export class AMINCKStore {
     user.limitBytes = limits.limitBytes;
     user.limitSeconds = limits.limitSeconds;
     user.maxConnections = limits.maxConnections;
+    user.limitRequests = limits.limitRequests;
     if (body.active !== undefined) user.active = Boolean(body.active);
     if (body.profileMode !== undefined && ['auto', 'fallback', 'balance'].includes(String(body.profileMode))) {
       user.profileMode = String(body.profileMode) as ProfileMode;
@@ -927,6 +934,8 @@ export class AMINCKStore {
       limitBytes: limits.limitBytes,
       limitSeconds: limits.limitSeconds,
       maxConnections: limits.maxConnections,
+      limitRequests: limits.limitRequests,
+      requestCount: 0,
       active: body.active !== false,
       speedPreset: (body.speedPreset as SpeedPreset) in SPEED_PRESETS ? (body.speedPreset as SpeedPreset) : s.speedPreset,
       profileMode: ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
@@ -1007,14 +1016,16 @@ export class AMINCKStore {
 
     const orderedRaw = Array.isArray(body.orderedEndpoints) ? (body.orderedEndpoints as unknown[]) : [];
     const known = new Set(this.settings!.endpoints.map((e) => e.id));
-    const ordered: Endpoint[] = orderedRaw
+    let ordered: Endpoint[] = orderedRaw
       .filter((e): e is Endpoint => !!e && typeof (e as Endpoint).id === 'string' && known.has((e as Endpoint).id))
       .map((e) => this.settings!.endpoints.find((x) => x.id === e.id)!)
       .filter((e) => !!e && Number(e.port) > 0)
       .slice(0, MAX_ENDPOINTS);
-
     if (ordered.length === 0) {
-      return Promise.resolve(json({ error: 'no-endpoints', message: 'ابتدا Endpoint اضافه و Probe کنید' }, 400));
+      ordered = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults).filter((e) => Number(e.port) > 0);
+    }
+    if (ordered.length === 0) {
+      return Promise.resolve(json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400));
     }
 
     const name = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
@@ -1030,7 +1041,10 @@ export class AMINCKStore {
     return this.persistUsers()
       .then(() => {
         const host = String(body.reqHost ?? body.host ?? '');
+        const prev = this.settings!.antiDetect.multiPort;
+        this.settings!.antiDetect.multiPort = true;
         const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']);
+        this.settings!.antiDetect.multiPort = prev;
         const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
         const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
         return this.audit(

@@ -109,12 +109,12 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
   god: {
     label: 'GOD',
     earlyData: 4096,
-    tcpRetries: 4,
-    healthInterval: 50,
-    tolerance: 50,
+    tcpRetries: 6,
+    healthInterval: 15,
+    tolerance: 30,
     tcpConcurrent: true,
     dnsFailover: true,
-    probeTimeoutMs: 5000,
+    probeTimeoutMs: 4000,
     downAfterFails: 1,
   },
 };
@@ -140,6 +140,7 @@ export const CLOUDFLARE_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
  */
 export const DEFAULT_FAKE_DOMAINS = [
   'snaap.ir',
+  'www.snapp.ir',
   'www.digikala.com',
   'www.aparat.com',
   'www.varzesh3.com',
@@ -149,6 +150,11 @@ export const DEFAULT_FAKE_DOMAINS = [
   'www.hamshahrionline.ir',
   'www.telewebion.com',
   'www.filimo.com',
+  'cafebazaar.ir',
+  'www.sheypoor.com',
+  'www.divar.ir',
+  'www.shaparak.ir',
+  'www.tsetmc.com',
 ];
 
 export interface Endpoint {

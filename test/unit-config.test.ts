@@ -134,6 +134,8 @@ describe('config builder — output formats', () => {
     expect(clash).toContain('name: NOVA-BALANCE');
     expect(clash).toContain('type: load-balance');
     expect(clash).toContain('name: NOVA-SMART');
+    expect(clash).toContain('name: AMINCK-MULTI');
+    expect(clash).toContain('name: AMINCK-YOUTUBE');
     expect(clash).toContain('type: select');
     expect(clash).toContain('MATCH,NOVA-SMART');
     expect(clash).toContain('client-fingerprint: chrome');
@@ -150,9 +152,9 @@ describe('config builder — output formats', () => {
     expect(clashStable).not.toContain('tcp-concurrent:');
     // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
-    expect(SPEED_PRESETS.god.healthInterval).toBe(50);
-    expect(SPEED_PRESETS.god.tolerance).toBe(50);
-    expect(SPEED_PRESETS.god.tcpRetries).toBe(4);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(15);
+    expect(SPEED_PRESETS.god.tolerance).toBe(30);
+    expect(SPEED_PRESETS.god.tcpRetries).toBe(6);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 

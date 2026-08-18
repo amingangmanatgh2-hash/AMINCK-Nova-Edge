@@ -183,8 +183,9 @@ describe('PBKDF2-SHA256 passwords', () => {
 
 describe('limits & power (zero means unlimited)', () => {
   it('sanitizeLimits never converts zero to a default', () => {
-    const r = sanitizeLimits({ limitBytes: 0, limitSeconds: 0, maxConnections: 0 });
+    const r = sanitizeLimits({ limitBytes: 0, limitSeconds: 0, maxConnections: 0, limitRequests: 0 });
     expect(r.limitBytes).toBe(0);
+    expect(r.limitRequests).toBe(0);
     expect(r.limitSeconds).toBe(0);
     expect(r.maxConnections).toBe(0);
   });
