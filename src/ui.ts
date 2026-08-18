@@ -1,5 +1,5 @@
 /**
- * EDGE PANEL — API-only landing (vanilla JavaScript, no external CDN).
+ * AMINCK GOD Edition — API-only landing (vanilla JavaScript, no external CDN).
  *
  * The full browser admin UI has been removed. Management is JSON API only
  * (login cookie + /api/*). This module still ships three static strings
@@ -150,6 +150,22 @@ ul.api code { color: var(--fg); }
   .grid { grid-template-columns: 1fr; }
   .hero { flex-direction: column; align-items: flex-start; }
   h1 { font-size: 22px; }
+  .wrap { padding: 24px 14px 40px; }
+  .card { padding: 16px 14px; border-radius: 14px; }
+  .btn { padding: 12px 16px; font-size: 14px; min-height: 44px; }
+  .pill { padding: 14px 12px; }
+  .topbar { margin-bottom: 14px; }
+}
+/* Mobile panel enhancements for AMINCK Nova Edge */
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+  .hero .mark { width: 48px; height: 48px; font-size: 16px; border-radius: 14px; }
+  h1 { font-size: 20px; line-height: 1.25; }
+  .sub { font-size: 12px; }
+  .card h2 { font-size: 15px; }
+  .uri { font-size: 11px; padding: 10px; border-radius: 8px; }
+  .badge { font-size: 10px; padding: 2px 8px; }
+  .btn { border-radius: 10px; }
 }
 /*NOVA-CSS-END*/
 `;
@@ -162,7 +178,7 @@ export const UI_SHELL_HTML = `<!--NOVA-SHELL-START-->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{TITLE}</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="EDGE PANEL — API-only VLESS management on Cloudflare Workers">
+<meta name="description" content="AMINCK GOD Edition — API-only VLESS management on Cloudflare Workers">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -185,8 +201,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
 (function () {
   'use strict';
 
-  var APP = 'EDGE PANEL';
-  var EDITION = 'EDGE PANEL GOD — API Only';
+  var APP = 'AMINCK GOD Edition';
+  var EDITION = 'AMINCK GOD Edition — API Only';
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
@@ -239,7 +255,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
 
   function featurePills() {
     var items = [
-      ['برند EDGE PANEL', 'روی همهٔ کانفیگ‌ها و ساب‌ها'],
+      ['برند AMINCK GOD Edition', 'روی همهٔ کانفیگ‌ها و ساب‌ها'],
       ['ضد شناسایی', 'padding · jitter · path رندوم · fragment'],
       ['دامنه‌های جعلی', 'snaap.ir و دامنه‌های نت ملی'],
       ['سرعت GOD', 'interval ۵۰ · tolerance ۵۰ · retry ۴'],
@@ -274,7 +290,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     }
     html += '</div>';
     html += '<div class="hero"><div class="mark">E</div><div>';
-    html += '<h1>EDGE PANEL</h1>';
+    html += '<h1>AMINCK GOD Edition</h1>';
     html += '<div class="sub">' + esc(EDITION) + ' · مدیریت اشتراک VLESS + WS + TLS روی Cloudflare Workers</div>';
     html += '</div></div>';
     html += '<div class="alert">پنل ادمین مرورگری حذف شده است. همهٔ عملیات مدیریتی از طریق JSON API با کوکی نشست انجام می‌شود. دامنهٔ فعلی: <span class="mono">' + esc(host) + '</span></div>';
@@ -291,7 +307,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<li><code>POST /api/login</code> — ورود مالک/ادمین (کوکی HttpOnly)</li>';
     html += '<li><code>GET /api/me</code> — نقش، قدرت و Permissionها</li>';
     html += '<li><code>POST /api/user-create</code> — ساخت مشترک (سقف قدرت در Backend)</li>';
-    html += '<li><code>POST /api/config-build</code> — ساخت کانفیگ EDGE PANEL</li>';
+    html += '<li><code>POST /api/config-build</code> — ساخت کانفیگ AMINCK GOD Edition</li>';
     html += '<li><code>POST /api/auto-build</code> — ساخت ساب اتومات + Probe</li>';
     html += '<li><code>POST /api/hot-update</code> — آپدیت یک‌کلیکی بدون قطعی دامنه</li>';
     html += '<li><code>POST /api/settings</code> — برند، fakeDomains، antiDetect، tlsPorts، GOD</li>';
@@ -300,7 +316,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '</ul></div>';
     html += '<div class="card"><h2>ضد شناسایی و سرعت GOD</h2>';
     html += '<p class="muted">pathPadding + pathJitter + Host camouflage روی دامنه‌هایی مثل snaap.ir · fragment در Clash/sing-box · GOD: earlyData 4096، healthInterval 50، tolerance 50، tcpRetries 4، tcp-concurrent.</p>';
-    html += '<div class="uri">{\\n  "antiDetect": {\\n    "pathPadding": true,\\n    "pathJitter": true,\\n    "fragment": true,\\n    "hostCamouflage": true,\\n    "multiPort": true\\n  },\\n  "fakeDomains": ["snaap.ir", "www.digikala.com"],\\n  "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],\\n  "speedPreset": "god",\\n  "brand": "EDGE PANEL"\\n}</div>';
+    html += '<div class="uri">{\\n  "antiDetect": {\\n    "pathPadding": true,\\n    "pathJitter": true,\\n    "fragment": true,\\n    "hostCamouflage": true,\\n    "multiPort": true\\n  },\\n  "fakeDomains": ["snaap.ir", "www.digikala.com"],\\n  "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],\\n  "speedPreset": "god",\\n  "brand": "AMINCK GOD Edition"\\n}</div>';
     html += '<div style="margin-top:12px"><button class="btn" id="copy-settings">کپی نمونه Settings</button></div>';
     html += '</div>';
     html += '<div class="card"><h2>آپدیت بدون قطعی دامنه</h2>';
@@ -308,7 +324,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<div class="uri">POST ' + esc(base) + '/api/hot-update\\nCookie: nova_session=…\\n\\n{ "speedPreset": "god" }</div>';
     html += '</div>';
     html += '<div class="card"><h2>وضعیت نشست</h2><div id="session-box" class="muted">در حال بررسی…</div></div>';
-    html += '<p class="muted" style="text-align:center;margin-top:24px">EDGE PANEL · بدون ادعای سرعت تضمینی · Probe فقط تأخیر TCP+TLS از Edge کلودفلر است.</p>';
+    html += '<p class="muted" style="text-align:center;margin-top:24px">AMINCK GOD Edition · بدون ادعای سرعت تضمینی · Probe فقط تأخیر TCP+TLS از Edge کلودفلر است.</p>';
     html += '</div>';
     $('#app').innerHTML = html;
 
@@ -324,7 +340,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     $('#copy-settings').addEventListener('click', function () {
       copyText(JSON.stringify({
         settings: {
-          brand: 'EDGE PANEL',
+          brand: 'AMINCK GOD Edition',
           speedPreset: 'god',
           tlsPorts: [443, 2053, 2083, 2087, 2096, 8443],
           fakeDomains: ['snaap.ir', 'www.digikala.com', 'www.aparat.com'],

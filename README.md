@@ -1,7 +1,7 @@
-# EDGE PANEL — GOD Edition
+# AMINCK Nova Edge — GOD Edition
 
 پنل **API-only**، فارسی و RTL برای مدیریت اشتراک‌های **VLESS + WebSocket + TLS** روی **Cloudflare Workers**.
-برند **EDGE PANEL** روی همهٔ کانفیگ‌ها، ضد شناسایی کامل، دامنه‌های جعلی نت ملی، سرعت GOD، انتخاب پورت Zooz/BPB، و آپدیت یک‌کلیکی بدون قطعی دامنه.
+برند **AMINCK GOD Edition** روی همهٔ کانفیگ‌ها، ضد شناسایی کامل، دامنه‌های جعلی نت ملی، سرعت GOD، انتخاب پورت Zooz/BPB، و آپدیت یک‌کلیکی بدون قطعی دامنه.
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge)
 
@@ -11,7 +11,7 @@
 
 | بخش | جزئیات |
 |---|---|
-| برند | **EDGE PANEL** روی نام کانفیگ‌ها، ساب‌ها و Backup |
+| برند | **AMINCK GOD Edition** روی نام کانفیگ‌ها، ساب‌ها و Backup |
 | ضد شناسایی | `pathPadding` · `pathJitter` (slug ۶–۱۲) · path رندوم · TLS/WS `fragment` · Host camouflage |
 | دامنه‌های جعلی | `snaap.ir`، digikala، aparat، varzesh3، … (قابل تنظیم در `fakeDomains`) |
 | سرعت GOD | `earlyData=4096` · `healthInterval=50` · `tolerance=50` · `tcpRetries=4` · `tcp-concurrent` |
@@ -67,7 +67,7 @@ curl -X POST https://YOUR_WORKER/api/settings -b cookies.txt \
   -H 'content-type: application/json' \
   -d '{
     "settings": {
-      "brand": "EDGE PANEL",
+      "brand": "AMINCK GOD Edition",
       "speedPreset": "god",
       "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],
       "fakeDomains": ["snaap.ir", "www.digikala.com", "www.aparat.com"],

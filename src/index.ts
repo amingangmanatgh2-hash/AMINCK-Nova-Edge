@@ -1,5 +1,5 @@
 /**
- * EDGE PANEL — Cloudflare Worker entry.
+ * AMINCK GOD Edition — Cloudflare Worker entry.
  *
  * Routing:
  *   GET  /healthz            public health check (CORS)
@@ -35,7 +35,7 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'EDGE PANEL', ts: Date.now() }), {
+        new Response(JSON.stringify({ ok: true, app: 'AMINCK GOD Edition', ts: Date.now() }), {
           headers: { 'content-type': 'application/json' },
         }),
         { cors: true },
@@ -49,7 +49,7 @@ export default {
         const assetRes = await env.ASSETS.fetch(request);
         if (assetRes.status !== 404) return withHeaders(assetRes, {});
       }
-      if (path === '/') return withHeaders(html(uiShell('EDGE PANEL')), {});
+      if (path === '/') return withHeaders(html(uiShell('AMINCK GOD Edition')), {});
       if (path === '/app.js') {
         return withHeaders(
           new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
@@ -263,7 +263,7 @@ async function handleSub(
   const headers = new Headers();
   headers.set('content-type', contentTypeFor(format));
   const safeName = user.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40) || 'sub';
-  headers.set('content-disposition', `attachment; filename="EDGE-PANEL-${safeName}.txt"`);
+  headers.set('content-disposition', `attachment; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
   headers.set(
     'subscription-userinfo',
     `upload=0; download=${user.usageBytes}; total=${user.limitBytes}; expire=${user.expiresAt}`,
