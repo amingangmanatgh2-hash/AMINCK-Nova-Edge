@@ -5,7 +5,7 @@
   var APP = 'AMINCK GOD Edition';
   var EDITION = 'AMINCK GOD Edition — فروش ساب';
   var TAB = 'dash';
-  var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, iron: null, clean: [], ironUser: '' };
+  var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, iron: null, clean: [], ironUser: '', launch: null, menu: false };
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
@@ -64,6 +64,7 @@
     var html = '<div class="wrap">';
     html += '<div class="topbar"><button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button></div>';
     html += '<div class="hero"><div class="mark">N</div><div><h1>AMINCK Nova Edge</h1><div class="sub">' + esc(EDITION) + '</div></div></div>';
+    html += domainMenuHtml();
     html += '<div class="card login-box"><h2>ورود پنل فروش</h2>';
     html += '<p class="muted">مالک: <b>AMINCK</b> · رمز: <code>ADMIN_PASSWORD</code></p>';
     html += '<label>نام کاربری</label><input id="u" value="AMINCK" style="width:100%;margin-bottom:8px">';
@@ -75,6 +76,7 @@
       localStorage.setItem('edge-theme', theme === 'dark' ? 'light' : 'dark');
       renderLogin();
     };
+    bindDomainMenu();
     $('#login-btn').onclick = function () {
       api('POST', '/api/login', { username: $('#u').value, password: $('#p').value })
         .then(function () { toast('ورود موفق', true); boot(); })
@@ -93,6 +95,7 @@
     html += '<button class="btn" id="logout-btn">خروج</button>';
     if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">آپدیت یک‌کلیکی</button>';
     html += '</div><div class="hero"><div class="mark">N</div><div><h1>' + esc(APP) + '</h1><div class="sub">پنل فروش ساب · ' + esc(location.host) + '</div></div></div>';
+    html += domainMenuHtml();
     html += '<div class="tabs">';
     tabs.forEach(function (t) {
       html += '<button class="tab' + (TAB === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>';
@@ -109,6 +112,7 @@
     $('#logout-btn').onclick = function () {
       api('POST', '/api/logout').then(function () { STATE.me = null; renderLogin(); }).catch(function (e) { toast(e.message); });
     };
+    bindDomainMenu();
     var hot = $('#hot-btn');
     if (hot) {
       hot.onclick = function () {
@@ -126,22 +130,30 @@
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
     html += '<div class="pill"><b>' + (s.endpoints || 0) + '</b><span>Endpoint</span></div>';
     html += '<div class="pill"><b>' + (s.liveSessions || 0) + '</b><span>نشست زنده</span></div></div>';
-    html += '<div class="card" style="margin-top:16px"><h2>فروش سریع ساب</h2>';
-    html += '<p class="muted">لینک را به مشتری بده — V2Box / MahsaNG / Napster / V2RayNG</p>';
-    html += '<div class="row"><input id="n" placeholder="نام مشتری"><select id="paths"><option value="1">۱ مسیر</option><option value="3" selected>۳ مسیر</option><option value="5">۵ مسیر</option></select>';
-    html += '<button class="btn primary" id="mk">ساخت ساب</button></div><div id="mk-out"></div></div>';
+    html += '<div class="card" style="margin-top:16px"><h2>ساخت اتومات (بهترین ستینگ GOD)</h2>';
+    html += '<p class="muted">نام + تعداد کانفیگ ساب + تعداد آهنین. سرعت GOD، پینگ بهتر اول.</p>';
+    html += '<label>نام ساب</label><input id="n" placeholder="مثلا VIP-علی" style="width:100%;margin-bottom:8px">';
+    html += '<div class="row"><select id="paths">' + pathOptions(5) + '</select><select id="iron-n">' + ironOptions(3) + '</select>';
+    html += '<button class="btn primary" id="auto">ساخت اتومات</button></div><div id="mk-out"></div></div>';
     shell(html);
-    $('#mk').onclick = function () {
-      var name = $('#n').value || ('مشتری-' + Date.now());
-      api('POST', '/api/user-create', { name: name, paths: Number($('#paths').value), speedPreset: 'god' })
+    $('#auto').onclick = function () {
+      var name = $('#n').value || ('GOD-' + Date.now());
+      var paths = Number($('#paths').value || 5);
+      var ironN = Number($('#iron-n').value || 0);
+      api('POST', '/api/auto-build', { name: name, paths: paths, ironCount: ironN, speedPreset: 'god', profileMode: 'auto' })
         .then(function (d) {
           var u = d.user;
-          var link = subLink(u.token, '');
-          $('#mk-out').innerHTML = '<div class="uri">' + esc(link) + '</div><div class="row" style="margin-top:8px"><button class="btn" id="c1">کپی ساب</button><button class="btn" id="c2">کپی Clash</button><button class="btn" id="c3">کپی sing-box</button></div>';
+          var link = d.subUrl || subLink(u.token, '');
+          var out = '<div class="alert">ساب آماده شد — ' + esc(name) + '</div><div class="uri">' + esc(link) + '</div>';
+          out += '<div class="row" style="margin-top:8px"><button class="btn" id="c1">کپی ساب</button><button class="btn" id="c2">Clash</button><button class="btn" id="c3">sing-box</button></div>';
+          (d.iron || []).forEach(function (p) {
+            out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span><div class="uri">' + esc(p.json) + '</div></div>';
+          });
+          $('#mk-out').innerHTML = out;
           $('#c1').onclick = function () { copyText(link, 'ساب'); };
           $('#c2').onclick = function () { copyText(subLink(u.token, 'clash'), 'Clash'); };
           $('#c3').onclick = function () { copyText(subLink(u.token, 'singbox'), 'sing-box'); };
-          toast('ساب ساخته شد', true);
+          toast('اتومات GOD ساخته شد', true);
           return loadUsers();
         })
         .catch(function (e) { toast(e.message); });

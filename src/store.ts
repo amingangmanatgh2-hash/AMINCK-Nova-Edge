@@ -1024,18 +1024,22 @@ export class AMINCKStore {
     user.profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
+    user.speedPreset = 'god';
     user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
     this.usersCache.push(user);
     return this.persistUsers()
       .then(() => {
-        const built = buildFormats(this.ctx(user, String(body.reqHost ?? body.host ?? '')), ['v2ray', 'raw', 'clash', 'singbox']);
+        const host = String(body.reqHost ?? body.host ?? '');
+        const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']);
+        const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
+        const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
         return this.audit(
           me.username,
           'config.auto_build',
           user.name,
-          `ساخت اتومات — ${paths} مسیر از ${ordered.length} Endpoint`,
+          `ساخت اتومات GOD — ${paths} مسیر + آهنین ${ironCount}`,
           ip,
-        ).then(() => json({ ok: true, user: { ...user }, configs: built }));
+        ).then(() => json({ ok: true, user: { ...user }, configs: built, iron, subUrl: `https://${host}/sub/${user.token}` }));
       });
   }
 
