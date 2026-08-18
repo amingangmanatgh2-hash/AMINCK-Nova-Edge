@@ -45,8 +45,10 @@ import { clamp, newId, randomHex, signSessionId, sleep, verifyPassword } from '.
 import { hashPassword } from './utils';
 import {
   BuildContext,
+  CLEAN_IP_CATALOG,
   DEFAULT_NAME_TEMPLATE,
   buildFormats,
+  buildIronPack,
   buildRoutes,
   expandRoutesMultiPort,
   planRoutes,
@@ -702,6 +704,16 @@ export class AMINCKStore {
       return this.autoBuild(body, me, ip);
     }
 
+    if (route === 'iron-build') {
+      if (!need('configs:build')) return deny();
+      return this.ironBuild(body, me, ip);
+    }
+
+    if (route === 'clean-ips') {
+      if (!need('endpoints:probe') && !need('users:view')) return deny();
+      return json({ ok: true, ips: CLEAN_IP_CATALOG });
+    }
+
     if (route === 'endpoints') {
       if (!need('endpoints:probe')) return deny();
       return this.endpointsApi(String(body.action ?? 'view'), body, me, ip);
@@ -709,6 +721,7 @@ export class AMINCKStore {
 
     if (route === 'settings') {
       if (!need('settings:manage')) return deny();
+      if (!body.settings) return json({ ok: true, settings: this.settingsCache });
       return this.settingsUpdate(body.settings as Partial<PanelSettings> | undefined, me, ip);
     }
     if (route === 'get-settings') {

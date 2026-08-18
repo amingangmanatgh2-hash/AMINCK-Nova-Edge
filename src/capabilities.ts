@@ -279,8 +279,10 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-god-speed', 'پروفایل سرعت GOD', 'interval ۵۰، tolerance ۵۰، retry ۴، earlyData ۴۰۹۶ و tcp-concurrent.'),
   c('config', 'cfg-iron-local', 'کانفیگ آهنین لوکال', 'پروفایل GOD با endpointهای سالم محلی و anti-detect حداکثری برای کار در نت ملی.'),
   c('config', 'cfg-hot-update', 'آپدیت یککلیکی', 'POST /api/hot-update مسیرها را بدون قطعی دامنه بازسازی میکند.'),
-  c('ui', 'ui-api-only', 'حذف پنل ادمین کامل', 'مدیریت فقط از JSON API؛ لندینگ توضیحی جایگزین UI سنگین شده است.'),
-  c('security', 'sec-api-only-surface', 'سطح حمله کوچکتر UI', 'بدون فرمهای سنگین ادمین در مرورگر؛ Same-Origin روی همهٔ mutating APIها.'),
+  c('ui', 'ui-api-only', 'پنل ساده فروش ساب', 'ورود مرورگری + API JSON؛ ساخت مشترک و لینک ساب برای V2Box / V2Ray / MahsaNG / NapsternetV.'),
+  c('security', 'sec-api-only-surface', 'سطح حمله کنترلشده', 'Same-Origin روی همهٔ mutating APIها؛ کوکی HttpOnly.'),
+  c('config', 'cfg-iron-json', 'کانفیگ آهنین JSON', 'POST /api/iron-build بین ۱ تا ۵ پروفایل JSON خفن (Xray + sing-box) می‌سازد.'),
+  c('scanner', 'scan-clean-ips', 'مخزن IP تمیز', 'GET /api/clean-ips فهرست IPهای anycast کلودفلر برای فرانت تمیز.'),
 ];
 
 export function totalCapabilities(): number {

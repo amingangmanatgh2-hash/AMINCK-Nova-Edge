@@ -4,6 +4,8 @@ import {
   BRAND,
   buildFormats,
   buildRoutes,
+  buildIronPack,
+  CLEAN_IP_CATALOG,
   expandRoutesMultiPort,
   planRoutes,
   renderConfigName,
@@ -268,6 +270,16 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(uri).toContain('fragment=');
     expect(uri).toContain('host=snaap.ir');
     expect(uri.includes('pad=') || uri.includes('pad%3D')).toBe(true);
+  });
+
+  it('iron pack returns 1–5 JSON profiles', () => {
+    const pack = buildIronPack(ctx(userFixture()), 5);
+    expect(pack.length).toBe(5);
+    expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(3);
+    for (const p of pack) {
+      expect(p.json.length).toBeGreaterThan(20);
+      JSON.parse(p.json);
+    }
   });
 
   it('expandRoutesMultiPort multiplies ports Zooz/BPB style', () => {

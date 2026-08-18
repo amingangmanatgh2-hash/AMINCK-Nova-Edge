@@ -658,6 +658,95 @@ export function buildOne(ctx: BuildContext, format: ConfigFormat): BuiltConfig {
   return buildFormats(ctx, [format])[0]!;
 }
 
+/** Public Cloudflare anycast IPs often used as clean fronts (Iran-friendly). */
+export const CLEAN_IP_CATALOG: Array<{ ip: string; label: string; region: string }> = [
+  { ip: '162.159.36.1', label: 'CF anycast A', region: 'anycast' },
+  { ip: '162.159.46.1', label: 'CF anycast B', region: 'anycast' },
+  { ip: '172.67.68.93', label: 'CF edge C', region: 'anycast' },
+  { ip: '104.17.148.22', label: 'CF edge D', region: 'anycast' },
+  { ip: '104.18.2.2', label: 'CF edge E', region: 'anycast' },
+  { ip: '104.21.45.12', label: 'CF edge F', region: 'anycast' },
+  { ip: '188.114.96.2', label: 'CF edge G', region: 'anycast' },
+  { ip: '188.114.97.2', label: 'CF edge H', region: 'anycast' },
+];
+
+/** Xray / V2RayNG / MahsaNG / NapsternetV compatible outbound JSON. */
+export function buildXrayJson(ctx: BuildContext): string {
+  const speed = SPEED_PRESETS[ctx.speedPreset];
+  const { names } = routeNames(ctx);
+  const fp = fingerprintName(ctx.fingerprint);
+  const anti = resolveAntiDetect(ctx.settings);
+  const outbounds = ctx.user.routes.map((r, i) => {
+    const wsHost = r.wsHost || r.host;
+    const wsPath =
+      anti.pathPadding && r.padding
+        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
+        : r.path;
+    return {
+      tag: names[i]!,
+      protocol: 'vless',
+      settings: {
+        vnext: [
+          {
+            address: r.host,
+            port: r.port,
+            users: [{ id: ctx.user.uuid, encryption: 'none', flow: '' }],
+          },
+        ],
+      },
+      streamSettings: {
+        network: 'ws',
+        security: 'tls',
+        tlsSettings: { serverName: r.host, fingerprint: fp, allowInsecure: false },
+        wsSettings: { path: wsPath, headers: { Host: wsHost } },
+      },
+    };
+  });
+  const doc = {
+    remarks: `${ctx.settings.brand || BRAND} IRON`,
+    log: { loglevel: 'warning' },
+    inbounds: [{ port: 10808, listen: '127.0.0.1', protocol: 'socks', settings: { udp: true } }],
+    outbounds: [
+      ...outbounds,
+      { tag: 'direct', protocol: 'freedom' },
+      { tag: 'block', protocol: 'blackhole' },
+    ],
+    routing: {
+      domainStrategy: 'IPIfNonMatch',
+      rules: [
+        { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+        { type: 'field', network: 'tcp,udp', outboundTag: names[0] || 'direct' },
+      ],
+    },
+  };
+  return JSON.stringify(doc, null, 2);
+}
+
+/**
+ * Iron pack: 1–5 standalone JSON profiles (Xray + sing-box) for V2Box,
+ * V2RayNG, MahsaNG, NapsternetV. Each profile uses a different speed/port mix.
+ */
+export function buildIronPack(ctx: BuildContext, count: number): Array<{
+  index: number;
+  name: string;
+  client: string;
+  json: string;
+}> {
+  const n = clamp(Math.floor(count) || 1, 1, 5);
+  const presets: SpeedPreset[] = ['god', 'turbo', 'balanced', 'god', 'turbo'];
+  const clients = ['xray', 'singbox', 'xray', 'singbox', 'xray'];
+  const pack: Array<{ index: number; name: string; client: string; json: string }> = [];
+  for (let i = 0; i < n; i++) {
+    const sliceRoutes = ctx.user.routes.slice(0, Math.max(1, Math.min(ctx.user.routes.length, i + 1)));
+    const view: User = { ...ctx.user, routes: sliceRoutes, speedPreset: presets[i]! };
+    const sub: BuildContext = { ...ctx, user: view, speedPreset: presets[i]! };
+    const name = `${ctx.settings.brand || BRAND} IRON ${i + 1}`;
+    const json = clients[i] === 'singbox' ? buildSingBoxJson(sub) : buildXrayJson(sub);
+    pack.push({ index: i + 1, name, client: clients[i]!, json });
+  }
+  return pack;
+}
+
 export function healthOrDefault(settings: PanelSettings, firstRoute?: Route): string {
   return healthUrlFor(settings, firstRoute);
 }
