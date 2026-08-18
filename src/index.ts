@@ -72,7 +72,7 @@ export default {
     }
 
     // Anti-detect path jitter: slug length 6–12
-    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
+    if (path.match(/^\/[et][a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
       return handleWs(request, env, ctx, host, path);
     }
 
@@ -116,6 +116,14 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
       );
     }
     return withHeaders(new Response(JSON.stringify(data), { status: doRes.status, headers }), {});
+  }
+
+  if (path === '/api/launch' && (request.method === 'GET' || request.method === 'POST')) {
+    return withHeaders(json(launchInfo()), {});
+  }
+
+  if (path === '/api/cf-bootstrap' && request.method === 'POST') {
+    return handleCfBootstrap(request);
   }
 
   if (path === '/api/logout' && request.method === 'POST') {
@@ -555,6 +563,132 @@ async function runCronProbe(env: Env): Promise<void> {
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
+const CF_TOKEN_URL =
+  'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' +
+  encodeURIComponent(
+    JSON.stringify([
+      { key: 'workers_scripts', type: 'edit' },
+      { key: 'account_settings', type: 'read' },
+    ]),
+  ) +
+  '&name=AMINCK-Nova-Edge';
+const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
+
+function launchInfo(): Record<string, unknown> {
+  return {
+    ok: true,
+    repo: REPO,
+    tokenUrl: CF_TOKEN_URL,
+    deployUrl: CF_DEPLOY_URL,
+    dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
+    workerName: 'aminck-nova-god-v2',
+    hint: 'توکن را بساز، ورکر را با تنظیمات آماده Deploy کن، بعد توکن را اینجا بچسبان.',
+  };
+}
+
+async function handleCfBootstrap(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  const token = String(body.token ?? '').trim();
+  const workerName = String(body.workerName ?? 'aminck-nova-god-v2')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 63) || 'aminck-nova-god-v2';
+  if (!token || token.length < 20 || token.length > 200) {
+    return withHeaders(json({ error: 'bad-token', message: 'توکن کلودفلر نامعتبر است' }, 400), {});
+  }
+  const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  try {
+    const accRes = await fetch('https://api.cloudflare.com/client/v4/accounts?per_page=20', {
+      headers: auth,
+      signal: AbortSignal.timeout(12000),
+    });
+    const accJson = (await accRes.json().catch(() => ({}))) as {
+      success?: boolean;
+      errors?: Array<{ message?: string }>;
+      result?: Array<{ id: string; name: string }>;
+    };
+    if (!accRes.ok || !accJson.success || !accJson.result?.length) {
+      return withHeaders(
+        json(
+          {
+            error: 'cf-auth',
+            message: accJson.errors?.[0]?.message || 'توکن قبول نشد. Workers:Edit و Account:Read لازم است',
+          },
+          401,
+        ),
+        {},
+      );
+    }
+    const account = accJson.result[0]!;
+    const scriptsRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/scripts`,
+      { headers: auth, signal: AbortSignal.timeout(12000) },
+    );
+    const scriptsJson = (await scriptsRes.json().catch(() => ({}))) as {
+      result?: Array<{ id: string }>;
+    };
+    const names = (scriptsJson.result ?? []).map((s) => s.id);
+    const found = names.includes(workerName);
+    const subRes = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/subdomain`,
+      { headers: auth, signal: AbortSignal.timeout(8000) },
+    );
+    const subJson = (await subRes.json().catch(() => ({}))) as { result?: { subdomain?: string } };
+    const sub = subJson.result?.subdomain || '';
+    const url = sub ? `https://${workerName}.${sub}.workers.dev` : '';
+
+    if (found && typeof body.adminPassword === 'string' && body.adminPassword.length >= 10) {
+      await putWorkerSecret(account.id, workerName, token, 'ADMIN_PASSWORD', String(body.adminPassword));
+      const sess =
+        typeof body.sessionSecret === 'string' && body.sessionSecret.length >= 16
+          ? String(body.sessionSecret)
+          : crypto.randomUUID() + crypto.randomUUID();
+      await putWorkerSecret(account.id, workerName, token, 'SESSION_SECRET', sess);
+    }
+
+    return withHeaders(
+      json({
+        ok: true,
+        accountId: account.id,
+        accountName: account.name,
+        workerName,
+        found,
+        workers: names.slice(0, 30),
+        url,
+        ready: found && !!url,
+        message: found
+          ? 'ورکر پیدا شد — حدود ۱۰ ثانیه دیگر پنل آماده است'
+          : 'توکن درست است. اول دکمه ساخت ورکر را بزن (تنظیمات از قبل پر است) بعد دوباره وصل کن',
+        deployUrl: CF_DEPLOY_URL,
+        tokenUrl: CF_TOKEN_URL,
+      }),
+      {},
+    );
+  } catch {
+    return withHeaders(json({ error: 'cf-timeout', message: 'ارتباط با کلودفلر برقرار نشد' }, 504), {});
+  }
+}
+
+async function putWorkerSecret(
+  accountId: string,
+  workerName: string,
+  token: string,
+  name: string,
+  value: string,
+): Promise<void> {
+  await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/secrets`,
+    {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name, text: value, type: 'secret_text' }),
+      signal: AbortSignal.timeout(10000),
+    },
+  ).catch(() => undefined);
+}
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {

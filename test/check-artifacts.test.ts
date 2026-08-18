@@ -48,7 +48,7 @@ describe('artifact checks (runtime smoke steps)', () => {
 
   it('capability manifest satisfies the contract', async () => {
     const { CAPABILITIES, ownerCapabilitiesCount } = await import('../src/capabilities');
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(150);
+    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(200);
     expect(ownerCapabilitiesCount()).toBeGreaterThanOrEqual(50);
   });
 });

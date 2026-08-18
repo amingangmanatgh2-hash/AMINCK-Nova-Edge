@@ -8,8 +8,8 @@ import {
 
 describe('capability manifest', () => {
   it('contains at least 150 real capabilities', () => {
-    expect(totalCapabilities()).toBeGreaterThanOrEqual(150);
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(150);
+    expect(totalCapabilities()).toBeGreaterThanOrEqual(200);
+    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(200);
   });
 
   it('contains at least 50 owner/administrator management capabilities', () => {

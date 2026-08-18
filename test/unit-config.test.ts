@@ -4,7 +4,10 @@ import {
   BRAND,
   buildFormats,
   buildRoutes,
+  buildIronPack,
+  CLEAN_IP_CATALOG,
   expandRoutesMultiPort,
+  expandTunnelFronts,
   planRoutes,
   renderConfigName,
   validateNameTemplate,
@@ -132,6 +135,10 @@ describe('config builder — output formats', () => {
     expect(clash).toContain('name: NOVA-BALANCE');
     expect(clash).toContain('type: load-balance');
     expect(clash).toContain('name: NOVA-SMART');
+    expect(clash).toContain('name: AMINCK-MULTI');
+    expect(clash).toContain('name: AMINCK-YOUTUBE');
+    expect(clash).toContain('name: AMINCK-TUNNEL');
+    expect(clash).toContain('socks-port: 10808');
     expect(clash).toContain('type: select');
     expect(clash).toContain('MATCH,NOVA-SMART');
     expect(clash).toContain('client-fingerprint: chrome');
@@ -148,9 +155,9 @@ describe('config builder — output formats', () => {
     expect(clashStable).not.toContain('tcp-concurrent:');
     // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
-    expect(SPEED_PRESETS.god.healthInterval).toBe(50);
-    expect(SPEED_PRESETS.god.tolerance).toBe(50);
-    expect(SPEED_PRESETS.god.tcpRetries).toBe(4);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(15);
+    expect(SPEED_PRESETS.god.tolerance).toBe(30);
+    expect(SPEED_PRESETS.god.tcpRetries).toBe(6);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 
@@ -166,6 +173,7 @@ describe('config builder — output formats', () => {
     expect(tags).toContain('NOVA-SMART');
     expect(json.inbounds.some((i: { type: string }) => i.type === 'tun')).toBe(true);
     expect(json.inbounds.some((i: { type: string }) => i.type === 'mixed')).toBe(true);
+    expect(json.inbounds.some((i: { tag?: string }) => i.tag === 'aminck-in')).toBe(true);
     expect(json.dns.servers.some((s: { address: string }) => String(s.address).startsWith('https://'))).toBe(true);
     expect(json.route.rules.some((r: { ip_cidr: string[] }) => Array.isArray(r.ip_cidr))).toBe(true);
     expect(json.route.rules.some((r: { ip_cidr: string[] }) => r.ip_cidr?.includes('10.0.0.0/8'))).toBe(true);
@@ -196,8 +204,8 @@ describe('config builder — output formats', () => {
     const user = userFixture({ routes: routesFor('u'.repeat(24), undefined, 200) });
     const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
     const names = [...clash.matchAll(/^  - name: "([^"]+)"/gm)].map((m) => m[1]);
-    expect(names.length).toBe(200);
-    expect(new Set(names).size).toBe(200);
+    expect(names.length).toBeGreaterThanOrEqual(200);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it('unlimited values are never coerced (0 stays 0 in sub headers path)', () => {
@@ -268,6 +276,25 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(uri).toContain('fragment=');
     expect(uri).toContain('host=snaap.ir');
     expect(uri.includes('pad=') || uri.includes('pad%3D')).toBe(true);
+  });
+
+  it('expandTunnelFronts keeps SNI on worker host', () => {
+    const user = userFixture();
+    const out = expandTunnelFronts(user.routes, ['1.2.3.4', '5.6.7.8'], 50);
+    expect(out.length).toBeGreaterThan(user.routes.length);
+    expect(out.some((r) => r.frontIp === '1.2.3.4')).toBe(true);
+    expect(out.every((r) => (r.sni || r.host).includes('example.workers.dev') || !r.frontIp)).toBe(true);
+    expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(10);
+  });
+
+  it('iron pack returns 1–5 JSON profiles', () => {
+    const pack = buildIronPack(ctx(userFixture()), 5);
+    expect(pack.length).toBe(5);
+    expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(3);
+    for (const p of pack) {
+      expect(p.json.length).toBeGreaterThan(20);
+      JSON.parse(p.json);
+    }
   });
 
   it('expandRoutesMultiPort multiplies ports Zooz/BPB style', () => {

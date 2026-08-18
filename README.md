@@ -17,7 +17,7 @@
 | سرعت GOD | `earlyData=4096` · `healthInterval=50` · `tolerance=50` · `tcpRetries=4` · `tcp-concurrent` |
 | پورت | انتخاب پورت‌های TLS کلودفلر مثل Zooz/BPB: `443, 2053, 2083, 2087, 2096, 8443` + `antiDetect.multiPort` |
 | آپدیت | `POST /api/hot-update` — بازسازی مسیر همهٔ مشترک‌ها بدون تغییر دامنه Worker |
-| UI | **پنل ادمین مرورگری حذف شده** — فقط لندینگ توضیحی + JSON API |
+| UI | پنل سادهٔ فروش ساب (ورود مرورگر) + JSON API |
 | state | یک Durable Object خودکار (`AMINCK_STORE`) — بدون D1/KV |
 
 > هیچ ادعایی دربارهٔ «سرعت تضمینی» وجود ندارد. اعداد Probe فقط تأخیر TCP+TLS از Edge کلودفلر هستند.
