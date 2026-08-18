@@ -37,7 +37,7 @@ describe('config builder — brand & naming', () => {
     for (const line of lines) {
       expect(line.startsWith('vless://')).toBe(true);
       const frag = decodeURIComponent(line.split('#')[1] ?? '');
-      expect(frag).toContain('EDGE PANEL');
+      expect(frag).toContain('AMINCK GOD Edition');
     }
   });
 
@@ -107,7 +107,7 @@ describe('config builder — output formats', () => {
   it('emits vless URI with the expected parameters (workers.dev default port 443)', () => {
     const user = userFixture();
     const route = user.routes[0]!;
-    const uri = vlessUriFor(user, route, { fingerprint: 'chrome', earlyData: 2048, name: 'EDGE PANEL' });
+    const uri = vlessUriFor(user, route, { fingerprint: 'chrome', earlyData: 2048, name: 'AMINCK GOD Edition' });
     expect(uri.startsWith('vless://')).toBe(true);
     expect(uri).toContain(`@${route.host}:443`);
     expect(uri).toContain('security=tls');
@@ -116,7 +116,7 @@ describe('config builder — output formats', () => {
     expect(uri).toContain('ed=2048');
     expect(uri).toContain(`sni=${encodeURIComponent(route.host)}`);
     expect(uri).toContain('encryption=none');
-    expect(uri.endsWith('#EDGE PANEL')).toBe(true);
+    expect(uri.endsWith('#AMINCK GOD Edition')).toBe(true);
   });
 
   it('clash yaml contains NOVA groups, unified-delay and store-selected', () => {
@@ -210,10 +210,10 @@ describe('config builder — output formats', () => {
   it('buildVlessUri encodes path and name fragment', () => {
     const user = userFixture();
     const route = user.routes[0]!;
-    const uri = vlessUriFor(user, route, { fingerprint: 'edge', earlyData: 1024, name: 'EDGE PANEL 1' });
+    const uri = vlessUriFor(user, route, { fingerprint: 'edge', earlyData: 1024, name: 'AMINCK GOD Edition 1' });
     expect(uri).toContain('path=');
     expect(uri).toContain(encodeURIComponent(route.path));
-    expect(uri.endsWith('#EDGE PANEL 1')).toBe(true);
+    expect(uri.endsWith('#AMINCK GOD Edition 1')).toBe(true);
   });
 });
 
@@ -225,8 +225,8 @@ describe('config builder — ports', () => {
 
 describe('renderConfigName edge cases', () => {
   it('falls back to the default template', () => {
-    const name = renderConfigName('', { brand: 'EDGE PANEL' });
-    expect(name).toContain('EDGE PANEL');
+    const name = renderConfigName('', { brand: 'AMINCK GOD Edition' });
+    expect(name).toContain('AMINCK GOD Edition');
   });
 });
 
@@ -259,7 +259,7 @@ describe('config builder — anti-detect & multi-port', () => {
     const uri = vlessUriFor(user, route, {
       fingerprint: 'chrome',
       earlyData: 4096,
-      name: 'EDGE PANEL',
+      name: 'AMINCK GOD Edition',
       padding: true,
       fragment: true,
       fragmentLength: [100, 200],

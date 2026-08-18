@@ -28,7 +28,7 @@ describe('artifact checks (runtime smoke steps)', () => {
     const html = readFileSync('public/index.html', 'utf8');
     expect(js).toBe(UI_APP_JS);
     expect(css).toBe(UI_APP_CSS);
-    expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'EDGE PANEL'));
+    expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'AMINCK GOD Edition'));
     // the committed assets are also valid JS
     execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
   });

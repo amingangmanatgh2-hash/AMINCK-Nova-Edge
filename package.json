@@ -2,7 +2,7 @@
   "name": "edge-panel",
   "version": "1.0.0",
   "private": true,
-  "description": "EDGE PANEL (GOD) — API-only Persian RTL serverless edge for VLESS + WebSocket + TLS subscriptions on Cloudflare Workers. Anti-detect (padding/jitter/fragment/fake domains), Zooz/BPB multi-port, one-click hot-update without domain downtime. State in Durable Object AMINCK_STORE.",
+  "description": "AMINCK Nova Edge (GOD Edition) — Persian RTL serverless edge panel for VLESS + WS + TLS subscriptions on Cloudflare Workers. Anti-detect, Zooz/BPB multi-port, one-click hot-update, Durable Object AMINCK_STORE, mobile responsive.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

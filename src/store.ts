@@ -1,5 +1,5 @@
 /**
- * EDGE PANEL — Durable Object store.
+ * AMINCK GOD Edition — Durable Object store.
  *
  * Single SQLite-backed Durable Object holding ALL state: settings, users,
  * admins, sessions, audit log, login throttling and live session counters.
@@ -85,8 +85,8 @@ const AUDIT_CHUNK_SIZE = 200;
 
 export function defaultSettings(): PanelSettings {
   return {
-    title: 'EDGE PANEL',
-    brand: 'EDGE PANEL',
+  title: 'AMINCK Nova Edge',
+  brand: 'AMINCK GOD Edition',
     supportUrl: 'https://t.me/EDGEPANEL',
     doh: 'https://cloudflare-dns.com/dns-query',
     dohAlt: ['https://one.one.one.one/dns-query', 'https://dns.google/dns-query'],
@@ -107,7 +107,7 @@ export function defaultSettings(): PanelSettings {
   };
 }
 
-/** Merge legacy stored settings with new EDGE PANEL fields. */
+/** Merge legacy stored settings with new AMINCK GOD Edition fields. */
 export function normalizeSettings(raw: PanelSettings | null | undefined): PanelSettings {
   const d = defaultSettings();
   if (!raw || typeof raw !== 'object') return d;
@@ -731,8 +731,8 @@ export class AMINCKStore {
       if (!need('backup:export')) return deny();
       await this.audit(me.username, 'backup.export', 'backup', 'صدور بکاپ کامل', ip);
       return json({
-        app: 'EDGE PANEL',
-        version: 'EDGE PANEL GOD',
+        app: 'AMINCK GOD Edition',
+        version: 'AMINCK GOD Edition',
         exportedAt: Date.now(),
         settings: this.settingsCache,
         users: this.usersCache,
@@ -1075,8 +1075,8 @@ export class AMINCKStore {
   private async settingsUpdate(patch: Partial<PanelSettings> | undefined, me: audience, ip: string): Promise<Response> {
     if (!patch || typeof patch !== 'object') return json({ error: 'bad-settings' }, 400);
     const s = this.settingsCache!;
-    if (patch.title !== undefined) s.title = String(patch.title).trim().slice(0, 80) || 'EDGE PANEL';
-    if (patch.brand !== undefined) s.brand = String(patch.brand).trim().slice(0, 40) || 'EDGE PANEL';
+    if (patch.title !== undefined) s.title = String(patch.title).trim().slice(0, 80) || 'AMINCK GOD Edition';
+    if (patch.brand !== undefined) s.brand = String(patch.brand).trim().slice(0, 40) || 'AMINCK GOD Edition';
     if (patch.supportUrl !== undefined) s.supportUrl = String(patch.supportUrl).trim().slice(0, 300);
     if (patch.healthUrl !== undefined) {
       const u = String(patch.healthUrl).trim();

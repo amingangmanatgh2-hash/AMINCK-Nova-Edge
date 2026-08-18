@@ -30,8 +30,8 @@ import {
 } from './types';
 import { base64Encode, clamp } from './utils';
 
-export const APP_NAME = 'EDGE PANEL';
-export const BRAND = 'EDGE PANEL';
+export const APP_NAME = 'AMINCK Nova Edge';
+export const BRAND = 'AMINCK GOD Edition';
 export const DEFAULT_NAME_TEMPLATE = '{brand} {profile} {index}';
 export const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
 export const DEFAULT_DOH_ALT = [

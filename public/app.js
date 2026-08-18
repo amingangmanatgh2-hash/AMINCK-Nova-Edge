@@ -2,8 +2,8 @@
 (function () {
   'use strict';
 
-  var APP = 'EDGE PANEL';
-  var EDITION = 'EDGE PANEL GOD — API Only';
+  var APP = 'AMINCK GOD Edition';
+  var EDITION = 'AMINCK GOD Edition — API Only';
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
@@ -56,7 +56,7 @@
 
   function featurePills() {
     var items = [
-      ['برند EDGE PANEL', 'روی همهٔ کانفیگ‌ها و ساب‌ها'],
+      ['برند AMINCK GOD Edition', 'روی همهٔ کانفیگ‌ها و ساب‌ها'],
       ['ضد شناسایی', 'padding · jitter · path رندوم · fragment'],
       ['دامنه‌های جعلی', 'snaap.ir و دامنه‌های نت ملی'],
       ['سرعت GOD', 'interval ۵۰ · tolerance ۵۰ · retry ۴'],
@@ -91,7 +91,7 @@
     }
     html += '</div>';
     html += '<div class="hero"><div class="mark">E</div><div>';
-    html += '<h1>EDGE PANEL</h1>';
+    html += '<h1>AMINCK GOD Edition</h1>';
     html += '<div class="sub">' + esc(EDITION) + ' · مدیریت اشتراک VLESS + WS + TLS روی Cloudflare Workers</div>';
     html += '</div></div>';
     html += '<div class="alert">پنل ادمین مرورگری حذف شده است. همهٔ عملیات مدیریتی از طریق JSON API با کوکی نشست انجام می‌شود. دامنهٔ فعلی: <span class="mono">' + esc(host) + '</span></div>';
@@ -108,7 +108,7 @@
     html += '<li><code>POST /api/login</code> — ورود مالک/ادمین (کوکی HttpOnly)</li>';
     html += '<li><code>GET /api/me</code> — نقش، قدرت و Permissionها</li>';
     html += '<li><code>POST /api/user-create</code> — ساخت مشترک (سقف قدرت در Backend)</li>';
-    html += '<li><code>POST /api/config-build</code> — ساخت کانفیگ EDGE PANEL</li>';
+    html += '<li><code>POST /api/config-build</code> — ساخت کانفیگ AMINCK GOD Edition</li>';
     html += '<li><code>POST /api/auto-build</code> — ساخت ساب اتومات + Probe</li>';
     html += '<li><code>POST /api/hot-update</code> — آپدیت یک‌کلیکی بدون قطعی دامنه</li>';
     html += '<li><code>POST /api/settings</code> — برند، fakeDomains، antiDetect، tlsPorts، GOD</li>';
@@ -117,7 +117,7 @@
     html += '</ul></div>';
     html += '<div class="card"><h2>ضد شناسایی و سرعت GOD</h2>';
     html += '<p class="muted">pathPadding + pathJitter + Host camouflage روی دامنه‌هایی مثل snaap.ir · fragment در Clash/sing-box · GOD: earlyData 4096، healthInterval 50، tolerance 50، tcpRetries 4، tcp-concurrent.</p>';
-    html += '<div class="uri">{\n  "antiDetect": {\n    "pathPadding": true,\n    "pathJitter": true,\n    "fragment": true,\n    "hostCamouflage": true,\n    "multiPort": true\n  },\n  "fakeDomains": ["snaap.ir", "www.digikala.com"],\n  "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],\n  "speedPreset": "god",\n  "brand": "EDGE PANEL"\n}</div>';
+    html += '<div class="uri">{\n  "antiDetect": {\n    "pathPadding": true,\n    "pathJitter": true,\n    "fragment": true,\n    "hostCamouflage": true,\n    "multiPort": true\n  },\n  "fakeDomains": ["snaap.ir", "www.digikala.com"],\n  "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],\n  "speedPreset": "god",\n  "brand": "AMINCK GOD Edition"\n}</div>';
     html += '<div style="margin-top:12px"><button class="btn" id="copy-settings">کپی نمونه Settings</button></div>';
     html += '</div>';
     html += '<div class="card"><h2>آپدیت بدون قطعی دامنه</h2>';
@@ -125,7 +125,7 @@
     html += '<div class="uri">POST ' + esc(base) + '/api/hot-update\nCookie: nova_session=…\n\n{ "speedPreset": "god" }</div>';
     html += '</div>';
     html += '<div class="card"><h2>وضعیت نشست</h2><div id="session-box" class="muted">در حال بررسی…</div></div>';
-    html += '<p class="muted" style="text-align:center;margin-top:24px">EDGE PANEL · بدون ادعای سرعت تضمینی · Probe فقط تأخیر TCP+TLS از Edge کلودفلر است.</p>';
+    html += '<p class="muted" style="text-align:center;margin-top:24px">AMINCK GOD Edition · بدون ادعای سرعت تضمینی · Probe فقط تأخیر TCP+TLS از Edge کلودفلر است.</p>';
     html += '</div>';
     $('#app').innerHTML = html;
 
@@ -141,7 +141,7 @@
     $('#copy-settings').addEventListener('click', function () {
       copyText(JSON.stringify({
         settings: {
-          brand: 'EDGE PANEL',
+          brand: 'AMINCK GOD Edition',
           speedPreset: 'god',
           tlsPorts: [443, 2053, 2083, 2087, 2096, 8443],
           fakeDomains: ['snaap.ir', 'www.digikala.com', 'www.aparat.com'],

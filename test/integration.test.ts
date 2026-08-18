@@ -36,7 +36,7 @@ describe('health & headers', () => {
     expect(html.status).toBe(200);
     const text = await html.text();
     expect(text).toContain('dir="rtl"');
-    expect(text).toContain('EDGE PANEL');
+    expect(text).toContain('AMINCK GOD Edition');
     expect(html.headers.get('content-security-policy')).toContain("script-src 'self'");
 
     const js = await w.mf.dispatchFetch(`${w.base}/app.js`);
@@ -382,13 +382,13 @@ describe('backup', () => {
   it('exports the full JSON backup', async () => {
     const r = await w.api(ownerCookie, '/api/backup', {});
     expect(r.status).toBe(200);
-    expect(r.data.app).toBe('EDGE PANEL');
-    expect(r.data.version).toBe('EDGE PANEL GOD');
+    expect(r.data.app).toBe('AMINCK GOD Edition');
+    expect(r.data.version).toBe('AMINCK GOD Edition');
     expect(Array.isArray(r.data.users)).toBe(true);
     expect(r.data.users.length).toBeGreaterThanOrEqual(4);
     expect(Array.isArray(r.data.admins)).toBe(true);
     expect(Array.isArray(r.data.audit)).toBe(true);
-    expect(r.data.settings.brand).toBe('EDGE PANEL');
+    expect(r.data.settings.brand).toBe('AMINCK GOD Edition');
   });
 });
 
@@ -396,7 +396,7 @@ describe('settings', () => {
   it('owner can update settings; values are validated', async () => {
     const ok = await w.api(ownerCookie, '/api/settings', {
       settings: {
-        brand: 'EDGE PANEL',
+        brand: 'AMINCK GOD Edition',
         configNameTemplate: '{brand} {profile} {index}',
         defaultPaths: 4,
         updateIntervalHours: 12,
@@ -527,7 +527,7 @@ describe('config rebuild with save', () => {
   });
 });
 
-describe('EDGE PANEL hot-update & anti-detect', () => {
+describe('AMINCK GOD Edition hot-update & anti-detect', () => {
   it('one-click hot-update rebuilds routes without domain change', async () => {
     const before = await w.api(ownerCookie, '/api/users', { q: 'نامحدود' });
     const user = before.data.users[0];
@@ -564,7 +564,7 @@ describe('EDGE PANEL hot-update & anti-detect', () => {
     expect(r.data.settings.speedPreset).toBe('god');
   });
 
-  it('subscription raw lines brand EDGE PANEL and include anti-detect host', async () => {
+  it('subscription raw lines brand AMINCK GOD Edition and include anti-detect host', async () => {
     const created = await w.api(ownerCookie, '/api/user-create', {
       name: 'edge-anti',
       paths: 2,
@@ -576,7 +576,7 @@ describe('EDGE PANEL hot-update & anti-detect', () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     expect(text).toContain('vless://');
-    expect(text).toContain('EDGE PANEL');
+    expect(text).toContain('AMINCK GOD Edition');
     // host camouflage or sni present
     expect(text).toContain('security=tls');
     expect(text).toContain('type=ws');
