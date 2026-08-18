@@ -36,10 +36,8 @@
       "new_sqlite_classes": ["AMINCKStore"]
     }
   ],
-  // Automatic TCP/TLS reachability scan of the panel endpoints every 30 minutes.
-  "triggers": {
-    "crons": ["*/30 * * * *"]
-  },
+  // Cron disabled: Workers Free allows only 5 schedules per account.
+  // Probe still runs from the panel (دکمه پینگ).
   "observability": {
     "enabled": true
   },
