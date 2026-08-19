@@ -38,6 +38,9 @@ npx wrangler login
 npm run deploy
 ```
 
+> پیش‌نیاز Deploy: `npm run build` (= `tsc --noEmit` + اسکن UI) باید بدون خطا
+> پاس شود؛ دکمهٔ Deploy و CI همین دستور را قبل از آپلود اجرا می‌کنند.
+
 ### Secretها
 
 ```bash

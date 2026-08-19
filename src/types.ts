@@ -286,6 +286,10 @@ export interface User {
   limitSeconds: number;
   /** 0 = unlimited. */
   maxConnections: number;
+  /** 0 = unlimited; otherwise hard cap on /sub fetch calls (429 after). */
+  limitRequests: number;
+  /** Live counter of sub fetches (requestCount / limitRequests). */
+  requestCount: number;
   active: boolean;
   speedPreset: SpeedPreset;
   profileMode: ProfileMode;
