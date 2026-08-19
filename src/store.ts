@@ -989,6 +989,18 @@ export class AMINCKStore {
       });
   }
 
+  /** Build 1–5 standalone JSON profiles (Xray + sing-box) for a user. */
+  private ironBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    const id = String(body.id ?? '');
+    const user = this.usersCache.find((u) => u.id === id);
+    if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
+    const count = clamp(Math.floor(Number(body.count ?? 1)) || 1, 1, 5);
+    const iron = buildIronPack(this.ctx(user, String(body.reqHost ?? body.host ?? '')), count);
+    return this.audit(me.username, 'config.build', user.name, `آهنین ${count} پروفایل`, ip).then(() =>
+      json({ ok: true, iron }),
+    );
+  }
+
   private ctx(user: User, host: string): BuildContext {
     const s = this.settings!;
     // Zooz/BPB multi-port: clone each route across selected TLS ports for
