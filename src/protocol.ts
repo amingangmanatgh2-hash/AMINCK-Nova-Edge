@@ -56,8 +56,7 @@ export function isValidUuid(u: string): boolean {
 export function parseVlessHeader(buf: Uint8Array): HeaderParseResult {
   if (buf.length < 18) return { state: 'need-more', need: 18 - buf.length };
   const version = buf[0]!;
-  if (version !== 0 && version !== 1) {
-    // VLESS version must be 0; 1 is not in the wild — reject anything else.
+  if (version !== VLESS_VERSION) {
     return { state: 'invalid', reason: `unsupported-vless-version:${version}` };
   }
   const uuidBytes = buf.slice(1, 17);

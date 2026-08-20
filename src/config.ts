@@ -5,8 +5,8 @@
  *   - Clash Meta YAML with NOVA-AUTO / NOVA-FALLBACK / NOVA-BALANCE / NOVA-SMART
  *   - sing-box JSON with TUN + Mixed + DoH + smart routing + fragment
  *
- * Anti-detection: random path padding, path jitter, Host camouflage via
- * national-net friendly domains, multi-port (Zooz/BPB style), TLS fragment.
+ * Transport tuning: random path padding, path jitter, operator-owned Host
+ * aliases, optional multi-port and opt-in client-compatible TLS fragment hints.
  */
 import type {
   AntiDetectSettings,
@@ -24,13 +24,13 @@ import type {
 import {
   CLOUDFLARE_TLS_PORTS,
   DEFAULT_ANTI_DETECT,
-  DEFAULT_FAKE_DOMAINS,
+  DEFAULT_HOST_ALIASES,
   FINGERPRINTS,
   SPEED_PRESETS,
 } from './types';
 import { base64Encode, clamp } from './utils';
 
-export const APP_NAME = 'AMINCK Nova Edge';
+export const APP_NAME = 'AMINNOVA';
 export const BRAND = 'AMINCK GOD Edition';
 export const DEFAULT_NAME_TEMPLATE = '{brand} AMINCK {profile} {index}';
 export const DEFAULT_DOH = 'https://cloudflare-dns.com/dns-query';
@@ -151,14 +151,17 @@ export function resolveAntiDetect(settings?: PanelSettings | null): AntiDetectSe
   };
 }
 
-export function fakeDomainList(settings?: PanelSettings | null): string[] {
-  const list = settings?.fakeDomains?.filter((d) => typeof d === 'string' && d.length > 0) ?? [];
-  return list.length > 0 ? list : [...DEFAULT_FAKE_DOMAINS];
+export function hostAliasList(settings?: PanelSettings | null): string[] {
+  const endpointHosts = new Set((settings?.endpoints ?? []).map((e) => e.host.toLowerCase()));
+  const list = settings?.hostAliases?.filter(
+    (d) => typeof d === 'string' && d.length > 0 && endpointHosts.has(d.toLowerCase()),
+  ) ?? [];
+  return list.length > 0 ? [...new Set(list)] : [...DEFAULT_HOST_ALIASES];
 }
 
-export function pickFakeDomain(settings: PanelSettings | null | undefined, index: number): string {
-  const list = fakeDomainList(settings);
-  return list[index % list.length]!;
+export function pickHostAlias(settings: PanelSettings | null | undefined, index: number): string | undefined {
+  const list = hostAliasList(settings);
+  return list.length > 0 ? list[index % list.length] : undefined;
 }
 
 /**
@@ -257,7 +260,7 @@ export function buildRoutes(
   settings?: PanelSettings | null,
 ): Route[] {
   const anti = resolveAntiDetect(settings);
-  const fakes = fakeDomainList(settings);
+  const fakes = hostAliasList(settings);
   let seq = 0;
   return plan.map((p) => {
     seq += 1;
@@ -298,7 +301,7 @@ export function vlessUriFor(user: User, route: Route, o: UriOptions): string {
     ['type', 'ws'],
     ['host', wsHost],
     ['path', encodeURIComponent(pathWithPad)],
-    ['alpn', encodeURIComponent('h2,http/1.1')],
+    ['alpn', encodeURIComponent('http/1.1')],
   ];
   params.push(['ed', String(o.earlyData)]);
   params.push(['allowInsecure', '0']);
@@ -454,7 +457,7 @@ export function buildClashYaml(ctx: BuildContext): string {
       '    network: ws',
       '    tls: true',
       `    servername: ${yamlStr(sni)}`,
-      '    alpn: [h2, http/1.1]',
+      '    alpn: [http/1.1]',
       '    udp: true',
       `    client-fingerprint: ${fp}`,
       '    ws-opts:',
@@ -467,13 +470,8 @@ export function buildClashYaml(ctx: BuildContext): string {
     if (speed.earlyData > 0) {
       lines.push(`    max-early-data: ${speed.earlyData}`, '    early-data-header-name: Sec-WebSocket-Protocol');
     }
-    if (anti.fragment) {
-      lines.push(
-        '    smux:',
-        '      enabled: false',
-        '    dialer-proxy: ""',
-      );
-    }
+    // Mihomo has no portable VLESS TLS-fragment field. Do not emit fork-only
+    // keys that make otherwise valid subscriptions fail to import.
     lines.push('');
   });
 
@@ -494,7 +492,7 @@ export function buildClashYaml(ctx: BuildContext): string {
     '    type: load-balance',
     `    url: ${yamlStr(health)}`,
     `    interval: ${speed.healthInterval}`,
-    '    strategy: least-ping',
+    '    strategy: consistent-hashing',
     `    proxies: ${yamlList(names)}`,
     '  - name: NOVA-SMART',
     '    type: select',
@@ -568,7 +566,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
         enabled: true,
         server_name: r.sni || r.host,
         insecure: false,
-        alpn: ['h2', 'http/1.1'],
+        alpn: ['http/1.1'],
         utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
       },
       transport: {
@@ -584,19 +582,15 @@ export function buildSingBoxJson(ctx: BuildContext): string {
       },
     };
     if (anti.fragment) {
+      // Official sing-box outbound TLS fields. Kept opt-in because older mobile
+      // clients may not know these keys.
       ob.tls = {
         ...(ob.tls as object),
-        // fragment is applied via dial_fields in newer sing-box; keep tlshello style
+        fragment: true,
+        fragment_fallback_delay: `${anti.fragmentInterval[0]}ms`,
+        record_fragment: true,
       };
       ob.multiplex = { enabled: false };
-      ob.tcp_fast_open = false;
-      ob.tcp_multi_path = false;
-      // sing-box 1.8+ dial fields
-      ob.tls_fragment = {
-        enabled: true,
-        size: `${anti.fragmentLength[0]}-${anti.fragmentLength[1]}`,
-        sleep: `${anti.fragmentInterval[0]}-${anti.fragmentInterval[1]}`,
-      };
     }
     return ob;
   });
@@ -707,7 +701,11 @@ export function buildOne(ctx: BuildContext, format: ConfigFormat): BuiltConfig {
   return buildFormats(ctx, [format])[0]!;
 }
 
-/** Public Cloudflare anycast IPs often used as clean fronts (Iran-friendly). */
+/**
+ * Cloudflare anycast front candidates. They are never auto-injected: reachability
+ * is ISP/location-specific and a static list cannot honestly be called clean.
+ * Operators should test candidates from the actual client network first.
+ */
 export const CLEAN_IP_CATALOG: Array<{ ip: string; label: string; region: string }> = [
   { ip: '162.159.36.1', label: 'CF anycast A', region: 'anycast' },
   { ip: '162.159.46.1', label: 'CF anycast B', region: 'anycast' },
@@ -773,7 +771,12 @@ export function buildXrayJson(ctx: BuildContext): string {
         network: 'ws',
         security: 'tls',
         tlsSettings: { serverName: r.host, fingerprint: fp, allowInsecure: false },
-        wsSettings: { path: wsPath, headers: { Host: wsHost } },
+        wsSettings: {
+          path: wsPath,
+          headers: { Host: wsHost },
+          maxEarlyData: speed.earlyData,
+          earlyDataHeaderName: 'Sec-WebSocket-Protocol',
+        },
       },
     };
   });

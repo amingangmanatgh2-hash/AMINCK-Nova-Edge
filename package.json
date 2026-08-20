@@ -1,8 +1,8 @@
 {
-  "name": "edge-panel",
-  "version": "1.0.0",
+  "name": "aminnova",
+  "version": "1.1.0",
   "private": true,
-  "description": "AMINCK Nova Edge (GOD Edition) — Persian RTL serverless edge panel for VLESS + WS + TLS subscriptions on Cloudflare Workers. Anti-detect, Zooz/BPB multi-port, one-click hot-update, Durable Object AMINCK_STORE, mobile responsive.",
+  "description": "AMINNOVA — Persian RTL subscription panel and VLESS over WebSocket gateway for Cloudflare Workers, with Durable Objects, endpoint probes, multi-format configs and seller controls.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

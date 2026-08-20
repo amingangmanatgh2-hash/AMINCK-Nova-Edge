@@ -22,9 +22,11 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 - `ADMIN_PASSWORD` (owner password) and `SESSION_SECRET` (session-signing key)
   are **never** stored in the repository. They are Cloudflare Worker secrets
   (`wrangler secret put …`) or local `.dev.vars` (git-ignored).
-- No Cloudflare API token is ever requested, stored, or rendered by the panel.
-  Deploys happen via the official Deploy button or Wrangler in CI (secrets
-  `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` on GitHub).
+- No Cloudflare API token is ever requested, stored, rendered, or proxied by
+  the panel. Deploys happen via the official Deploy button or Wrangler in CI
+  (encrypted GitHub secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`).
+- Login fails closed with `503 setup-required` when `ADMIN_PASSWORD` or a
+  sufficiently long `SESSION_SECRET` has not been configured.
 
 ### Authentication & sessions
 
@@ -59,14 +61,19 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 - Target classification rejects:
   - UDP on any port except 53 (DNS only);
   - SMTP ports (25, 465, 587, 2525);
-  - TCP ports outside the Cloudflare TLS port allow-list;
+  - TCP ports outside the conservative HTTP/HTTPS destination allow-list;
   - private/reserved IP literals (RFC1918, link-local, CGNAT, TEST-NET,
     multicast, loopback, IPv6 ULA/link-local/mapped, …);
   - hostnames whose DNS answers are private-only (metadata endpoints like
     `169.254.169.254` are blocked before connect).
 - DNS is resolved through DoH with resolver failover; UDP/53 client queries are
   answered through the same DoH chain (RFC 8484).
+- The validated public IP is dialed with a raw TCP socket. Client TLS passes
+  through unchanged; the Worker does not create a broken nested TLS session.
+- The parsed VLESS UUID must match the subscriber selected by the private path.
 - Per-subscriber live connection caps are enforced at connect time.
+- Third-party SNI/Host impersonation is not generated. Optional Host aliases
+  must also be configured Endpoint hostnames for this deployment.
 
 ### Web
 
@@ -78,7 +85,7 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 
 ### Honest measurements
 
-- The scanner reports TCP connect + TLS handshake time measured from the
+- The scanner reports HTTPS response-header latency measured from the
   Cloudflare edge — it is **not** the user device's ping, and the UI says so.
 - No speed/uptime guarantees are claimed anywhere in code or UI.
 

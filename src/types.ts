@@ -109,9 +109,11 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
   god: {
     label: 'GOD',
     earlyData: 4096,
-    tcpRetries: 6,
-    healthInterval: 15,
-    tolerance: 30,
+    // More retries increase time-to-first-byte when an endpoint is dead.
+    // Two quick attempts are a better stability/latency trade-off at the edge.
+    tcpRetries: 2,
+    healthInterval: 30,
+    tolerance: 50,
     tcpConcurrent: true,
     dnsFailover: true,
     probeTimeoutMs: 4000,
@@ -130,32 +132,23 @@ export type Fingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random';
 
 export const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge', 'random'];
 
-/** TLS ports Cloudflare accepts for HTTPS traffic (plus 8443 for Enterprise). */
+/** HTTPS listener ports supported by Cloudflare proxied hostnames. */
 export const CLOUDFLARE_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 
 /**
- * Popular Iranian / national-net friendly domains used as WS Host camouflage
- * and optional clean-IP front hosts (Zooz/BPB-style). Connection still lands
- * on the real Worker endpoint; these only shape client-side SNI/Host noise.
+ * Conservative TCP destination allow-list for subscriber traffic. This is
+ * intentionally separate from Worker listener ports: clients commonly need
+ * HTTP/HTTPS while mail and arbitrary high-risk ports remain unavailable.
  */
-export const DEFAULT_FAKE_DOMAINS = [
-  'snaap.ir',
-  'www.snapp.ir',
-  'www.digikala.com',
-  'www.aparat.com',
-  'www.varzesh3.com',
-  'www.bankmellat.ir',
-  'www.irna.ir',
-  'www.isna.ir',
-  'www.hamshahrionline.ir',
-  'www.telewebion.com',
-  'www.filimo.com',
-  'cafebazaar.ir',
-  'www.sheypoor.com',
-  'www.divar.ir',
-  'www.shaparak.ir',
-  'www.tsetmc.com',
-];
+export const OUTBOUND_TCP_PORTS = [80, 443, 2053, 2082, 2083, 2086, 2087, 2095, 2096, 8080, 8443];
+
+/**
+ * Host aliases are deliberately empty by default. An alias is only useful
+ * when the operator owns it and has routed it to this same Worker. Pretending
+ * to be an unrelated third-party domain is unreliable, can violate that
+ * party's rights, and usually fails Cloudflare routing/TLS validation.
+ */
+export const DEFAULT_HOST_ALIASES: string[] = [];
 
 export interface Endpoint {
   id: string;
@@ -178,7 +171,7 @@ export interface AntiDetectSettings {
   fragmentLength: [number, number];
   /** Fragment interval range (ms), inclusive. */
   fragmentInterval: [number, number];
-  /** Rotate WS Host header across fakeDomains. */
+  /** Rotate WS Host across operator-owned aliases routed to this Worker. */
   hostCamouflage: boolean;
   /** When true, emit one config line per selected TLS port (Zooz/BPB style). */
   multiPort: boolean;
@@ -187,18 +180,19 @@ export interface AntiDetectSettings {
 export const DEFAULT_ANTI_DETECT: AntiDetectSettings = {
   pathPadding: true,
   pathJitter: true,
-  fragment: true,
+  // Off by default because fragment syntax differs between client forks.
+  fragment: false,
   fragmentLength: [50, 120],
   fragmentInterval: [10, 20],
-  hostCamouflage: true,
-  /** Off by default so path count stays exact; enable for Zooz/BPB multi-port. */
+  hostCamouflage: false,
+  /** Off by default; non-443 ports require a compatible proxied custom host. */
   multiPort: false,
 };
 
 export interface ProbeResult {
   endpointId: string;
   ok: boolean;
-  /** TCP connect + TLS handshake time measured from the Cloudflare edge, ms. */
+  /** HTTPS response-header latency measured from the Cloudflare edge, ms. */
   latencyMs: number | null;
   error?: string;
   checkedAt: number;
@@ -235,9 +229,9 @@ export interface PanelSettings {
   speedPreset: SpeedPreset;
   /** Allowed outbound TLS ports (Zooz/BPB multi-port selection). */
   tlsPorts: number[];
-  /** Camouflage / national-net domains (Host header rotation). */
-  fakeDomains: string[];
-  /** Anti-detection: padding, jitter, fragment, multi-port. */
+  /** Operator-owned hostnames routed to this same Worker (optional Host rotation). */
+  hostAliases: string[];
+  /** Transport tuning: padding, jitter, optional client hints and multi-port. */
   antiDetect: AntiDetectSettings;
   /** Monotonic panel config generation — bumped on one-click hot update. */
   configGeneration: number;
@@ -286,6 +280,10 @@ export interface User {
   limitSeconds: number;
   /** 0 = unlimited. */
   maxConnections: number;
+  /** Maximum successful subscription fetches; 0 = unlimited. */
+  limitRequests: number;
+  /** Number of successful subscription fetches. */
+  requestCount: number;
   active: boolean;
   speedPreset: SpeedPreset;
   profileMode: ProfileMode;
@@ -390,10 +388,12 @@ export type AuditAction =
   | 'user.toggle'
   | 'user.reset_usage'
   | 'user.reset_connections'
+  | 'user.reset_requests'
   | 'user.rotate_uuid'
   | 'user.rotate_token'
   | 'config.build'
   | 'config.auto_build'
+  | 'config.iron_build'
   | 'config.sub_fetch'
   | 'settings.update'
   | 'endpoints.probe'

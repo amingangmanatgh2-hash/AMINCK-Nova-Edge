@@ -2,10 +2,10 @@
 (function () {
   'use strict';
 
-  var APP = 'AMINCK GOD Edition';
-  var EDITION = 'AMINCK GOD Edition — فروش ساب';
+  var APP = 'AMINNOVA';
+  var EDITION = 'AMINNOVA — پنل فروش ساب AMINCK';
   var TAB = 'dash';
-  var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, iron: null, clean: [], ironUser: '', launch: null, caps: [] };
+  var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, settings: null, iron: null, clean: [], ironUser: '', launch: null, caps: [] };
 
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
@@ -93,48 +93,27 @@
     var html = '<div class="card" style="position:relative">';
     html += '<div class="row" style="justify-content:space-between">';
     html += '<div><b>دامنه این پنل</b><div class="mono">' + esc(location.host) + '</div></div>';
-    html += '<button class="btn primary" id="cf-menu-btn">راه‌اندازی کلودفلر ▾</button></div>';
+    html += '<button class="btn primary" id="cf-menu-btn">راه‌اندازی امن کلودفلر ▾</button></div>';
     html += '<div id="cf-menu" style="display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">';
     html += '<div class="row">';
-    html += '<a class="btn" id="btn-token" target="_blank" rel="noopener">ساخت توکن کلودفلر</a>';
-    html += '<a class="btn primary" id="btn-deploy" target="_blank" rel="noopener">ستاپ راحت — ساخت ورکر</a>';
+    html += '<a class="btn primary" id="btn-deploy" target="_blank" rel="noopener">Deploy رسمی روی Cloudflare</a>';
+    html += '<a class="btn" id="btn-repo" target="_blank" rel="noopener">مشاهده مخزن</a>';
     html += '</div>';
-    html += '<p class="muted">توکن بساز → ورکر Deploy شود → توکن را بچسبان (حدود ۱۰ ثانیه).</p>';
-    html += '<label>توکن API</label><input id="cf-token" type="password" style="width:100%;margin-bottom:8px">';
-    html += '<label>رمز پنل (حداقل ۱۰)</label><input id="cf-pass" type="password" style="width:100%;margin-bottom:8px">';
-    html += '<button class="btn primary" id="cf-go" style="width:100%">توکن گرفتم — وصل کن</button>';
-    html += '<div id="cf-prog" class="muted" style="margin-top:10px"></div></div></div>';
+    html += '<p class="muted">توکن API را داخل هیچ پنل عمومی Paste نکنید. Deploy رسمی یا GitHub Actions توکن را در Secret رمزگذاری‌شده نگه می‌دارد.</p>';
+    html += '<ol class="muted"><li>Deploy را باز کنید.</li><li>Secrets به نام ADMIN_PASSWORD و SESSION_SECRET را تنظیم کنید.</li><li>دامنه Worker را باز و وارد پنل شوید.</li></ol>';
+    html += '</div></div>';
     return html;
   }
   function bindDomainMenu() {
     var L = STATE.launch || {};
-    var tokenA = $('#btn-token');
     var depA = $('#btn-deploy');
-    if (tokenA) tokenA.href = L.tokenUrl || 'https://dash.cloudflare.com/profile/api-tokens';
-    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
+    var repoA = $('#btn-repo');
+    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/IR-penalty-';
+    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/IR-penalty-';
     var mb = $('#cf-menu-btn');
     if (mb) mb.onclick = function () {
       var box = $('#cf-menu');
       if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
-    };
-    var go = $('#cf-go');
-    if (go) go.onclick = function () {
-      var box = $('#cf-prog');
-      if (box) box.textContent = 'در حال اتصال…';
-      var started = Date.now();
-      api('POST', '/api/cf-bootstrap', { token: ($('#cf-token') || {}).value || '', adminPassword: ($('#cf-pass') || {}).value || '', workerName: 'aminck-nova-god-v2' })
-        .then(function (d) {
-          var left = Math.max(0, 10000 - (Date.now() - started));
-          setTimeout(function () {
-            if (box) {
-              box.innerHTML = d.url
-                ? '<div class="alert">آماده: <a href="' + esc(d.url) + '" target="_blank">' + esc(d.url) + '</a></div>'
-                : '<div class="alert">' + esc(d.message || 'وصل شد') + '</div>';
-            }
-            toast(d.message || 'وصل شد', true);
-          }, left);
-        })
-        .catch(function (e) { if (box) box.textContent = e.message; toast(e.message); });
     };
   }
 
@@ -143,7 +122,7 @@
     document.documentElement.setAttribute('data-theme', theme);
     var html = '<div class="wrap">';
     html += '<div class="topbar"><button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button></div>';
-    html += '<div class="hero"><div class="mark">N</div><div><h1>AMINCK Nova Edge</h1><div class="sub">' + esc(EDITION) + '</div></div></div>';
+    html += '<div class="hero"><div class="mark">N</div><div><h1>AMINNOVA</h1><div class="sub">' + esc(EDITION) + '</div></div></div>';
     html += domainMenuHtml();
     html += '<div class="card login-box"><h2>ورود پنل فروش</h2>';
     html += '<p class="muted">مالک: <b>AMINCK</b> · رمز: <code>ADMIN_PASSWORD</code></p>';
@@ -168,13 +147,13 @@
     var me = STATE.me;
     var theme = localStorage.getItem('edge-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
-    var tabs = [['dash', 'داشبورد'], ['sell', 'فروش / ویرایش'], ['iron', 'آهنین'], ['scan', 'پینگ'], ['caps', 'قابلیت‌ها'], ['help', 'راهنما']];
+    var tabs = [['dash', 'داشبورد'], ['sell', 'فروش / ویرایش'], ['iron', 'آهنین'], ['scan', 'پینگ'], ['settings', 'تنظیمات'], ['caps', 'قابلیت‌ها'], ['help', 'راهنما']];
     var html = '<div class="wrap"><div class="topbar">';
     html += '<button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
     html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
     html += '<button class="btn" id="logout-btn">خروج</button>';
     if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">آپدیت یک‌کلیکی</button>';
-    html += '</div><div class="hero"><div class="mark">N</div><div><h1>' + esc(APP) + '</h1><div class="sub">GOD · ' + esc(location.host) + '</div></div></div>';
+    html += '</div><div class="hero"><div class="mark">N</div><div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
     html += domainMenuHtml();
     html += '<div class="tabs">';
     tabs.forEach(function (t) {
@@ -205,14 +184,14 @@
     html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
     html += '<div class="pill"><b>' + (STATE.caps.length || '۲۰۰+') + '</b><span>قابلیت</span></div>';
-    html += '<div class="pill"><b>GOD</b><span>۱۵ثانیه failover</span></div></div>';
-    html += '<div class="card" style="margin-top:16px"><h2>ساخت اتومات GOD</h2>';
-    html += '<p class="muted">مولتی‌پروکسی + جعل snaap.ir + نام AMINCK + تا ۲۰۰ مسیر در یک ساب.</p>';
+    html += '<div class="pill"><b>Auto</b><span>انتخاب Endpoint سالم</span></div></div>';
+    html += '<div class="card" style="margin-top:16px"><h2>ساخت اتومات AMINNOVA</h2>';
+    html += '<p class="muted">Endpointهای سالم و کم‌تاخیر Edge + نام AMINCK + تا ۲۰۰ مسیر در یک ساب. هیچ سرعت یا دسترسی روی همه ISPها تضمین نمی‌شود.</p>';
     html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
     html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
     html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
     html += '<div class="row"><select id="paths">' + pathOptions(5) + '</select><select id="iron-n">' + ironOptions(3) + '</select>';
-    html += '<button class="btn primary" id="auto">ساخت اتومات GOD</button></div><div id="mk-out"></div></div>';
+    html += '<button class="btn primary" id="auto">ساخت اتومات بهینه</button></div><div id="mk-out"></div></div>';
     shell(html);
     bindInf();
     $('#auto').onclick = function () {
@@ -240,7 +219,7 @@
         $('#c1').onclick = function () { copyText(link, 'ساب'); };
         $('#c2').onclick = function () { copyText(subLink(u.token, 'clash'), 'Clash'); };
         $('#c3').onclick = function () { copyText(subLink(u.token, 'singbox'), 'sing-box'); };
-        toast('اتومات GOD', true);
+        toast('ساب بهینه ساخته شد', true);
         return loadUsers();
       }).catch(function (e) { toast(e.message); });
     };
@@ -322,7 +301,10 @@
       var r = (STATE.probe || {})[e.id] || {};
       html += '<tr><td class="mono">' + esc(e.host) + '</td><td>' + esc(String(r.ok ? (r.latencyMs + ' ms') : (r.error || '—'))) + '</td></tr>';
     });
-    html += '</tbody></table></div>';
+    html += '</tbody></table><p class="muted">این عدد HTTPS از Edge کلودفلر است، نه Ping اینترنت کاربر. نتیجه ISP کاربر می‌تواند متفاوت باشد.</p></div>';
+    html += '<div class="card"><h2>مخزن کاندیدهای Anycast</h2><p class="muted">IP تمیز ثابت وجود ندارد؛ این فهرست خودکار داخل ساب تزریق نمی‌شود. از شبکه واقعی کاربر تست کنید.</p><div class="row">';
+    (STATE.clean || []).slice(0, 18).forEach(function (c) { html += '<span class="badge mono">' + esc(c.ip) + '</span>'; });
+    html += '</div></div>';
     shell(html);
     $('#add-ep').onclick = function () {
       api('POST', '/api/endpoints', { action: 'add', host: $('#eh').value, port: Number($('#ep').value || 443) })
@@ -330,6 +312,62 @@
     };
     $('#pr').onclick = function () {
       api('POST', '/api/probe', {}).then(function (d) { STATE.probe = d.results || {}; toast('پینگ شد', true); paint(); }).catch(function (e) { toast(e.message); });
+    };
+  }
+
+  function viewSettings() {
+    var s = STATE.settings || {};
+    if (!can(STATE.me, 'settings:manage')) { shell('<div class="card">دسترسی تنظیمات ندارید.</div>'); return; }
+    var anti = s.antiDetect || {};
+    var ports = s.tlsPorts || [443];
+    var html = '<div class="card"><h2>تنظیمات خروجی و فروش</h2>';
+    html += '<label>عنوان پنل</label><input id="st-title" value="' + esc(s.title || 'AMINNOVA') + '" style="width:100%">';
+    html += '<label>برند کانفیگ</label><input id="st-brand" value="' + esc(s.brand || 'AMINCK GOD Edition') + '" style="width:100%">';
+    html += '<label>لینک پشتیبانی</label><input id="st-support" value="' + esc(s.supportUrl || '') + '" style="width:100%">';
+    html += '<label>قالب نام</label><input id="st-template" value="' + esc(s.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
+    html += '<div class="grid"><div><label>تعداد پیش‌فرض</label><input id="st-paths" type="number" min="1" max="200" value="' + esc(s.defaultPaths || 3) + '"></div>';
+    html += '<div><label>آپدیت ساب (ساعت)</label><input id="st-up" type="number" min="1" max="720" value="' + esc(s.updateIntervalHours || 24) + '"></div></div>';
+    html += '<div class="row" style="margin-top:12px"><select id="st-speed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option></select>';
+    html += '<select id="st-mode"><option value="auto">Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select>';
+    html += '<select id="st-fp"><option value="chrome">Chrome</option><option value="firefox">Firefox</option><option value="safari">Safari</option><option value="edge">Edge</option><option value="random">Random</option></select></div>';
+    html += '<h2 style="margin-top:18px">پورت‌های دامنه Worker</h2><div class="row">';
+    [443,2053,2083,2087,2096,8443].forEach(function (p) { html += '<label class="check"><input type="checkbox" data-port="' + p + '"' + (ports.indexOf(p) >= 0 ? ' checked' : '') + '> ' + p + '</label>'; });
+    html += '</div><p class="muted">برای workers.dev فقط 443 پیشنهاد می‌شود. مولتی‌پورت فقط با Custom Domain سازگار فعال شود.</p>';
+    html += '<div class="row"><label class="check"><input id="st-pad" type="checkbox"' + (anti.pathPadding ? ' checked' : '') + '> Path padding</label>';
+    html += '<label class="check"><input id="st-jitter" type="checkbox"' + (anti.pathJitter ? ' checked' : '') + '> Path jitter</label>';
+    html += '<label class="check"><input id="st-frag" type="checkbox"' + (anti.fragment ? ' checked' : '') + '> Fragment hint</label>';
+    html += '<label class="check"><input id="st-multi" type="checkbox"' + (anti.multiPort ? ' checked' : '') + '> Multi-port</label></div>';
+    html += '<label>Host aliasهای متعلق به شما (باید در Endpointها باشند؛ با کاما)</label><input id="st-alias" value="' + esc((s.hostAliases || []).join(', ')) + '" style="width:100%">';
+    html += '<p class="muted">دامنه شخص ثالث یا SNI جعلی پشتیبانی نمی‌شود؛ باعث شکست TLS/Route و ریسک سوءاستفاده می‌شود.</p>';
+    html += '<button class="btn primary" id="st-save">ذخیره تنظیمات</button></div>';
+    shell(html);
+    if ($('#st-speed')) $('#st-speed').value = s.speedPreset || 'god';
+    if ($('#st-mode')) $('#st-mode').value = s.profileMode || 'auto';
+    if ($('#st-fp')) $('#st-fp').value = s.fingerprint || 'chrome';
+    $('#st-save').onclick = function () {
+      var selectedPorts = [];
+      document.querySelectorAll('[data-port]:checked').forEach(function (el) { selectedPorts.push(Number(el.getAttribute('data-port'))); });
+      var aliases = $('#st-alias').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+      api('POST', '/api/settings', { settings: {
+        title: $('#st-title').value,
+        brand: $('#st-brand').value,
+        supportUrl: $('#st-support').value,
+        configNameTemplate: $('#st-template').value,
+        defaultPaths: Number($('#st-paths').value || 3),
+        updateIntervalHours: Number($('#st-up').value || 24),
+        speedPreset: $('#st-speed').value,
+        profileMode: $('#st-mode').value,
+        fingerprint: $('#st-fp').value,
+        tlsPorts: selectedPorts,
+        hostAliases: aliases,
+        antiDetect: {
+          pathPadding: $('#st-pad').checked,
+          pathJitter: $('#st-jitter').checked,
+          fragment: $('#st-frag').checked,
+          hostCamouflage: aliases.length > 0,
+          multiPort: $('#st-multi').checked
+        }
+      }}).then(function (d) { STATE.settings = d.settings; toast('تنظیمات ذخیره شد', true); paint(); }).catch(function (e) { toast(e.message); });
     };
   }
 
@@ -343,7 +381,7 @@
   }
 
   function viewHelp() {
-    var html = '<div class="card"><h2>ستاپ راحت</h2><p class="muted">منوی راه‌اندازی کلودفلر بالای صفحه: توکن + Deploy رسمی با تنظیمات آماده.</p>';
+    var html = '<div class="card"><h2>ستاپ راحت و امن</h2><p class="muted">از Deploy رسمی استفاده کنید. توکن Cloudflare فقط باید در Secretهای Cloudflare/GitHub باشد و این پنل هیچ‌وقت آن را دریافت نمی‌کند.</p>';
     html += '<p><a class="btn primary" id="easy" target="_blank" rel="noopener">ستاپ یک‌کلیکی کلودفلر</a></p></div>';
     shell(html);
     var a = $('#easy');
@@ -355,6 +393,7 @@
     if (TAB === 'sell') viewSell();
     else if (TAB === 'iron') viewIron();
     else if (TAB === 'scan') viewScan();
+    else if (TAB === 'settings') viewSettings();
     else if (TAB === 'caps') viewCaps();
     else if (TAB === 'help') viewHelp();
     else viewDash();
@@ -380,6 +419,7 @@
       api('POST', '/api/stats', {}).then(function (d) { STATE.stats = d; }).catch(function () {}),
       loadUsers().catch(function () {}),
       loadScan(),
+      api('POST', '/api/get-settings', {}).then(function (d) { STATE.settings = d.settings || null; }).catch(function () {}),
       api('POST', '/api/capabilities', {}).then(function (d) { STATE.caps = d.capabilities || []; }).catch(function () {})
     ]).then(function () { paint(); });
   }

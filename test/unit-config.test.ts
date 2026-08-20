@@ -155,9 +155,9 @@ describe('config builder — output formats', () => {
     expect(clashStable).not.toContain('tcp-concurrent:');
     // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
-    expect(SPEED_PRESETS.god.healthInterval).toBe(15);
-    expect(SPEED_PRESETS.god.tolerance).toBe(30);
-    expect(SPEED_PRESETS.god.tcpRetries).toBe(6);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(30);
+    expect(SPEED_PRESETS.god.tolerance).toBe(50);
+    expect(SPEED_PRESETS.god.tcpRetries).toBe(2);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 
@@ -253,17 +253,20 @@ describe('config builder — anti-detect & multi-port', () => {
     }
   });
 
-  it('attaches national-net fake domains as wsHost', () => {
-    const settings = settingsFixture();
-    const plan = planRoutes(settings.endpoints, 5);
-    const routes = buildRoutes('u'.repeat(24), plan, settings);
-    expect(routes.some((r) => r.wsHost && r.wsHost.includes('snaap.ir') || (r.wsHost ?? '').includes('.'))).toBe(true);
-    expect(routes.every((r) => !!r.wsHost)).toBe(true);
+  it('uses only real endpoints or operator-owned endpoint aliases as wsHost', () => {
+    const base = settingsFixture();
+    const settings = settingsFixture({
+      hostAliases: [base.endpoints[1]!.host, 'unrelated.example'],
+      antiDetect: { ...base.antiDetect, hostCamouflage: true },
+    });
+    const routes = buildRoutes('u'.repeat(24), planRoutes(settings.endpoints, 5), settings);
+    expect(routes.some((r) => r.wsHost === base.endpoints[1]!.host)).toBe(true);
+    expect(routes.every((r) => r.wsHost !== 'unrelated.example')).toBe(true);
   });
 
   it('vless URI includes fragment and padding when anti-detect is on', () => {
     const user = userFixture();
-    const route = { ...user.routes[0]!, padding: 'abcd1234', wsHost: 'snaap.ir' };
+    const route = { ...user.routes[0]!, padding: 'abcd1234', wsHost: 'edge-1.example.workers.dev' };
     const uri = vlessUriFor(user, route, {
       fingerprint: 'chrome',
       earlyData: 4096,
@@ -274,7 +277,7 @@ describe('config builder — anti-detect & multi-port', () => {
       fragmentInterval: [10, 20],
     });
     expect(uri).toContain('fragment=');
-    expect(uri).toContain('host=snaap.ir');
+    expect(uri).toContain('host=edge-1.example.workers.dev');
     expect(uri.includes('pad=') || uri.includes('pad%3D')).toBe(true);
   });
 

@@ -28,12 +28,12 @@ export type TargetDecision =
  * Pure classification of a VLESS target before any socket is opened.
  * - UDP is only permitted for DNS on port 53 (no open proxy)
  * - SMTP ports are always blocked
- * - outbound port must be an allowed TLS port (Cloudflare TLS ports)
+ * - outbound port must be in the deployment's conservative TCP allow-list
  * - IP literals pointing at private/reserved space are blocked
  */
 export function classifyTarget(
   target: VlessTarget,
-  tlsPorts: number[],
+  tcpPorts: number[],
   isPrivateIp: (s: string) => boolean = isPrivateLiteral,
 ): TargetDecision {
   if (target.command === CMD_UDP && target.port !== 53) {
@@ -42,7 +42,7 @@ export function classifyTarget(
   if (isSmtpPort(target.port)) {
     return { allowed: false, reason: 'smtp-port' };
   }
-  if (target.command === CMD_TCP && !tlsPorts.includes(target.port)) {
+  if (target.command === CMD_TCP && !tcpPorts.includes(target.port)) {
     return { allowed: false, reason: 'port-not-allowed' };
   }
   if (target.addressType !== 1 && target.addressType !== 2 && target.addressType !== 3) {
@@ -104,7 +104,7 @@ export interface TcpSocket {
 }
 
 export interface SessionHooks {
-  /** Establish a TCP(+TLS) upstream connection. */
+  /** Establish a raw TCP upstream connection; client TLS bytes pass through unchanged. */
   tcpConnect(
     host: string,
     port: number,
@@ -123,7 +123,7 @@ export interface SessionReport {
 }
 
 export interface SessionPolicy {
-  tlsPorts: number[];
+  tcpPorts: number[];
   dohList: string[];
   tcpRetries: number;
   connectTimeoutMs: number;
@@ -146,6 +146,7 @@ export class VlessSession {
   private readonly policy: SessionPolicy;
   private udpBuffer: Uint8Array = new Uint8Array(0);
   private done = false;
+  private responseHeaderSent = false;
   private tcpSocket: TcpSocket | null = null;
   private pendingTcp: Uint8Array | null = null;
   private settle!: (r: SessionReport) => void;
@@ -224,7 +225,7 @@ export class VlessSession {
         sock.onData((data) => {
           this.bytesDown += data.length;
           this.maybeFlush();
-          this.client.send(data);
+          this.sendClient(data);
         });
         sock.onClose(() => this.settleNow('ok'));
         sock.onError((err) => this.settleNow('error', err instanceof Error ? err.message : String(err)));
@@ -273,7 +274,21 @@ export class VlessSession {
     frame[0] = (response.length >> 8) & 0xff;
     frame[1] = response.length & 0xff;
     frame.set(response, 2);
-    this.client.send(frame);
+    this.sendClient(frame);
+  }
+
+  /** Prefix the first downstream frame with the two-byte VLESS response header. */
+  private sendClient(data: Uint8Array): void {
+    if (this.responseHeaderSent) {
+      this.client.send(data);
+      return;
+    }
+    this.responseHeaderSent = true;
+    const framed = new Uint8Array(data.length + 2);
+    framed[0] = 0; // VLESS version
+    framed[1] = 0; // response addon length
+    framed.set(data, 2);
+    this.client.send(framed);
   }
 
   // ------------------------------------------------------------- lifecycle

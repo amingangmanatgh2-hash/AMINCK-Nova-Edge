@@ -1,165 +1,188 @@
-# AMINCK Nova Edge — GOD Edition
+# AMINNOVA — پنل فروش ساب روی Cloudflare Workers
 
-پنل **API-only**، فارسی و RTL برای مدیریت اشتراک‌های **VLESS + WebSocket + TLS** روی **Cloudflare Workers**.
-برند **AMINCK GOD Edition** روی همهٔ کانفیگ‌ها، ضد شناسایی کامل، دامنه‌های جعلی نت ملی، سرعت GOD، انتخاب پورت Zooz/BPB، و آپدیت یک‌کلیکی بدون قطعی دامنه.
+پنل فارسی و RTL برای مدیریت مشترک، ساخت Subscription و اجرای **VLESS + WebSocket + TLS** روی Cloudflare Workers. وضعیت در یک Durable Object نگه‌داری می‌شود و D1/KV جدا لازم نیست.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge)
+> **شفافیت فنی:** هیچ پروژه‌ای نمی‌تواند سرعت، پایداری، عبور از DPI یا کارکرد روی «نت ملی» را برای همهٔ اپراتورها تضمین کند. AMINNOVA به‌جای دامنه/SNI جعلی از hostname واقعی Worker یا دامنه‌های متعلق به خود اپراتور استفاده می‌کند. Probe نیز تأخیر HTTPS از Edge کلودفلر است، نه Ping اینترنت گوشی کاربر.
 
----
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FIR-penalty-)
 
-## امکانات کلیدی این نسخه
+## امکانات اصلی
 
-| بخش | جزئیات |
+- پنل سادهٔ فارسی، RTL، واکنش‌گرا و Dark/Light
+- ورود مالک و ادمین‌های چندنقشی با Permissionهای Backend
+- ساخت، ویرایش، فعال/غیرفعال و حذف مشترک
+- حجم، زمان، اتصال همزمان و تعداد درخواست ساب؛ مقدار `0` یعنی نامحدود
+- انتخاب ۱ تا ۲۰۰ مسیر در هر Subscription (با سقف نقش ادمین)
+- قالب نام با `{brand}`، `{app}`، `{user}`، `{profile}`، `{index}`، `{endpoint}` و `{port}`
+- نام پیش‌فرض دارای برند **AMINCK**
+- خروجی V2Ray Base64، Raw VLESS، Clash Meta و sing-box
+- سازگار با Import استاندارد در V2Box، V2RayNG، MahsaNG، NapsternetV، Clash Meta/Mihomo و sing-box
+- گروه‌های Auto، Fallback، Balance، Multi و گروه‌های Rule برای YouTube، Instagram و TikTok
+- ساخت ۱ تا ۵ پروفایل مستقل «آهنین» Xray/sing-box
+- Probe دستی و Cron هر ۳۰ دقیقه از Cloudflare Edge
+- ساخت اتومات با اولویت Endpointهای سالم و کم‌تأخیر
+- مخزن کاندیدهای Cloudflare Anycast با هشدار تست از شبکهٔ واقعی؛ هیچ IP ثابت به‌صورت کور تزریق نمی‌شود
+- Host Alias فقط برای دامنه‌ای که مالک آن هستید و به همین Worker Route شده است
+- Multi-port اختیاری برای Custom Domain؛ پیش‌فرض امن و پایدار `443`
+- مسیر تصادفی، Path Jitter و Padding؛ Fragment hint به‌صورت اختیاری و پیش‌فرض خاموش
+- Early Data تا 4096 بایت و دریافت Early Data از `Sec-WebSocket-Protocol`
+- اتصال Upstream به‌صورت Raw TCP (TLS کلاینت بدون TLS تو‌در‌تو)
+- احراز UUID + مسیر اختصاصی در WebSocket
+- UDP فقط DNS/53 از طریق DoH و Failover Resolver
+- جلوگیری از مقصد خصوصی/Metadata، SMTP و پورت‌های خارج از Allow-list
+- شمارش تقریبی مصرف، نشست زنده، انقضا و سقف درخواست
+- Audit log، Backup JSON، چرخش UUID/Token و Hot Update مسیرها
+- Session امضاشده، PBKDF2، Lockout، Same-Origin و Security Headerها
+- مانیفست داخل پنل با **۲۰۰+ کنترل و قابلیت پیاده‌سازی‌شده**
+
+## نصب سریع و امن
+
+### روش ۱: Deploy رسمی
+
+روی دکمهٔ بالا بزنید و Repository را در حساب Cloudflare خود Deploy کنید. سپس در Dashboard ورکر، این دو Secret را بسازید:
+
+| Secret | مقدار |
 |---|---|
-| برند | **AMINCK GOD Edition** روی نام کانفیگ‌ها، ساب‌ها و Backup |
-| ضد شناسایی | `pathPadding` · `pathJitter` (slug ۶–۱۲) · path رندوم · TLS/WS `fragment` · Host camouflage |
-| دامنه‌های جعلی | `snaap.ir`، digikala، aparat، varzesh3، … (قابل تنظیم در `fakeDomains`) |
-| سرعت GOD | `earlyData=4096` · `healthInterval=50` · `tolerance=50` · `tcpRetries=4` · `tcp-concurrent` |
-| پورت | انتخاب پورت‌های TLS کلودفلر مثل Zooz/BPB: `443, 2053, 2083, 2087, 2096, 8443` + `antiDetect.multiPort` |
-| آپدیت | `POST /api/hot-update` — بازسازی مسیر همهٔ مشترک‌ها بدون تغییر دامنه Worker |
-| UI | پنل سادهٔ فروش ساب (ورود مرورگر) + JSON API |
-| state | یک Durable Object خودکار (`AMINCK_STORE`) — بدون D1/KV |
+| `ADMIN_PASSWORD` | رمز مالک، حداقل ۱۰ کاراکتر |
+| `SESSION_SECRET` | رشتهٔ تصادفی حداقل ۳۲ کاراکتر |
 
-> هیچ ادعایی دربارهٔ «سرعت تضمینی» وجود ندارد. اعداد Probe فقط تأخیر TCP+TLS از Edge کلودفلر هستند.
-
-## نصب و Deploy
-
-### گزینه ۱ — دکمهٔ رسمی
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge)
-
-### گزینه ۲ — CLI
+ساخت مقدار مناسب برای `SESSION_SECRET`:
 
 ```bash
-git clone https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git
-cd AMINCK-Nova-Edge
-npm install
+openssl rand -hex 32
+```
+
+> توکن Cloudflare را داخل صفحهٔ یک Worker عمومی Paste نکنید. AMINNOVA عمداً فرم دریافت توکن ندارد.
+
+### روش ۲: Wrangler
+
+```bash
+git clone https://github.com/amingangmanatgh2-hash/IR-penalty-.git
+cd IR-penalty-
+npm ci
 npx wrangler login
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put SESSION_SECRET
 npm run deploy
 ```
 
-### Secretها
+### روش ۳: GitHub Actions (قالب آماده)
 
-```bash
-wrangler secret put ADMIN_PASSWORD   # رمز مالک (حداقل ۱۰ کاراکتر)
-wrangler secret put SESSION_SECRET  # openssl rand -hex 32
+فایل‌های آماده در `docs/github-actions/` قرار دارند. آن‌ها را به `.github/workflows/` کپی کنید و سپس در `Settings → Secrets and variables → Actions` این Secretها را ثبت کنید:
+
+- `CLOUDFLARE_API_TOKEN` با حداقل دسترسی Workers Scripts: Edit
+- `CLOUDFLARE_ACCOUNT_ID`
+- `ADMIN_PASSWORD`
+- `SESSION_SECRET`
+
+سپس Workflow **Deploy AMINNOVA** را دستی اجرا کنید. Push به `main` نیز Deploy را اجرا می‌کند.
+
+## شروع کار پنل
+
+1. URL ورکر را باز کنید.
+2. نام کاربری مالک `AMINCK` و مقدار `ADMIN_PASSWORD` را وارد کنید.
+3. در تب **پینگ**، Custom Domainهای Route‌شده به همین Worker را اضافه کنید.
+4. Probe را اجرا کنید؛ ساخت اتومات Endpointهای سالم را جلو می‌آورد.
+5. در داشبورد نام ساب، تعداد مسیر و تعداد پروفایل آهنین را انتخاب کنید.
+6. محدودیت‌ها را وارد کنید یا دکمهٔ `∞ نامحدود` را بزنید.
+7. لینک اصلی ساب یا لینک Clash/sing-box را کپی کنید.
+
+## لینک‌های Subscription
+
+```text
+https://YOUR_WORKER/sub/TOKEN
+https://YOUR_WORKER/sub/TOKEN/raw
+https://YOUR_WORKER/sub/TOKEN/v2ray
+https://YOUR_WORKER/sub/TOKEN/clash
+https://YOUR_WORKER/sub/TOKEN/singbox
 ```
 
-محلی: `.dev.vars.example` → `.dev.vars`
+بدون suffix، فرمت با User-Agent تشخیص داده می‌شود.
 
-ورود مالک: username = `AMINCK` (یا خالی) + `ADMIN_PASSWORD`.
+## ساخت اتومات با API
 
-## API سریع
+ابتدا Login کنید و Cookie را نگه دارید:
 
 ```bash
-# ورود
 curl -X POST https://YOUR_WORKER/api/login \
   -H 'content-type: application/json' \
-  -d '{"username":"AMINCK","password":"YOUR_PASSWORD"}' -c cookies.txt
-
-# ساخت مشترک
-curl -X POST https://YOUR_WORKER/api/user-create -b cookies.txt \
-  -H 'content-type: application/json' \
-  -d '{"name":"user1","paths":5,"speedPreset":"god","limitBytes":0,"limitSeconds":0,"maxConnections":0}'
-
-# تنظیم ضد شناسایی + دامنه‌های جعلی + پورت‌ها
-curl -X POST https://YOUR_WORKER/api/settings -b cookies.txt \
-  -H 'content-type: application/json' \
-  -d '{
-    "settings": {
-      "brand": "AMINCK GOD Edition",
-      "speedPreset": "god",
-      "tlsPorts": [443, 2053, 2083, 2087, 2096, 8443],
-      "fakeDomains": ["snaap.ir", "www.digikala.com", "www.aparat.com"],
-      "antiDetect": {
-        "pathPadding": true,
-        "pathJitter": true,
-        "fragment": true,
-        "hostCamouflage": true,
-        "multiPort": true,
-        "fragmentLength": [100, 200],
-        "fragmentInterval": [10, 20]
-      }
-    }
-  }'
-
-# آپدیت یک‌کلیکی بدون قطعی دامنه
-curl -X POST https://YOUR_WORKER/api/hot-update -b cookies.txt \
-  -H 'content-type: application/json' \
-  -d '{"speedPreset":"god"}'
-
-# ساب
-curl https://YOUR_WORKER/sub/TOKEN
-curl https://YOUR_WORKER/sub/TOKEN/clash
-curl https://YOUR_WORKER/sub/TOKEN/singbox
+  -d '{"username":"AMINCK","password":"YOUR_PASSWORD"}' \
+  -c cookies.txt
 ```
 
-### جدول API
-
-| مسیر | مجوز | توضیح |
-|---|---|---|
-| `GET /healthz` | عمومی | Health |
-| `POST /api/login` | — | ورود (کوکی HttpOnly) |
-| `GET /api/me` | Session | نقش/قدرت/Permission |
-| `GET/POST /api/users` | users:view | فهرست + جست‌وجو |
-| `POST /api/user-create` | users:create | ساخت مشترک |
-| `POST /api/user-update` | users:edit | ویرایش |
-| `POST /api/user-delete` | users:delete | حذف |
-| `POST /api/config-build` | configs:build | ساخت کانفیگ |
-| `POST /api/auto-build` | configs:build + users:create | ساب اتومات |
-| `POST /api/hot-update` | settings:manage | آپدیت بدون قطعی دامنه |
-| `POST /api/probe` | endpoints:probe | Probe از Edge |
-| `GET/POST /api/endpoints` | endpoints:probe | مدیریت Endpoint |
-| `GET/POST /api/settings` | settings:manage | تنظیمات + antiDetect |
-| `GET/POST /api/admins/*` | admins:manage | ادمین‌ها |
-| `GET/POST /api/audit` | audit:view | Audit |
-| `GET/POST /api/backup` | backup:export | Backup JSON |
-| `GET /sub/{token}` | Token | ساب |
-| `WS /e{slug}{userId}` | UUID | پروکسی VLESS |
-
-## خروجی‌ها
-
-- **V2Ray Base64** / **Raw VLESS** (با fragment و Host جعلی)
-- **Clash Meta**: NOVA-AUTO / FALLBACK / BALANCE / SMART + unified-delay + tcp-concurrent (GOD)
-- **sing-box**: TUN + Mixed + DoH + Direct خصوصی + `tls_fragment`
-
-## نقش‌ها و قدرت
-
-| نقش | قابلیت |
-|---|---|
-| owner | همهٔ ۱۰ Permission — username `AMINCK` |
-| admin | کاربران (حذف)، کانفیگ، Probe، بکاپ، Audit |
-| operator | کاربران بدون حذف، کانفیگ، Probe، بکاپ، Audit |
-| support | view کاربران، کانفیگ، Audit |
-
-| قدرت | سقف مسیر |
-|---|---|
-| Limited | ۵ |
-| Normal | ۳۰ |
-| Strong | ۸۰ |
-| Ultra | ۲۰۰ |
-
-## توسعه و تست
+سپس یک مشترک با پنج مسیر و سه پروفایل آهنین بسازید:
 
 ```bash
-npm install
-npm test            # واحد + یکپارچه (Miniflare)
-npm run check       # tsc + node --check روی JS لندینگ
-npm run build:public
+curl -X POST https://YOUR_WORKER/api/auto-build \
+  -H 'content-type: application/json' \
+  -b cookies.txt \
+  -d '{
+    "name":"VIP-Ali",
+    "paths":5,
+    "ironCount":3,
+    "speedPreset":"god",
+    "profileMode":"auto",
+    "configNameTemplate":"{brand} AMINCK {user} {index}",
+    "limitBytes":0,
+    "limitSeconds":0,
+    "maxConnections":0,
+    "limitRequests":0
+  }'
 ```
+
+## Host Alias و Multi-port
+
+- **workers.dev:** فقط پورت `443` پیشنهاد می‌شود.
+- **Custom Domain:** فقط پورت‌هایی را فعال کنید که Cloudflare برای hostname پروکسی‌شدهٔ شما می‌پذیرد.
+- **Host Alias:** باید دامنهٔ متعلق به شما باشد، به همین Worker Route شده باشد و قبلاً در Endpointها ثبت شده باشد.
+- دامنه‌های شخص ثالث مانند فروشگاه‌ها، بانک‌ها یا سرویس‌های ایرانی به‌عنوان SNI/Host جعل نمی‌شوند؛ این کار هم غیرقابل‌اعتماد است و هم می‌تواند حقوق دیگران را نقض کند.
+
+## Probe و «IP تمیز»
+
+Cron هر ۳۰ دقیقه HTTPS را **از محل اجرای Worker** اندازه می‌گیرد. این عدد برای مرتب‌سازی Endpointهای Worker مفید است، ولی وضعیت ISP کاربر در ایران یا کشور دیگر را نشان نمی‌دهد. کاندیدهای Anycast نیز باید روی دستگاه و ISP واقعی تست شوند؛ به همین دلیل Auto Build هیچ IP ثابتی را کورکورانه وارد ساب نمی‌کند.
+
+## APIهای مهم
+
+| مسیر | توضیح |
+|---|---|
+| `GET /healthz` | سلامت Worker |
+| `POST /api/login` | ورود |
+| `GET /api/me` | نشست و Permissionها |
+| `POST /api/users` | فهرست/جست‌وجوی مشترک |
+| `POST /api/user-create` | ساخت مشترک |
+| `POST /api/user-update` | ویرایش محدودیت و مسیر |
+| `POST /api/config-build` | بازسازی خروجی با Save اختیاری |
+| `POST /api/auto-build` | ساخت اتومات Subscription |
+| `POST /api/iron-build` | ساخت ۱ تا ۵ پروفایل آهنین |
+| `POST /api/probe` | Probe از Edge |
+| `POST /api/endpoints` | مدیریت Endpoint |
+| `POST /api/settings` | تنظیم نام، پورت، Alias و Preset |
+| `POST /api/hot-update` | بازسازی مسیرها بدون تغییر دامنه |
+| `POST /api/backup` | Backup مجاز |
+| `POST /api/audit` | Audit log |
+
+## توسعه و دیباگ
+
+```bash
+npm ci
+npm test
+npm run check
+npm audit --audit-level=high
+npm run build:public
+npx wrangler deploy --dry-run
+```
+
+## محدودیت‌های Cloudflare
+
+- محدودیت CPU، Request، Durable Objects و Cron تابع Plan حساب شماست.
+- چند مسیر داخل یک Subscription ظرفیت جادویی ایجاد نمی‌کند؛ Groupهای Health Check فقط مسیر سالم را انتخاب می‌کنند.
+- Cloudflare ممکن است اتصال به برخی مقصدها یا IPهای Cloudflare را محدود کند.
+- استفاده باید مطابق قوانین محل شما، قوانین Cloudflare و حقوق دامنه‌های دیگر باشد.
 
 ## امنیت
 
-- Session HMAC-SHA256 + کوکی `HttpOnly; Secure; SameSite=Strict`
-- Same-Origin روی mutating requests
-- CSP / X-Frame-Options / Referrer-Policy / Permissions-Policy
-- Login delay + lockout
-- PBKDF2-SHA256 برای ادمین‌ها
-- بلاک IP خصوصی و SMTP؛ UDP فقط DNS/53
-- بدون Secret در Git
+جزئیات در [SECURITY.md](SECURITY.md) است. Secret واقعی، Token، فایل `.dev.vars` یا Backup را Commit نکنید.
 
-جزئیات: [SECURITY.md](SECURITY.md)
+## مجوز
 
-## لایسنس
-
-MIT — [LICENSE](LICENSE)
+[MIT](LICENSE)

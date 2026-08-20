@@ -36,7 +36,7 @@ describe('health & headers', () => {
     expect(html.status).toBe(200);
     const text = await html.text();
     expect(text).toContain('dir="rtl"');
-    expect(text).toContain('AMINCK GOD Edition');
+    expect(text).toContain('AMINNOVA');
     expect(html.headers.get('content-security-policy')).toContain("script-src 'self'");
 
     const js = await w.mf.dispatchFetch(`${w.base}/app.js`);
@@ -141,7 +141,7 @@ describe('subscription users (unlimited semantics)', () => {
     expect(res.headers.get('subscription-userinfo')).toContain('download=');
     expect(res.headers.get('subscription-userinfo')).toContain('total=0');
     expect(res.headers.get('profile-update-interval')).toBe('24h');
-    expect(res.headers.get('support-url')).toBeTruthy();
+    expect(res.headers.get('support-url')).toBeNull();
     const payload = await res.text();
     const decoded = Buffer.from(payload, 'base64').toString('utf8');
     expect(decoded.split('\n').length).toBe(3);
@@ -544,10 +544,10 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
     expect(nu.routes[0].path).not.toBe(oldPath);
   });
 
-  it('settings accept fakeDomains and antiDetect', async () => {
+  it('settings accept hostAliases and antiDetect', async () => {
     const r = await w.api(ownerCookie, '/api/settings', {
       settings: {
-        fakeDomains: ['snaap.ir', 'www.digikala.com'],
+        hostAliases: ['nova.test', 'snaap.ir'],
         antiDetect: {
           pathPadding: true,
           pathJitter: true,
@@ -559,7 +559,7 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
       },
     });
     expect(r.status).toBe(200);
-    expect(r.data.settings.fakeDomains).toContain('snaap.ir');
+    expect(r.data.settings.hostAliases).toEqual(['nova.test']);
     expect(r.data.settings.antiDetect.fragment).toBe(true);
     expect(r.data.settings.speedPreset).toBe('god');
   });
@@ -580,5 +580,87 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
     // host camouflage or sni present
     expect(text).toContain('security=tls');
     expect(text).toContain('type=ws');
+  });
+});
+
+
+describe('AMINNOVA reliability regressions', () => {
+  it('launch metadata exposes official deploy links but no token collection endpoint', async () => {
+    const res = await w.mf.dispatchFetch(`${w.base}/api/launch`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.repo).toContain('IR-penalty-');
+    expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
+    expect(data.tokenUrl).toBeUndefined();
+    expect(JSON.stringify(data)).not.toContain('api-tokens');
+  });
+
+  it('builds five valid iron profiles through the authenticated API', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'iron-api-user',
+      paths: 5,
+    });
+    const result = await w.api(ownerCookie, '/api/iron-build', {
+      id: created.data.user.id,
+      count: 5,
+    });
+    expect(result.status).toBe(200);
+    expect(result.data.iron).toHaveLength(5);
+    for (const profile of result.data.iron) expect(() => JSON.parse(profile.json)).not.toThrow();
+  });
+
+  it('enforces and resets the subscription request cap', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'request-cap-user',
+      paths: 1,
+      limitRequests: 1,
+    });
+    const user = created.data.user;
+    const first = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    const second = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    const reset = await w.api(ownerCookie, `/api/users/${user.id}`, { action: 'reset_requests' });
+    expect(reset.status).toBe(200);
+    const third = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    expect(third.status).toBe(200);
+  });
+
+  it('keeps omitted limits during a partial user edit', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'partial-before',
+      paths: 2,
+      limitBytes: 123456,
+      limitSeconds: 3600,
+      maxConnections: 4,
+      limitRequests: 9,
+    });
+    const updated = await w.api(ownerCookie, '/api/user-update', {
+      id: created.data.user.id,
+      name: 'partial-after',
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.data.user.limitBytes).toBe(123456);
+    expect(updated.data.user.limitSeconds).toBe(3600);
+    expect(updated.data.user.maxConnections).toBe(4);
+    expect(updated.data.user.limitRequests).toBe(9);
+  });
+
+  it('builds a requested route count without persisting when save is false', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'preview-build-user',
+      paths: 2,
+    });
+    const preview = await w.api(ownerCookie, '/api/config-build', {
+      id: created.data.user.id,
+      paths: 7,
+      formats: ['raw'],
+      save: false,
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.data.configs[0].paths).toBe(7);
+    expect(preview.data.saved).toBe(false);
+    const listed = await w.api(ownerCookie, '/api/users', { q: 'preview-build-user' });
+    expect(listed.data.users[0].routes).toHaveLength(2);
   });
 });

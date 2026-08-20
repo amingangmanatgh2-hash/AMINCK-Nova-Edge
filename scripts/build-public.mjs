@@ -39,7 +39,7 @@ try {
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, 'app.js'), mod.UI_APP_JS, 'utf8');
   writeFileSync(join(out, 'app.css'), mod.UI_APP_CSS, 'utf8');
-  writeFileSync(join(out, 'index.html'), mod.uiShell('AMINCK GOD Edition'), 'utf8');
+  writeFileSync(join(out, 'index.html'), mod.uiShell('AMINNOVA'), 'utf8');
   console.log(
     `build-public: OK — app.js (${Buffer.byteLength(mod.UI_APP_JS)} B), app.css (${Buffer.byteLength(mod.UI_APP_CSS)} B), index.html (${Buffer.byteLength(mod.uiShell('EDGE PANEL'))} B)`,
   );

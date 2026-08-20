@@ -1,9 +1,9 @@
 /**
  * EDGE PANEL — endpoint scanner (probe).
  *
- * Measures TCP connect + TLS handshake latency from the Cloudflare edge using
- * `cloudflare:sockets`. The runtime seam (connector + resolver) is injectable
- * so unit tests can verify retry/sort/failover logic without real sockets.
+ * Measures HTTPS reachability latency from the Cloudflare edge. The runtime
+ * seam is injectable so unit tests can verify retry/sort/failover logic
+ * without network access. This is not the end user's ISP ping.
  */
 import type { Endpoint, ProbeResult, PanelSettings } from './types';
 import { MAX_ENDPOINTS, SPEED_PRESETS, type SpeedPreset } from './types';
@@ -16,7 +16,7 @@ export interface ConnectOutcome {
 }
 
 export interface RuntimeHooks {
-  /** Establish TCP + TLS to `host:port`; resolve after handshake. */
+  /** Reach `host:port` over HTTPS; resolve after response headers. */
   tcpTlsConnect(host: string, port: number, timeoutMs: number): Promise<ConnectOutcome>;
   /** Resolve a hostname to public IPs via DoH (primary + failover). */
   resolveViaDoh(name: string, dohList: string[], timeoutMs: number): Promise<string[]>;
@@ -27,7 +27,7 @@ export interface ProbeOptions {
   retries: number;
 }
 
-/** Pure TCP+TLS probe of one endpoint with connect retry. */
+/** HTTPS reachability probe of one endpoint with retry. */
 export async function probeOnce(
   hooks: RuntimeHooks,
   host: string,
@@ -65,7 +65,7 @@ export async function probeAll(
     settings.endpoints.map(async (ep) => {
       const r = await probeOnce(hooks, ep.host, ep.port, {
         timeoutMs: speed.probeTimeoutMs,
-        retries: Math.min(3, 1 + Math.floor(speed.tcpRetries)),
+        retries: Math.max(1, Math.min(2, Math.floor(speed.tcpRetries))),
       });
       r.endpointId = ep.id;
       results[ep.id] = r;
@@ -140,28 +140,24 @@ export function validateEndpoint(
 
 export const defaultRuntimeHooks: RuntimeHooks = {
   async tcpTlsConnect(host, port, timeoutMs) {
-    const { connect } = await import('cloudflare:sockets');
     const t0 = performance.now();
-    const socket = connect(
-      { hostname: host, port },
-      { secureTransport: 'on', allowHalfOpen: false },
-    );
-    const timer = timeoutPromise(timeoutMs);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const authority = port === 443 ? host : `${host}:${port}`;
     try {
-      await Promise.race([socket.opened, timer.promise]);
-      const latencyMs = performance.now() - t0;
-      socket.close();
-      return { ok: true, latencyMs };
+      await fetch(`https://${authority}/healthz`, {
+        method: 'GET',
+        redirect: 'manual',
+        headers: { accept: 'application/json', 'cache-control': 'no-cache' },
+        signal: ctrl.signal,
+        cf: { cacheTtl: 0, cacheEverything: false },
+      });
+      return { ok: true, latencyMs: performance.now() - t0 };
     } catch (err) {
-      try {
-        socket.close();
-      } catch {
-        /* noop */
-      }
       const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, latencyMs: null, error: msg === 'timeout' ? 'timeout' : msg };
+      return { ok: false, latencyMs: null, error: ctrl.signal.aborted ? 'timeout' : msg };
     } finally {
-      timer.cancel();
+      clearTimeout(timer);
     }
   },
 
@@ -188,14 +184,6 @@ export const defaultRuntimeHooks: RuntimeHooks = {
     return [];
   },
 };
-
-function timeoutPromise(ms: number): { promise: Promise<never>; cancel: () => void } {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const promise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('timeout')), ms);
-  });
-  return { promise, cancel: () => timer && clearTimeout(timer) };
-}
 
 async function timeoutFetch(
   url: string,

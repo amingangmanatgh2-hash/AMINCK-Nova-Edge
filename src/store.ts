@@ -9,7 +9,7 @@
  * role integrity and power-level caps. Even a direct API call can never
  * exceed a Limited admin's 5-path cap because the cap is applied here.
  *
- * The browser admin UI is intentionally disabled — management is API-only.
+ * The browser admin UI and JSON API both call this same permission boundary.
  * One-click hot-update regenerates subscription paths without changing the
  * Worker domain / custom hostname binding.
  */
@@ -33,9 +33,11 @@ import type {
 } from './types';
 import {
   DEFAULT_ANTI_DETECT,
-  DEFAULT_FAKE_DOMAINS,
+  DEFAULT_HOST_ALIASES,
+  CLOUDFLARE_TLS_PORTS,
   MAX_AUDIT_EVENTS,
   MAX_ENDPOINTS,
+  OUTBOUND_TCP_PORTS,
   POWER_LEVELS,
   ROLE_PERMISSIONS,
   SPEED_PRESETS,
@@ -51,7 +53,6 @@ import {
   buildIronPack,
   buildRoutes,
   expandRoutesMultiPort,
-  expandTunnelFronts,
   planRoutes,
   resolveAntiDetect,
   validateNameTemplate,
@@ -88,9 +89,9 @@ const AUDIT_CHUNK_SIZE = 200;
 
 export function defaultSettings(): PanelSettings {
   return {
-  title: 'AMINCK Nova Edge',
+    title: 'AMINNOVA',
   brand: 'AMINCK GOD Edition',
-    supportUrl: 'https://t.me/EDGEPANEL',
+    supportUrl: '',
     doh: 'https://cloudflare-dns.com/dns-query',
     dohAlt: ['https://one.one.one.one/dns-query', 'https://dns.google/dns-query'],
     healthUrl: '',
@@ -100,8 +101,10 @@ export function defaultSettings(): PanelSettings {
     fingerprint: 'chrome',
     profileMode: 'auto',
     speedPreset: 'god',
-    tlsPorts: [443, 2053, 2083, 2087, 2096, 8443],
-    fakeDomains: [...DEFAULT_FAKE_DOMAINS],
+    // workers.dev is reliably available on 443. Operators with a proxied
+    // custom hostname can explicitly enable additional listener ports.
+    tlsPorts: [443],
+    hostAliases: [...DEFAULT_HOST_ALIASES],
     antiDetect: { ...DEFAULT_ANTI_DETECT },
     configGeneration: 1,
     endpoints: [],
@@ -110,26 +113,46 @@ export function defaultSettings(): PanelSettings {
   };
 }
 
-/** Merge legacy stored settings with new AMINCK GOD Edition fields. */
+/** Merge legacy stored settings with current fields and safe defaults. */
 export function normalizeSettings(raw: PanelSettings | null | undefined): PanelSettings {
   const d = defaultSettings();
   if (!raw || typeof raw !== 'object') return d;
+  const endpoints = Array.isArray(raw.endpoints) ? raw.endpoints : [];
+  const endpointHosts = new Set(endpoints.map((e) => String(e.host).toLowerCase()));
+  const legacy = (raw as unknown as { fakeDomains?: unknown }).fakeDomains;
+  const aliasesRaw = Array.isArray(raw.hostAliases)
+    ? raw.hostAliases
+    : Array.isArray(legacy)
+      ? legacy.map(String)
+      : [];
+  // Old releases shipped unrelated third-party Host values. They are dropped
+  // during migration unless the same hostname is configured as an endpoint.
+  const hostAliases = aliasesRaw
+    .map((x) => String(x).trim().toLowerCase())
+    .filter((x) => endpointHosts.has(x))
+    .slice(0, 30);
   const anti: AntiDetectSettings = {
     ...DEFAULT_ANTI_DETECT,
     ...(raw.antiDetect && typeof raw.antiDetect === 'object' ? raw.antiDetect : {}),
   };
-  return {
+  if (hostAliases.length === 0) anti.hostCamouflage = false;
+  const tlsPorts = Array.isArray(raw.tlsPorts)
+    ? [...new Set(raw.tlsPorts.map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))]
+    : [];
+  const normalized: PanelSettings & { fakeDomains?: unknown } = {
     ...d,
     ...raw,
     brand: raw.brand || d.brand,
     title: raw.title || d.title,
-    fakeDomains: Array.isArray(raw.fakeDomains) && raw.fakeDomains.length > 0 ? raw.fakeDomains : d.fakeDomains,
+    hostAliases,
     antiDetect: anti,
     configGeneration: Number(raw.configGeneration) > 0 ? Number(raw.configGeneration) : 1,
-    tlsPorts: Array.isArray(raw.tlsPorts) && raw.tlsPorts.length > 0 ? raw.tlsPorts : d.tlsPorts,
-    endpoints: Array.isArray(raw.endpoints) ? raw.endpoints : [],
+    tlsPorts: tlsPorts.length > 0 ? tlsPorts : d.tlsPorts,
+    endpoints,
     probeResults: raw.probeResults && typeof raw.probeResults === 'object' ? raw.probeResults : {},
   };
+  delete normalized.fakeDomains;
+  return normalized;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +320,13 @@ export class AMINCKStore {
     const ids = indexRaw ?? [];
     if (ids.length > 0) {
       const entries = await this.state.storage.get<Record<string, User>>(ids.map((id) => K.user(id)));
-      this.usersCache = Object.values(entries).sort((a, b) => a.createdAt - b.createdAt);
+      this.usersCache = Object.values(entries)
+        .map((u) => ({
+          ...u,
+          limitRequests: Number(u.limitRequests) >= 0 ? Number(u.limitRequests) : 0,
+          requestCount: Number(u.requestCount) >= 0 ? Number(u.requestCount) : 0,
+        }))
+        .sort((a, b) => a.createdAt - b.createdAt);
     }
     await this.loadAuditChunks();
     if (!this.adminsCache.some((a) => a.role === 'owner')) {
@@ -461,6 +490,16 @@ export class AMINCKStore {
   // -------------------------------------------------------------- login
 
   private async intLogin(username: string, password: string, ip: string): Promise<Response> {
+    if ((this.env.ADMIN_PASSWORD ?? '').length < 10 || (this.env.SESSION_SECRET ?? '').length < 32) {
+      return json(
+        {
+          ok: false,
+          reason: 'setup-required',
+          message: 'ADMIN_PASSWORD و SESSION_SECRET باید در Secrets ورکر تنظیم شوند',
+        },
+        503,
+      );
+    }
     return this.withLock(async () => {
       const nameKey = (username || OWNER_USERNAME).toLowerCase();
       const tIp = this.attemptsByIp.get(ip);
@@ -599,14 +638,14 @@ export class AMINCKStore {
       ok: true,
       policy: {
         dohList: [s.doh, ...(s.dohAlt ?? [])],
-        tlsPorts: s.tlsPorts,
+        tcpPorts: OUTBOUND_TCP_PORTS,
         tcpRetries: speed.tcpRetries,
         connectTimeoutMs: speed.probeTimeoutMs,
         maxEarlyData: speed.earlyData,
       },
       limits: {
         bytes: user.limitBytes,
-        bytesLeft: user.limitBytes,
+        bytesLeft: user.limitBytes === 0 ? 0 : Math.max(0, user.limitBytes - user.usageBytes),
         connections: user.maxConnections,
         activeConnections: active + 1,
       },
@@ -627,10 +666,10 @@ export class AMINCKStore {
     if (!user) return json({ error: 'not-found' }, 404);
     if (!user.active) return json({ error: 'disabled' }, 403);
     if (user.expiresAt > 0 && user.expiresAt <= Date.now()) return json({ error: 'expired' }, 410);
-    user.requestCount = (user.requestCount || 0) + 1;
-    if (user.limitRequests > 0 && user.requestCount > user.limitRequests) {
+    if (user.limitRequests > 0 && user.requestCount >= user.limitRequests) {
       return json({ error: 'request-limit', message: 'سقف درخواست ساب پر شد' }, 429);
     }
+    user.requestCount += 1;
     user.lastSubAt = Date.now();
     await this.persistUsers();
     await this.audit('system', 'config.sub_fetch', user.name, `دریافت ساب (${ua.slice(0, 60) || 'بدون UA'})`, ip);
@@ -718,7 +757,12 @@ export class AMINCKStore {
 
     if (route === 'clean-ips') {
       if (!need('endpoints:probe') && !need('users:view')) return deny();
-      return json({ ok: true, ips: CLEAN_IP_CATALOG });
+      return json({
+        ok: true,
+        ips: CLEAN_IP_CATALOG,
+        autoSelected: false,
+        warning: 'این‌ها کاندید Anycast هستند؛ IP تمیز برای هر ISP فرق دارد و باید از دستگاه کاربر تست شود.',
+      });
     }
 
     if (route === 'endpoints') {
@@ -780,14 +824,16 @@ export class AMINCKStore {
       s.speedPreset = body.speedPreset as SpeedPreset;
     }
     if (body.tlsPorts !== undefined && Array.isArray(body.tlsPorts)) {
-      const ports = [...new Set((body.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
-      if (ports.length > 0) s.tlsPorts = ports.slice(0, 10);
+      const ports = [...new Set((body.tlsPorts as unknown[]).map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))];
+      if (ports.length > 0) s.tlsPorts = ports;
     }
-    if (body.fakeDomains !== undefined && Array.isArray(body.fakeDomains)) {
-      s.fakeDomains = (body.fakeDomains as unknown[])
+    if (body.hostAliases !== undefined && Array.isArray(body.hostAliases)) {
+      const knownHosts = new Set(s.endpoints.map((e) => e.host));
+      s.hostAliases = (body.hostAliases as unknown[])
         .map((d) => String(d).trim().toLowerCase())
-        .filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))
+        .filter((d) => knownHosts.has(d))
         .slice(0, 30);
+      if (s.hostAliases.length === 0) s.antiDetect.hostCamouflage = false;
     }
     if (body.antiDetect && typeof body.antiDetect === 'object') {
       s.antiDetect = { ...resolveAntiDetect(s), ...(body.antiDetect as Partial<AntiDetectSettings>) };
@@ -850,6 +896,10 @@ export class AMINCKStore {
         this.liveSessions.delete(user.uuid);
         await this.audit(me.username, 'user.reset_connections', user.name, 'ریست نشستها', ip);
         break;
+      case 'reset_requests':
+        user.requestCount = 0;
+        await this.audit(me.username, 'user.reset_requests', user.name, 'ریست شمارنده درخواست ساب', ip);
+        break;
       case 'rotate_uuid':
         user.uuid = crypto.randomUUID();
         await this.audit(me.username, 'user.rotate_uuid', user.name, 'تعویض UUID', ip);
@@ -894,10 +944,13 @@ export class AMINCKStore {
       if (name && name.length <= 80) user.name = name;
     }
     const limits = sanitizeLimits(body);
-    user.limitBytes = limits.limitBytes;
-    user.limitSeconds = limits.limitSeconds;
-    user.maxConnections = limits.maxConnections;
-    user.limitRequests = limits.limitRequests;
+    if (body.limitBytes !== undefined) user.limitBytes = limits.limitBytes;
+    if (body.limitSeconds !== undefined) {
+      user.limitSeconds = limits.limitSeconds;
+      user.expiresAt = limits.limitSeconds === 0 ? 0 : Date.now() + limits.limitSeconds * 1000;
+    }
+    if (body.maxConnections !== undefined) user.maxConnections = limits.maxConnections;
+    if (body.limitRequests !== undefined) user.limitRequests = limits.limitRequests;
     if (body.active !== undefined) user.active = Boolean(body.active);
     if (body.profileMode !== undefined && ['auto', 'fallback', 'balance'].includes(String(body.profileMode))) {
       user.profileMode = String(body.profileMode) as ProfileMode;
@@ -965,28 +1018,35 @@ export class AMINCKStore {
 
   // ------------------------------------------------------------ config build
 
-  private buildConfig(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+  private async buildConfig(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
     const id = String(body.id ?? '');
     const user = this.usersCache.find((u) => u.id === id);
-    if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
+    if (!user) return json({ error: 'not-found' }, 404);
     const maxPaths = maxPathsFor(this.powerOf(me));
     const requested = clamp(Math.floor(Number(body.paths ?? user.routes.length)) || 1, 1, 200);
     const paths = Math.min(requested, maxPaths);
     const truncated = paths < requested;
     const formats = parseFormats(body.formats);
     const save = body.save === true || body.save === 'true';
-    if (save) user.routes = this.buildRoutesFor(user, paths);
-    return this.persistUsers()
-      .then(() => {
-        const built = buildFormats(this.ctx(user, String(body.reqHost ?? body.host ?? '')), formats);
-        return this.audit(
-          me.username,
-          'config.build',
-          user.name,
-          `${paths} مسیر (${formats.join('،')})${truncated ? ' — محدودشده به قدرت' : ''}`,
-          ip,
-        ).then(() => json({ ok: true, configs: built, truncated }));
-      });
+    const generatedRoutes = this.buildRoutesFor(user, paths);
+    const view: User = { ...user, routes: generatedRoutes };
+    if (save) {
+      user.routes = generatedRoutes;
+      await this.persistUsers();
+    }
+    const built = buildFormats(this.ctx(view, String(body.reqHost ?? body.host ?? '')), formats).map((item) => ({
+      ...item,
+      requestedPaths: requested,
+      truncated,
+    }));
+    await this.audit(
+      me.username,
+      'config.build',
+      user.name,
+      `${paths} مسیر (${formats.join('،')})${truncated ? ' — محدودشده به قدرت' : ''}`,
+      ip,
+    );
+    return json({ ok: true, configs: built, truncated, saved: save });
   }
 
   private ctx(user: User, host: string): BuildContext {
@@ -1010,7 +1070,7 @@ export class AMINCKStore {
     };
   }
 
-  private autoBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+  private async autoBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
     const maxPaths = maxPathsFor(this.powerOf(me));
     const requested = clamp(Math.floor(Number(body.paths ?? this.settings!.defaultPaths)) || 1, 1, 200);
     const paths = Math.min(requested, maxPaths);
@@ -1023,44 +1083,65 @@ export class AMINCKStore {
       .filter((e) => !!e && Number(e.port) > 0)
       .slice(0, MAX_ENDPOINTS);
     if (ordered.length === 0) {
-      ordered = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults).filter((e) => Number(e.port) > 0);
+      const sorted = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults)
+        .filter((e) => Number(e.port) > 0);
+      const healthy = sorted.filter((e) => this.settings!.probeResults[e.id]?.ok);
+      // Prefer only measured-healthy routes. Fall back to known routes before
+      // the first probe so a fresh deployment remains immediately usable.
+      ordered = healthy.length > 0 ? healthy : sorted;
     }
     if (ordered.length === 0) {
-      return Promise.resolve(json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400));
+      return json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400);
     }
 
     const name = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
     const limits = sanitizeLimits(body);
-    const user = this.newUser(name, limits, body, 1);
-    user.speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS ? (body.speedPreset as SpeedPreset) : this.settings!.speedPreset;
+    const user = this.newUser(name.slice(0, 80), limits, body, 1);
+    user.speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS
+      ? (body.speedPreset as SpeedPreset)
+      : this.settings!.speedPreset;
     user.profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
-    user.speedPreset = 'god';
     user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
     this.usersCache.push(user);
-    return this.persistUsers()
-      .then(() => {
-        const host = String(body.reqHost ?? body.host ?? '');
-        const prev = this.settings!.antiDetect.multiPort;
-        const fronts = CLEAN_IP_CATALOG.slice(0, 8).map((c) => c.ip);
-        const tunneled: User = {
-          ...user,
-          routes: expandTunnelFronts(expandRoutesMultiPort(user.routes, this.settings!.tlsPorts), fronts, 200),
-        };
-        this.settings!.antiDetect.multiPort = false;
-        const built = buildFormats(this.ctx(tunneled, host), ['v2ray', 'raw', 'clash', 'singbox']);
-        this.settings!.antiDetect.multiPort = prev;
-        const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
-        const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
-        return this.audit(
-          me.username,
-          'config.auto_build',
-          user.name,
-          `ساخت اتومات GOD — ${paths} مسیر + آهنین ${ironCount}`,
-          ip,
-        ).then(() => json({ ok: true, user: { ...user }, configs: built, iron, subUrl: `https://${host}/sub/${user.token}` }));
-      });
+    await this.persistUsers();
+
+    const host = String(body.reqHost ?? body.host ?? '');
+    const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']).map((item) => ({
+      ...item,
+      requestedPaths: requested,
+      truncated: paths < requested,
+    }));
+    const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
+    const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
+    await this.audit(
+      me.username,
+      'config.auto_build',
+      user.name,
+      `ساخت اتومات ${user.speedPreset} — ${paths} مسیر سالم + آهنین ${ironCount}`,
+      ip,
+    );
+    return json({
+      ok: true,
+      user: { ...user },
+      configs: built,
+      iron,
+      selectedEndpoints: ordered.map((e) => e.id),
+      truncated: paths < requested,
+      subUrl: `https://${host}/sub/${user.token}`,
+    });
+  }
+
+  private async ironBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    const user = this.usersCache.find((u) => u.id === String(body.id ?? ''));
+    if (!user) return json({ error: 'not-found', message: 'مشترک پیدا نشد' }, 404);
+    if (user.routes.length === 0) return json({ error: 'no-routes', message: 'برای مشترک مسیری ساخته نشده' }, 400);
+    const count = clamp(Math.floor(Number(body.count ?? 1)) || 1, 1, 5);
+    const host = String(body.reqHost ?? body.host ?? '');
+    const iron = buildIronPack(this.ctx(user, host), count);
+    await this.audit(me.username, 'config.iron_build', user.name, `ساخت ${count} پروفایل آهنین`, ip);
+    return json({ ok: true, count: iron.length, iron });
   }
 
   // ------------------------------------------------------------- endpoints
@@ -1085,8 +1166,8 @@ export class AMINCKStore {
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) || host.length > 200) {
       return json({ error: 'bad-host', message: 'Endpoint معتبر نیست' }, 400);
     }
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      return json({ error: 'bad-port', message: 'پورت نامعتبر' }, 400);
+    if (!CLOUDFLARE_TLS_PORTS.includes(port)) {
+      return json({ error: 'bad-port', message: 'پورت باید یکی از پورت‌های HTTPS کلودفلر باشد' }, 400);
     }
     const s = this.settingsCache!;
     if (s.endpoints.length >= MAX_ENDPOINTS) {
@@ -1147,17 +1228,18 @@ export class AMINCKStore {
       if (sp in SPEED_PRESETS) s.speedPreset = sp as SpeedPreset;
     }
     if (patch.tlsPorts !== undefined) {
-      const ports = [...new Set((patch.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
-      if (ports.length === 0) return json({ error: 'bad-ports', message: 'حداقل یک پورت TLS لازم است' }, 400);
-      s.tlsPorts = ports.slice(0, 10);
+      const ports = [...new Set((patch.tlsPorts as unknown[]).map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))];
+      if (ports.length === 0) return json({ error: 'bad-ports', message: 'حداقل یک پورت TLS معتبر کلودفلر لازم است' }, 400);
+      s.tlsPorts = ports;
     }
-    if (patch.fakeDomains !== undefined && Array.isArray(patch.fakeDomains)) {
-      const domains = (patch.fakeDomains as unknown[])
+    if (patch.hostAliases !== undefined && Array.isArray(patch.hostAliases)) {
+      const knownHosts = new Set(s.endpoints.map((e) => e.host));
+      const domains = (patch.hostAliases as unknown[])
         .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
-        .filter((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d) && d.length <= 200)
+        .filter((d) => knownHosts.has(d))
         .slice(0, 30);
-      if (domains.length === 0) return json({ error: 'bad-domains', message: 'حداقل یک دامنه جعلی معتبر لازم است' }, 400);
-      s.fakeDomains = domains;
+      s.hostAliases = domains;
+      if (domains.length === 0) s.antiDetect.hostCamouflage = false;
     }
     if (patch.antiDetect !== undefined && typeof patch.antiDetect === 'object' && patch.antiDetect) {
       const a = patch.antiDetect as Partial<AntiDetectSettings>;

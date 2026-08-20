@@ -3,7 +3,7 @@
  *
  * Routing:
  *   GET  /healthz            public health check (CORS)
- *   GET  /                   API-only landing (no full admin UI)
+ *   GET  /                   Persian RTL browser admin panel
  *   GET  /app.js /app.css    minimal static assets
  *   POST /api/login …        JSON admin API (proxied to the Durable Object)
  *   POST /api/hot-update     one-click config regen without domain downtime
@@ -35,7 +35,7 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINCK GOD Edition', ts: Date.now() }), {
+        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', ts: Date.now() }), {
           headers: { 'content-type': 'application/json' },
         }),
         { cors: true },
@@ -43,13 +43,13 @@ export default {
     }
 
     if (request.method === 'GET' && (path === '/' || path === '/app.js' || path === '/app.css')) {
-      // API-only landing: static assets from public/ (generated from src/ui.ts)
-      // still go through the Worker so security headers apply.
+      // Static panel assets are generated from src/ui.ts and still go through
+      // the Worker so security headers apply.
       if (env.ASSETS) {
         const assetRes = await env.ASSETS.fetch(request);
         if (assetRes.status !== 404) return withHeaders(assetRes, {});
       }
-      if (path === '/') return withHeaders(html(uiShell('AMINCK GOD Edition')), {});
+      if (path === '/') return withHeaders(html(uiShell('AMINNOVA')), {});
       if (path === '/app.js') {
         return withHeaders(
           new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
@@ -72,7 +72,7 @@ export default {
     }
 
     // Anti-detect path jitter: slug length 6–12
-    if (path.match(/^\/[et][a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
+    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
       return handleWs(request, env, ctx, host, path);
     }
 
@@ -120,10 +120,6 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
 
   if (path === '/api/launch' && (request.method === 'GET' || request.method === 'POST')) {
     return withHeaders(json(launchInfo()), {});
-  }
-
-  if (path === '/api/cf-bootstrap' && request.method === 'POST') {
-    return handleCfBootstrap(request);
   }
 
   if (path === '/api/logout' && request.method === 'POST') {
@@ -308,7 +304,7 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
     uuid?: string;
     policy?: {
       dohList: string[];
-      tlsPorts: number[];
+      tcpPorts: number[];
       tcpRetries: number;
       connectTimeoutMs: number;
       maxEarlyData: number;
@@ -331,6 +327,11 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
   });
   server.addEventListener('close', () => bridge.shutdown());
   server.addEventListener('error', () => bridge.shutdown());
+  const earlyData = decodeWsEarlyData(
+    request.headers.get('sec-websocket-protocol'),
+    conn.policy!.maxEarlyData,
+  );
+  if (earlyData) bridge.feed(earlyData);
   ctx.waitUntil(bridge.finished());
 
   return withHeaders(new Response(null, { status: 101, webSocket: client }), {});
@@ -352,7 +353,7 @@ class WsVlessBridge {
     private uuid: string,
     private policy: {
       dohList: string[];
-      tlsPorts: number[];
+      tcpPorts: number[];
       tcpRetries: number;
       connectTimeoutMs: number;
       maxEarlyData: number;
@@ -378,7 +379,11 @@ class WsVlessBridge {
         this.close(1002, parsed.reason);
         return;
       }
-      const decision = classifyTarget(parsed.target, this.policy.tlsPorts);
+      if (parsed.uuid.toLowerCase() !== this.uuid.toLowerCase()) {
+        this.close(1008, 'uuid-mismatch');
+        return;
+      }
+      const decision = classifyTarget(parsed.target, this.policy.tcpPorts);
       if (!decision.allowed) {
         this.close(1008, decision.reason);
         return;
@@ -405,7 +410,7 @@ class WsVlessBridge {
       },
       hooks: makeSessionHooks(this.policy),
       policy: {
-        tlsPorts: this.policy.tlsPorts,
+        tcpPorts: this.policy.tcpPorts,
         dohList: this.policy.dohList,
         tcpRetries: this.policy.tcpRetries,
         connectTimeoutMs: this.policy.connectTimeoutMs,
@@ -444,9 +449,24 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
+/** Decode Xray-style base64url WebSocket early data, rejecting large headers. */
+export function decodeWsEarlyData(value: string | null, maxBytes: number): Uint8Array | null {
+  if (!value || value.includes(',') || value.length > Math.max(32, maxBytes * 2)) return null;
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  try {
+    const binary = atob(padded);
+    if (binary.length === 0 || binary.length > maxBytes) return null;
+    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
 function makeSessionHooks(policy: {
   dohList: string[];
-  tlsPorts: number[];
+  tcpPorts: number[];
   tcpRetries: number;
   connectTimeoutMs: number;
   maxEarlyData: number;
@@ -461,11 +481,12 @@ function makeSessionHooks(policy: {
         ip = resolved;
       }
       const { connect } = await import('cloudflare:sockets');
-      // Connect via the original hostname so the TLS SNI is the real
-      // destination domain (never a fake/third-party SNI).
+      // VLESS carries the client's own TLS handshake. The Worker must open a
+      // raw TCP socket; wrapping it in another TLS layer breaks HTTPS. Dial the
+      // public DoH-validated IP to avoid a check/connect DNS-rebinding gap.
       const socket = connect(
-        { hostname: host, port },
-        { secureTransport: 'on', allowHalfOpen: false },
+        { hostname: ip, port },
+        { secureTransport: 'off', allowHalfOpen: false },
       );
       return socketAdapter(socket);
     },
@@ -564,130 +585,18 @@ async function runCronProbe(env: Env): Promise<void> {
 // helpers
 // ---------------------------------------------------------------------------
 
-const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
-const CF_TOKEN_URL =
-  'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' +
-  encodeURIComponent(
-    JSON.stringify([
-      { key: 'workers_scripts', type: 'edit' },
-      { key: 'account_settings', type: 'read' },
-    ]),
-  ) +
-  '&name=AMINCK-Nova-Edge';
+const REPO = 'https://github.com/amingangmanatgh2-hash/IR-penalty-';
 const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
 
 function launchInfo(): Record<string, unknown> {
   return {
     ok: true,
     repo: REPO,
-    tokenUrl: CF_TOKEN_URL,
     deployUrl: CF_DEPLOY_URL,
     dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
-    workerName: 'aminck-nova-god-v2',
-    hint: 'توکن را بساز، ورکر را با تنظیمات آماده Deploy کن، بعد توکن را اینجا بچسبان.',
+    workerName: 'aminnova',
+    hint: 'Deploy رسمی را باز کنید؛ توکن کلودفلر هرگز داخل پنل وارد یا ارسال نمی‌شود.',
   };
-}
-
-async function handleCfBootstrap(request: Request): Promise<Response> {
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const token = String(body.token ?? '').trim();
-  const workerName = String(body.workerName ?? 'aminck-nova-god-v2')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '')
-    .slice(0, 63) || 'aminck-nova-god-v2';
-  if (!token || token.length < 20 || token.length > 200) {
-    return withHeaders(json({ error: 'bad-token', message: 'توکن کلودفلر نامعتبر است' }, 400), {});
-  }
-  const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
-  try {
-    const accRes = await fetch('https://api.cloudflare.com/client/v4/accounts?per_page=20', {
-      headers: auth,
-      signal: AbortSignal.timeout(12000),
-    });
-    const accJson = (await accRes.json().catch(() => ({}))) as {
-      success?: boolean;
-      errors?: Array<{ message?: string }>;
-      result?: Array<{ id: string; name: string }>;
-    };
-    if (!accRes.ok || !accJson.success || !accJson.result?.length) {
-      return withHeaders(
-        json(
-          {
-            error: 'cf-auth',
-            message: accJson.errors?.[0]?.message || 'توکن قبول نشد. Workers:Edit و Account:Read لازم است',
-          },
-          401,
-        ),
-        {},
-      );
-    }
-    const account = accJson.result[0]!;
-    const scriptsRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/scripts`,
-      { headers: auth, signal: AbortSignal.timeout(12000) },
-    );
-    const scriptsJson = (await scriptsRes.json().catch(() => ({}))) as {
-      result?: Array<{ id: string }>;
-    };
-    const names = (scriptsJson.result ?? []).map((s) => s.id);
-    const found = names.includes(workerName);
-    const subRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/subdomain`,
-      { headers: auth, signal: AbortSignal.timeout(8000) },
-    );
-    const subJson = (await subRes.json().catch(() => ({}))) as { result?: { subdomain?: string } };
-    const sub = subJson.result?.subdomain || '';
-    const url = sub ? `https://${workerName}.${sub}.workers.dev` : '';
-
-    if (found && typeof body.adminPassword === 'string' && body.adminPassword.length >= 10) {
-      await putWorkerSecret(account.id, workerName, token, 'ADMIN_PASSWORD', String(body.adminPassword));
-      const sess =
-        typeof body.sessionSecret === 'string' && body.sessionSecret.length >= 16
-          ? String(body.sessionSecret)
-          : crypto.randomUUID() + crypto.randomUUID();
-      await putWorkerSecret(account.id, workerName, token, 'SESSION_SECRET', sess);
-    }
-
-    return withHeaders(
-      json({
-        ok: true,
-        accountId: account.id,
-        accountName: account.name,
-        workerName,
-        found,
-        workers: names.slice(0, 30),
-        url,
-        ready: found && !!url,
-        message: found
-          ? 'ورکر پیدا شد — حدود ۱۰ ثانیه دیگر پنل آماده است'
-          : 'توکن درست است. اول دکمه ساخت ورکر را بزن (تنظیمات از قبل پر است) بعد دوباره وصل کن',
-        deployUrl: CF_DEPLOY_URL,
-        tokenUrl: CF_TOKEN_URL,
-      }),
-      {},
-    );
-  } catch {
-    return withHeaders(json({ error: 'cf-timeout', message: 'ارتباط با کلودفلر برقرار نشد' }, 504), {});
-  }
-}
-
-async function putWorkerSecret(
-  accountId: string,
-  workerName: string,
-  token: string,
-  name: string,
-  value: string,
-): Promise<void> {
-  await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/secrets`,
-    {
-      method: 'PUT',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name, text: value, type: 'secret_text' }),
-      signal: AbortSignal.timeout(10000),
-    },
-  ).catch(() => undefined);
 }
 
 function json(data: unknown, status = 200): Response {
@@ -719,5 +628,7 @@ function withHeaders(resp: Response, extra: { cors?: boolean }): Response {
     headers.set('access-control-allow-methods', 'GET, OPTIONS');
     headers.set('access-control-max-age', '86400');
   }
-  return new Response(resp.body, { status: resp.status, headers });
+  const init: ResponseInit = { status: resp.status, statusText: resp.statusText, headers };
+  if (resp.webSocket) init.webSocket = resp.webSocket;
+  return new Response(resp.body, init);
 }
