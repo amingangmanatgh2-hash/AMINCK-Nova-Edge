@@ -36,6 +36,7 @@ import {
   DEFAULT_HOST_ALIASES,
   CLOUDFLARE_TLS_PORTS,
   MAX_AUDIT_EVENTS,
+  MAX_BATCH_SUBSCRIPTIONS,
   MAX_ENDPOINTS,
   OUTBOUND_TCP_PORTS,
   POWER_LEVELS,
@@ -43,7 +44,7 @@ import {
   SPEED_PRESETS,
   type ProfileMode,
 } from './types';
-import { clamp, newId, randomHex, signSessionId, sleep, verifyPassword } from './utils';
+import { clamp, newId, randomHex, sleep, verifyPassword } from './utils';
 import { hashPassword } from './utils';
 import {
   BuildContext,
@@ -60,7 +61,6 @@ import {
 
 export interface Env {
   ADMIN_PASSWORD?: string;
-  SESSION_SECRET?: string;
   AMINCK_STORE: DurableObjectNamespace;
   /** Workers Static Assets binding (present when wrangler assets config is active). */
   ASSETS?: Fetcher;
@@ -490,12 +490,12 @@ export class AMINCKStore {
   // -------------------------------------------------------------- login
 
   private async intLogin(username: string, password: string, ip: string): Promise<Response> {
-    if ((this.env.ADMIN_PASSWORD ?? '').length < 10 || (this.env.SESSION_SECRET ?? '').length < 32) {
+    if ((this.env.ADMIN_PASSWORD ?? '').length < 10) {
       return json(
         {
           ok: false,
           reason: 'setup-required',
-          message: 'ADMIN_PASSWORD و SESSION_SECRET باید در Secrets ورکر تنظیم شوند',
+          message: 'ADMIN_PASSWORD باید هنگام Deploy به‌عنوان Secret تنظیم شود',
         },
         503,
       );
@@ -552,7 +552,7 @@ export class AMINCKStore {
       await this.audit(admin.username, 'admin.login', admin.username, 'ورود موفق', ip);
       return json({
         ok: true,
-        session: await signSessionId(this.env.SESSION_SECRET ?? '', sessionId),
+        session: sessionId,
         me: this.meOf(admin),
       });
     });
@@ -793,17 +793,23 @@ export class AMINCKStore {
 
     if (route === 'backup') {
       if (!need('backup:export')) return deny();
-      await this.audit(me.username, 'backup.export', 'backup', 'صدور بکاپ کامل', ip);
+      await this.audit(me.username, 'backup.export', 'backup', me.role === 'owner' ? 'صدور بکاپ کامل' : 'صدور بکاپ بدون رکورد ادمین‌ها', ip);
       return json({
-        app: 'AMINCK GOD Edition',
-        version: 'AMINCK GOD Edition',
+        app: 'AMINNOVA',
+        version: 2,
         exportedAt: Date.now(),
         settings: this.settingsCache,
         users: this.usersCache,
-        // Full backup includes PBKDF2 hashes so a restore can keep passwords.
-        admins: this.adminsCache,
+        // Staff hashes are exported for disaster recovery; owner auth always
+        // remains the ADMIN_PASSWORD secret of the new deployment.
+        admins: me.role === 'owner' ? this.adminsCache.filter((a) => a.role !== 'owner') : [],
         audit: this.auditCache.slice(-500),
       });
+    }
+
+    if (route === 'restore') {
+      if (me.role !== 'owner') return deny();
+      return this.restoreBackup(body.backup, String(body.reqHost ?? ''), me, ip);
     }
 
     // One-click hot update: regenerate all user paths / anti-detect without
@@ -859,6 +865,212 @@ export class AMINCKStore {
       rebuiltUsers: rebuilt,
       domainUnchanged: true,
       message: 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
+    });
+  }
+
+  /** Restore a portable backup and bind every route to the new Worker host. */
+  private async restoreBackup(raw: unknown, reqHost: string, me: audience, ip: string): Promise<Response> {
+    if (!raw || typeof raw !== 'object') return json({ error: 'bad-backup', message: 'فایل بکاپ معتبر نیست' }, 400);
+    const backup = raw as Record<string, unknown>;
+    const supportedApp = backup.app === 'AMINNOVA' || backup.app === 'AMINCK GOD Edition';
+    if (!supportedApp || !Array.isArray(backup.users) || !backup.settings || typeof backup.settings !== 'object') {
+      return json({ error: 'bad-backup', message: 'ساختار فایل بکاپ AMINNOVA معتبر نیست' }, 400);
+    }
+    const rawUsers = backup.users;
+    if (rawUsers.length > 5000) return json({ error: 'too-many-users', message: 'حداکثر ۵۰۰۰ مشترک قابل بازیابی است' }, 422);
+
+    const settings = normalizeSettings(backup.settings as PanelSettings);
+    const defaults = defaultSettings();
+    settings.title = String(settings.title ?? '').trim().slice(0, 80) || defaults.title;
+    settings.brand = String(settings.brand ?? '').trim().slice(0, 40) || defaults.brand;
+    settings.supportUrl = String(settings.supportUrl ?? '').trim().slice(0, 300);
+    settings.healthUrl = /^https?:\/\//.test(String(settings.healthUrl ?? ''))
+      ? String(settings.healthUrl).slice(0, 300)
+      : '';
+    settings.doh = isSafeDoH(String(settings.doh ?? '')) ? String(settings.doh) : defaults.doh;
+    settings.dohAlt = Array.isArray(settings.dohAlt)
+      ? settings.dohAlt.map(String).filter(isSafeDoH).slice(0, 6)
+      : defaults.dohAlt;
+    const settingTemplate = validateNameTemplate(String(settings.configNameTemplate ?? ''));
+    settings.configNameTemplate = settingTemplate.ok ? settingTemplate.value : defaults.configNameTemplate;
+    settings.defaultPaths = clamp(Math.floor(Number(settings.defaultPaths)) || defaults.defaultPaths, 1, 200);
+    settings.updateIntervalHours = clamp(Math.floor(Number(settings.updateIntervalHours)) || defaults.updateIntervalHours, 1, 720);
+    settings.fingerprint = ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(settings.fingerprint))
+      ? settings.fingerprint
+      : defaults.fingerprint;
+    settings.profileMode = ['auto', 'fallback', 'balance'].includes(String(settings.profileMode))
+      ? settings.profileMode
+      : defaults.profileMode;
+    settings.speedPreset = String(settings.speedPreset) in SPEED_PRESETS ? settings.speedPreset : defaults.speedPreset;
+    settings.configGeneration = clamp(Math.floor(Number(settings.configGeneration)) || 1, 1, 1_000_000);
+    const importedAnti = settings.antiDetect && typeof settings.antiDetect === 'object' ? settings.antiDetect : defaults.antiDetect;
+    const safeRange = (value: unknown, fallback: [number, number], ceiling: number): [number, number] => {
+      if (!Array.isArray(value) || value.length !== 2) return fallback;
+      const lo = clamp(Math.floor(Number(value[0])) || fallback[0], 1, ceiling);
+      const hi = clamp(Math.floor(Number(value[1])) || fallback[1], lo, ceiling);
+      return [lo, hi];
+    };
+    settings.antiDetect = {
+      pathPadding: typeof importedAnti.pathPadding === 'boolean' ? importedAnti.pathPadding : defaults.antiDetect.pathPadding,
+      pathJitter: typeof importedAnti.pathJitter === 'boolean' ? importedAnti.pathJitter : defaults.antiDetect.pathJitter,
+      fragment: typeof importedAnti.fragment === 'boolean' ? importedAnti.fragment : defaults.antiDetect.fragment,
+      hostCamouflage: false,
+      multiPort: false,
+      fragmentLength: safeRange(importedAnti.fragmentLength, defaults.antiDetect.fragmentLength, 1500),
+      fragmentInterval: safeRange(importedAnti.fragmentInterval, defaults.antiDetect.fragmentInterval, 500),
+    };
+
+    const host = reqHost.trim().toLowerCase().replace(/:\d+$/, '');
+    const validHost = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host);
+    if (!validHost) return json({ error: 'bad-host', message: 'دامنه Deploy جدید معتبر نیست' }, 400);
+    const endpoint: Endpoint = {
+      id: newId(),
+      label: `${host}:443`,
+      host,
+      port: 443,
+      createdAt: Date.now(),
+    };
+    settings.endpoints = [endpoint];
+    settings.probeResults = {};
+    settings.lastProbeAt = 0;
+    settings.hostAliases = [];
+    settings.tlsPorts = [443];
+    settings.antiDetect = { ...settings.antiDetect, hostCamouflage: false, multiPort: false };
+
+    const finiteFloor = (value: unknown, fallback = 0): number => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), Number.MAX_SAFE_INTEGER) : fallback;
+    };
+    const cleanText = (value: unknown, max: number): string =>
+      String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
+    const ids = new Set<string>();
+    const uuids = new Set<string>();
+    const tokens = new Set<string>();
+    const users: User[] = [];
+    for (const value of rawUsers) {
+      if (!value || typeof value !== 'object') continue;
+      const u = value as Record<string, unknown>;
+      const id = String(u.id ?? '').toLowerCase();
+      const uuid = String(u.uuid ?? '').toLowerCase();
+      const token = String(u.token ?? '').toLowerCase();
+      if (!/^[0-9a-f]{24}$/.test(id) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(uuid) || !/^[0-9a-f]{64}$/.test(token)) continue;
+      if (ids.has(id) || uuids.has(uuid) || tokens.has(token)) continue;
+      const rawRoutes = Array.isArray(u.routes) ? u.routes : [];
+      const routePattern = new RegExp(`^/e[a-z0-9]{6,12}${id}$`, 'i');
+      let routes: Route[] = rawRoutes
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && routePattern.test(String((r as Record<string, unknown>).path ?? '')))
+        .slice(0, 200)
+        .map((r, i) => ({
+          path: String(r.path),
+          endpointId: endpoint.id,
+          host: endpoint.host,
+          port: 443,
+          index: i + 1,
+          sni: endpoint.host,
+          wsHost: endpoint.host,
+          padding: typeof r.padding === 'string' ? r.padding.slice(0, 48) : undefined,
+        }));
+      const templateResult = validateNameTemplate(String(u.configNameTemplate ?? '').trim() || DEFAULT_NAME_TEMPLATE);
+      const limits = sanitizeLimits(u);
+      const user: User = {
+        id,
+        name: cleanText(u.name, 80) || 'مشترک بازیابی',
+        uuid,
+        token,
+        routes,
+        limitBytes: limits.limitBytes,
+        limitSeconds: limits.limitSeconds,
+        maxConnections: limits.maxConnections,
+        limitRequests: limits.limitRequests,
+        requestCount: finiteFloor(u.requestCount),
+        active: u.active !== false,
+        speedPreset: String(u.speedPreset) in SPEED_PRESETS ? (String(u.speedPreset) as SpeedPreset) : settings.speedPreset,
+        profileMode: ['auto', 'fallback', 'balance'].includes(String(u.profileMode))
+          ? (String(u.profileMode) as ProfileMode)
+          : settings.profileMode,
+        fingerprint: ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(u.fingerprint))
+          ? (String(u.fingerprint) as User['fingerprint'])
+          : null,
+        configNameTemplate: templateResult.ok ? templateResult.value : null,
+        note: cleanText(u.note, 1000),
+        createdAt: finiteFloor(u.createdAt, Date.now()),
+        expiresAt: finiteFloor(u.expiresAt),
+        usageBytes: finiteFloor(u.usageBytes),
+        lastSeenAt: finiteFloor(u.lastSeenAt),
+        lastSubAt: finiteFloor(u.lastSubAt),
+      };
+      if (routes.length === 0) {
+        routes = buildRoutes(user.id, planRoutes([endpoint], clamp(rawRoutes.length || settings.defaultPaths, 1, 200)), settings);
+        user.routes = routes;
+      }
+      ids.add(id);
+      uuids.add(uuid);
+      tokens.add(token);
+      users.push(user);
+    }
+
+    if (rawUsers.length > 0 && users.length === 0) {
+      return json({ error: 'empty-restore', message: 'هیچ مشترک معتبری داخل بکاپ نبود' }, 400);
+    }
+
+    const owner = this.adminsCache.find((a) => a.role === 'owner') ?? ownerRecord();
+    const rawAdmins = Array.isArray(backup.admins) ? backup.admins : [];
+    const staffNames = new Set([owner.username.toLowerCase()]);
+    const staffIds = new Set([owner.id.toLowerCase()]);
+    const staff: Admin[] = rawAdmins
+      .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+      .filter((a) => ['admin', 'operator', 'support'].includes(String(a.role)))
+      .filter((a) => /^[a-z0-9_.]{3,32}$/.test(String(a.username ?? '')))
+      .filter((a) => /^[0-9a-f]{32}$/i.test(String(a.salt ?? '')) && /^[0-9a-f]{64}$/i.test(String(a.hash ?? '')))
+      .filter((a) => Number.isInteger(Number(a.iterations)) && Number(a.iterations) >= 100_000 && Number(a.iterations) <= 1_000_000)
+      .filter((a) => {
+        const username = String(a.username).toLowerCase();
+        const id = String(a.id ?? '').toLowerCase();
+        if (staffNames.has(username) || (/^[0-9a-f]{24}$/.test(id) && staffIds.has(id))) return false;
+        staffNames.add(username);
+        if (/^[0-9a-f]{24}$/.test(id)) staffIds.add(id);
+        return true;
+      })
+      .slice(0, 100)
+      .map((a) => ({
+        id: /^[0-9a-f]{24}$/i.test(String(a.id ?? '')) ? String(a.id).toLowerCase() : newId(),
+        username: String(a.username).toLowerCase(),
+        role: String(a.role) as Exclude<AdminRole, 'owner'>,
+        power: ['limited', 'normal', 'strong', 'ultra'].includes(String(a.power)) ? (String(a.power) as PowerLevel) : 'limited',
+        active: a.active !== false,
+        salt: String(a.salt).toLowerCase(),
+        hash: String(a.hash).toLowerCase(),
+        iterations: Number(a.iterations),
+        createdAt: finiteFloor(a.createdAt, Date.now()),
+        lastLoginAt: Number.isFinite(Number(a.lastLoginAt)) && Number(a.lastLoginAt) > 0 ? finiteFloor(a.lastLoginAt) : null,
+      }));
+
+    const oldKeys = this.usersCache.map((u) => K.user(u.id));
+    const admins = [owner, ...staff];
+    const sessions = this.sessionsCache.filter((s) => s.adminId === owner.id);
+    // Commit the replacement as one Durable Object transaction so an
+    // interrupted restore cannot leave a half-written subscriber index.
+    await this.state.storage.transaction(async (txn) => {
+      if (oldKeys.length > 0) await txn.delete(oldKeys);
+      await txn.put(K.settings, settings);
+      await txn.put(K.userIndex, users.map((u) => u.id));
+      for (const user of users) await txn.put(K.user(user.id), user);
+      await txn.put(K.admins, admins);
+      await txn.put(K.sessions, sessions);
+    });
+    this.settingsCache = settings;
+    this.usersCache = users;
+    this.adminsCache = admins;
+    this.sessionsCache = sessions;
+    await this.audit(me.username, 'backup.restore', 'backup', `بازیابی ${users.length} مشترک روی ${endpoint.host}`, ip);
+    return json({
+      ok: true,
+      restoredUsers: users.length,
+      skippedUsers: rawUsers.length - users.length,
+      restoredAdmins: staff.length,
+      skippedAdmins: rawAdmins.length - staff.length,
+      endpoint: endpoint.host,
+      message: 'بکاپ بازیابی شد؛ Token و UUID مشترک‌ها حفظ و مسیرها به دامنه جدید متصل شدند',
     });
   }
 
@@ -1094,42 +1306,69 @@ export class AMINCKStore {
       return json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400);
     }
 
-    const name = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
+    const baseName = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
+    const subscriptionCount = clamp(
+      Math.floor(Number(body.subscriptionCount ?? 1)) || 1,
+      1,
+      MAX_BATCH_SUBSCRIPTIONS,
+    );
     const limits = sanitizeLimits(body);
-    const user = this.newUser(name.slice(0, 80), limits, body, 1);
-    user.speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS
+    const speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS
       ? (body.speedPreset as SpeedPreset)
       : this.settings!.speedPreset;
-    user.profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
+    const profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
-    user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
-    this.usersCache.push(user);
+    const users: User[] = [];
+    for (let i = 0; i < subscriptionCount; i++) {
+      const suffix = subscriptionCount > 1 ? `-${String(i + 1).padStart(2, '0')}` : '';
+      const user = this.newUser(`${baseName}${suffix}`.slice(0, 80), limits, body, 1);
+      user.speedPreset = speedPreset;
+      user.profileMode = profileMode;
+      user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
+      users.push(user);
+    }
+    this.usersCache.push(...users);
     await this.persistUsers();
 
     const host = String(body.reqHost ?? body.host ?? '');
-    const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']).map((item) => ({
+    const first = users[0]!;
+    // Keep full generated payloads for the first subscription for backward
+    // compatibility. Every subscription has its own format URLs below.
+    const built = buildFormats(this.ctx(first, host), ['v2ray', 'raw', 'clash', 'singbox']).map((item) => ({
       ...item,
       requestedPaths: requested,
       truncated: paths < requested,
     }));
     const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
-    const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
+    const iron = ironCount > 0 ? buildIronPack(this.ctx(first, host), ironCount) : [];
+    const subscriptions = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      token: user.token,
+      paths: user.routes.length,
+      subUrl: `https://${host}/sub/${user.token}`,
+      clashUrl: `https://${host}/sub/${user.token}/clash`,
+      singboxUrl: `https://${host}/sub/${user.token}/singbox`,
+    }));
     await this.audit(
       me.username,
       'config.auto_build',
-      user.name,
-      `ساخت اتومات ${user.speedPreset} — ${paths} مسیر سالم + آهنین ${ironCount}`,
+      baseName.slice(0, 80),
+      `ساخت اتومات ${subscriptionCount} ساب ${speedPreset} — هرکدام ${paths} مسیر + آهنین ${ironCount}`,
       ip,
     );
     return json({
       ok: true,
-      user: { ...user },
+      user: { ...first },
+      users: users.map((user) => ({ ...user })),
+      subscriptions,
+      subscriptionCount,
       configs: built,
       iron,
       selectedEndpoints: ordered.map((e) => e.id),
       truncated: paths < requested,
-      subUrl: `https://${host}/sub/${user.token}`,
+      subUrl: subscriptions[0]!.subUrl,
     });
   }
 

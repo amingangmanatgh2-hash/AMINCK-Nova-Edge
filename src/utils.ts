@@ -76,42 +76,8 @@ export function utf8(s: string): Uint8Array {
 }
 
 // ---------------------------------------------------------------------------
-// Crypto: HMAC-SHA256 sessions and PBKDF2-SHA256 passwords
+// Crypto: PBKDF2-SHA256 staff passwords
 // ---------------------------------------------------------------------------
-
-export async function hmacSha256(key: string, data: string): Promise<string> {
-  const keyBuf = await crypto.subtle.importKey(
-    'raw',
-    utf8(key),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', keyBuf, utf8(data));
-  return toHex(new Uint8Array(sig));
-}
-
-/** Sign a session id: `id.signature` where signature = HMAC-SHA256(secret, id). */
-export async function signSessionId(secret: string, id: string): Promise<string> {
-  return `${id}.${await hmacSha256(secret, id)}`;
-}
-
-/** Verify + parse a signed session cookie. Returns the session id or null. */
-export async function verifySessionId(
-  secret: string,
-  cookieValue: string | null | undefined,
-): Promise<string | null> {
-  if (!cookieValue) return null;
-  const dot = cookieValue.lastIndexOf('.');
-  if (dot <= 0) return null;
-  const id = cookieValue.slice(0, dot);
-  const sig = cookieValue.slice(dot + 1);
-  const expected = await hmacSha256(secret, id);
-  if (expected.length !== sig.length) return null;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
-  return diff === 0 ? id : null;
-}
 
 export const PBKDF2_ITERATIONS = 210_000;
 

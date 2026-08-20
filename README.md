@@ -12,7 +12,8 @@
 - ورود مالک و ادمین‌های چندنقشی با Permissionهای Backend
 - ساخت، ویرایش، فعال/غیرفعال و حذف مشترک
 - حجم، زمان، اتصال همزمان و تعداد درخواست ساب؛ مقدار `0` یعنی نامحدود
-- انتخاب ۱ تا ۲۰۰ مسیر در هر Subscription (با سقف نقش ادمین)
+- ساخت دسته‌ای ۱، ۲، ۳، ۵ یا ۱۰ ساب مستقل با یک کلیک
+- انتخاب ۱ تا ۲۰۰ کانفیگ داخل هر Subscription (با سقف نقش ادمین)
 - قالب نام با `{brand}`، `{app}`، `{user}`، `{profile}`، `{index}`، `{endpoint}` و `{port}`
 - نام پیش‌فرض دارای برند **AMINCK**
 - خروجی V2Ray Base64، Raw VLESS، Clash Meta و sing-box
@@ -31,26 +32,21 @@
 - UDP فقط DNS/53 از طریق DoH و Failover Resolver
 - جلوگیری از مقصد خصوصی/Metadata، SMTP و پورت‌های خارج از Allow-list
 - شمارش تقریبی مصرف، نشست زنده، انقضا و سقف درخواست
-- Audit log، Backup JSON، چرخش UUID/Token و Hot Update مسیرها
-- Session امضاشده، PBKDF2، Lockout، Same-Origin و Security Headerها
+- Audit log، Backup/Restore قابل حمل، چرخش UUID/Token و Hot Update مسیرها
+- Session تصادفی ۲۵۶ بیتی، PBKDF2، Lockout، Same-Origin و Security Headerها
 - مانیفست داخل پنل با **۲۰۰+ کنترل و قابلیت پیاده‌سازی‌شده**
 
 ## نصب سریع و امن
 
 ### روش ۱: Deploy رسمی
 
-روی دکمهٔ بالا بزنید و Repository را در حساب Cloudflare خود Deploy کنید. سپس در Dashboard ورکر، این دو Secret را بسازید:
+روی دکمهٔ بالا بزنید. Wizard رسمی Cloudflare از روی `.dev.vars.example` فقط یک مورد از شما می‌پرسد:
 
 | Secret | مقدار |
 |---|---|
-| `ADMIN_PASSWORD` | رمز مالک، حداقل ۱۰ کاراکتر |
-| `SESSION_SECRET` | رشتهٔ تصادفی حداقل ۳۲ کاراکتر |
+| `ADMIN_PASSWORD` | رمز ورود مالک با نام کاربری `AMINCK`؛ حداقل ۱۰ کاراکتر |
 
-ساخت مقدار مناسب برای `SESSION_SECRET`:
-
-```bash
-openssl rand -hex 32
-```
+بعد از اتمام Deploy، URL ورکر را باز کنید، وارد شوید و دکمهٔ **ساخت اتومات ساب** را بزنید. Durable Object، Assets، Cron و Endpoint اولیه خودکار Provision می‌شوند و تنظیم دستی D1/KV لازم نیست. [Deploy Buttonهای Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) از Secretهای تعریف‌شده در `.dev.vars.example` پشتیبانی می‌کنند.
 
 > توکن Cloudflare را داخل صفحهٔ یک Worker عمومی Paste نکنید. AMINNOVA عمداً فرم دریافت توکن ندارد.
 
@@ -62,7 +58,6 @@ cd IR-penalty-
 npm ci
 npx wrangler login
 npx wrangler secret put ADMIN_PASSWORD
-npx wrangler secret put SESSION_SECRET
 npm run deploy
 ```
 
@@ -73,7 +68,6 @@ npm run deploy
 - `CLOUDFLARE_API_TOKEN` با حداقل دسترسی Workers Scripts: Edit
 - `CLOUDFLARE_ACCOUNT_ID`
 - `ADMIN_PASSWORD`
-- `SESSION_SECRET`
 
 سپس Workflow **Deploy AMINNOVA** را دستی اجرا کنید. Push به `main` نیز Deploy را اجرا می‌کند.
 
@@ -81,11 +75,12 @@ npm run deploy
 
 1. URL ورکر را باز کنید.
 2. نام کاربری مالک `AMINCK` و مقدار `ADMIN_PASSWORD` را وارد کنید.
-3. در تب **پینگ**، Custom Domainهای Route‌شده به همین Worker را اضافه کنید.
-4. Probe را اجرا کنید؛ ساخت اتومات Endpointهای سالم را جلو می‌آورد.
-5. در داشبورد نام ساب، تعداد مسیر و تعداد پروفایل آهنین را انتخاب کنید.
-6. محدودیت‌ها را وارد کنید یا دکمهٔ `∞ نامحدود` را بزنید.
-7. لینک اصلی ساب یا لینک Clash/sing-box را کپی کنید.
+3. در داشبورد تعداد ساب مستقل، تعداد کانفیگ داخل هر ساب و تعداد پروفایل آهنین را انتخاب کنید.
+4. محدودیت‌ها را وارد کنید یا دکمهٔ `∞ نامحدود` را بزنید.
+5. **ساخت اتومات ساب** را بزنید؛ پنل Probe و انتخاب Endpoint سالم را خودش انجام می‌دهد و در Deploy تازه از همان hostname ورکر استفاده می‌کند.
+6. لینک اصلی ساب یا لینک Clash/sing-box را کپی کنید.
+
+افزودن Custom Domain در تب **پینگ** اختیاری است و فقط وقتی لازم می‌شود که دامنهٔ متعلق به خودتان را قبلاً به همین Worker Route کرده باشید.
 
 ## لینک‌های Subscription
 
@@ -110,7 +105,7 @@ curl -X POST https://YOUR_WORKER/api/login \
   -c cookies.txt
 ```
 
-سپس یک مشترک با پنج مسیر و سه پروفایل آهنین بسازید:
+سپس سه ساب مستقل، هرکدام با پنج کانفیگ، و سه پروفایل آهنین برای ساب اول بسازید:
 
 ```bash
 curl -X POST https://YOUR_WORKER/api/auto-build \
@@ -118,6 +113,7 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
   -b cookies.txt \
   -d '{
     "name":"VIP-Ali",
+    "subscriptionCount":3,
     "paths":5,
     "ironCount":3,
     "speedPreset":"god",
@@ -129,6 +125,18 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
     "limitRequests":0
   }'
 ```
+
+
+## پایداری و بازیابی بعد از حذف حساب Cloudflare
+
+حذف کامل حساب Cloudflare یعنی Worker، Durable Object و دامنه `workers.dev` آن حساب نیز حذف می‌شوند؛ هیچ کدی داخل همان حساب نمی‌تواند بعد از حذف حساب همچنان اجرا شود. راه عملی AMINNOVA:
+
+1. برای لینک‌های دائمی از **Custom Domain متعلق به خودتان** استفاده کنید.
+2. از تب **بکاپ** فایل JSON را دانلود کنید.
+3. اگر حساب حذف شد، روی حساب جدید Deploy کنید و فایل را Restore کنید. Restore مالک-only است و بکاپ فرمت فعلی یا نسخهٔ قبلی AMINCK را می‌پذیرد.
+4. DNS همان Custom Domain را به Deploy جدید منتقل کنید. Token و UUID مشترک‌ها حفظ می‌شوند و مسیرها به Worker جدید Rebind می‌شوند.
+
+برای Zero-downtime واقعی باید یک Deploy دوم در حساب/ارائه‌دهنده‌ای مستقل و DNS failover بیرون از حساب حذف‌شونده داشته باشید. این موضوع نمی‌تواند فقط با یک Worker در یک حساب تضمین شود.
 
 ## Host Alias و Multi-port
 
@@ -152,13 +160,14 @@ Cron هر ۳۰ دقیقه HTTPS را **از محل اجرای Worker** اندا�
 | `POST /api/user-create` | ساخت مشترک |
 | `POST /api/user-update` | ویرایش محدودیت و مسیر |
 | `POST /api/config-build` | بازسازی خروجی با Save اختیاری |
-| `POST /api/auto-build` | ساخت اتومات Subscription |
+| `POST /api/auto-build` | ساخت اتومات ۱ تا ۱۰ Subscription |
 | `POST /api/iron-build` | ساخت ۱ تا ۵ پروفایل آهنین |
 | `POST /api/probe` | Probe از Edge |
 | `POST /api/endpoints` | مدیریت Endpoint |
 | `POST /api/settings` | تنظیم نام، پورت، Alias و Preset |
 | `POST /api/hot-update` | بازسازی مسیرها بدون تغییر دامنه |
-| `POST /api/backup` | Backup مجاز |
+| `POST /api/backup` | خروجی Backup قابل حمل |
+| `POST /api/restore` | بازیابی مالک و اتصال مسیرها به دامنه جدید |
 | `POST /api/audit` | Audit log |
 
 ## توسعه و دیباگ

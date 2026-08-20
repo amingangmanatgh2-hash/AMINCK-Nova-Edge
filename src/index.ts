@@ -21,7 +21,7 @@ import { classifyTarget, VlessSession } from './proxy';
 import type { SessionHooks, TcpSocket } from './proxy';
 import type { VlessTarget } from './protocol';
 import { parseVlessHeader } from './protocol';
-import { verifySessionId, isPrivateLiteral } from './utils';
+import { isPrivateLiteral } from './utils';
 import { defaultRuntimeHooks, probeAll } from './probe';
 import { UI_APP_CSS, UI_APP_JS, uiShell } from './ui';
 
@@ -144,11 +144,12 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
   return withHeaders(doRes, {});
 }
 
-async function cookieSession(request: Request, env: Env): Promise<string | null> {
+async function cookieSession(request: Request, _env: Env): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? '';
-  const m = cookie.match(/(?:^|;\s*)nova_session=([^;]+)/);
-  if (!m) return null;
-  return verifySessionId(env.SESSION_SECRET ?? '', m[1]);
+  const m = cookie.match(/(?:^|;\s*)nova_session=([0-9a-f]{64})(?:;|$)/i);
+  // The cookie itself is a cryptographically random 256-bit bearer token.
+  // The Durable Object checks that it exists, is active and has not expired.
+  return m ? m[1]!.toLowerCase() : null;
 }
 
 /** Run an on-demand endpoint probe from the worker edge and store results. */

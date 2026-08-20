@@ -19,22 +19,22 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 
 ### Secrets
 
-- `ADMIN_PASSWORD` (owner password) and `SESSION_SECRET` (session-signing key)
-  are **never** stored in the repository. They are Cloudflare Worker secrets
-  (`wrangler secret put …`) or local `.dev.vars` (git-ignored).
+- `ADMIN_PASSWORD` is **never** stored in the repository. The official Deploy
+  wizard requests it as an encrypted Worker secret; local development uses the
+  git-ignored `.dev.vars` file.
 - No Cloudflare API token is ever requested, stored, rendered, or proxied by
   the panel. Deploys happen via the official Deploy button or Wrangler in CI
   (encrypted GitHub secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`).
-- Login fails closed with `503 setup-required` when `ADMIN_PASSWORD` or a
-  sufficiently long `SESSION_SECRET` has not been configured.
+- Login fails closed with `503 setup-required` when `ADMIN_PASSWORD` has not
+  been configured.
 
 ### Authentication & sessions
 
 - Owner login uses the `ADMIN_PASSWORD` secret compared in constant time.
 - Staff passwords are stored as **PBKDF2-SHA256** (210,000 iterations) with a
   random 16-byte salt. Minimum password length: 10 characters.
-- Sessions are random 32-byte ids signed with HMAC-SHA256; cookies are
-  `HttpOnly; Secure; SameSite=Strict` with a 12-hour Max-Age (sliding).
+- Sessions are random 32-byte bearer tokens kept server-side in the Durable
+  Object; cookies are `HttpOnly; Secure; SameSite=Strict` with a 12-hour Max-Age.
 - Disabling or deleting an admin revokes **all** of their sessions; the very
   next request with an old session gets `401`.
 - Failed logins incur a server-side delay (300 ms – 6 s exponential backoff);
@@ -50,9 +50,12 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   even with hand-crafted API requests.
 - The owner is seeded automatically and **cannot** be deleted, disabled,
   demoted, or have their password changed through the admin API.
-- Hash/salt/iterations are never returned by the API. Only the full backup
-  export (an explicitly privileged operation) includes them so a restore can
-  keep passwords — treat backups as secrets.
+- Hash/salt/iterations are never returned by the admin-list API. Only an
+  owner-created full backup includes staff hashes so disaster recovery can keep
+  staff passwords; non-owner exports omit staff records. Treat backups as secrets.
+- Restore is owner-only, caps imported users/staff, validates ids/tokens/routes,
+  keeps the new deployment's owner, and rebinds subscriber routes to the
+  current Worker hostname.
 
 ### Proxy hardening (no open proxy)
 

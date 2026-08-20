@@ -40,6 +40,13 @@
     try { document.execCommand('copy'); } catch (e) {}
     ta.remove();
   }
+  function downloadJson(data, name) {
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
   function api(method, path, body) {
     var opts = { method: method || 'GET', headers: { 'content-type': 'application/json' }, credentials: 'same-origin' };
     if (body !== undefined) opts.body = JSON.stringify(body);
@@ -88,6 +95,13 @@
     });
     return h;
   }
+  function subscriptionOptions(sel) {
+    var h = '';
+    [1, 2, 3, 5, 10].forEach(function (n) {
+      h += '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + ' ساب</option>';
+    });
+    return h;
+  }
 
   function domainMenuHtml() {
     var html = '<div class="card" style="position:relative">';
@@ -100,7 +114,7 @@
     html += '<a class="btn" id="btn-repo" target="_blank" rel="noopener">مشاهده مخزن</a>';
     html += '</div>';
     html += '<p class="muted">توکن API را داخل هیچ پنل عمومی Paste نکنید. Deploy رسمی یا GitHub Actions توکن را در Secret رمزگذاری‌شده نگه می‌دارد.</p>';
-    html += '<ol class="muted"><li>Deploy را باز کنید.</li><li>Secrets به نام ADMIN_PASSWORD و SESSION_SECRET را تنظیم کنید.</li><li>دامنه Worker را باز و وارد پنل شوید.</li></ol>';
+    html += '<ol class="muted"><li>Deploy را باز کنید.</li><li>همان‌جا فقط رمز ADMIN_PASSWORD را وارد کنید.</li><li>دامنه Worker را باز کنید و ساب بسازید.</li></ol>';
     html += '</div></div>';
     return html;
   }
@@ -147,7 +161,7 @@
     var me = STATE.me;
     var theme = localStorage.getItem('edge-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
-    var tabs = [['dash', 'داشبورد'], ['sell', 'فروش / ویرایش'], ['iron', 'آهنین'], ['scan', 'پینگ'], ['settings', 'تنظیمات'], ['caps', 'قابلیت‌ها'], ['help', 'راهنما']];
+    var tabs = [['dash', 'داشبورد'], ['sell', 'فروش / ویرایش'], ['iron', 'آهنین'], ['scan', 'پینگ'], ['recovery', 'بکاپ'], ['settings', 'تنظیمات'], ['caps', 'قابلیت‌ها'], ['help', 'راهنما']];
     var html = '<div class="wrap"><div class="topbar">';
     html += '<button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
     html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
@@ -190,14 +204,19 @@
     html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
     html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
     html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
-    html += '<div class="row"><select id="paths">' + pathOptions(5) + '</select><select id="iron-n">' + ironOptions(3) + '</select>';
-    html += '<button class="btn primary" id="auto">ساخت اتومات بهینه</button></div><div id="mk-out"></div></div>';
+    html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
+    html += '<div><label>تعداد کانفیگ داخل هر ساب</label><select id="paths" style="width:100%">' + pathOptions(5) + '</select></div></div>';
+    html += '<label>تعداد کانفیگ آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(3) + '</select> ';
+    html += '<button class="btn primary" id="auto">ساخت اتومات ساب</button><div id="mk-out"></div></div>';
     shell(html);
     bindInf();
     $('#auto').onclick = function () {
       var name = $('#n').value || ('AMINCK-' + Date.now());
-      api('POST', '/api/auto-build', {
+      var button = $('#auto');
+      button.disabled = true; button.textContent = 'در حال تست و ساخت…';
+      var payload = {
         name: name,
+        subscriptionCount: Number($('#sub-count').value || 1),
         paths: Number($('#paths').value || 5),
         ironCount: Number($('#iron-n').value || 0),
         speedPreset: 'god',
@@ -207,21 +226,31 @@
         limitSeconds: numOrZero('lim-s'),
         maxConnections: numOrZero('lim-c'),
         limitRequests: numOrZero('lim-r')
+      };
+      api('POST', '/api/probe', {}).catch(function () { return null; }).then(function () {
+        return api('POST', '/api/auto-build', payload);
       }).then(function (d) {
-        var u = d.user;
-        var link = d.subUrl || subLink(u.token, '');
-        var out = '<div class="alert">ساب AMINCK آماده — ' + esc(name) + '</div><div class="uri">' + esc(link) + '</div>';
-        out += '<div class="row" style="margin-top:8px"><button class="btn" id="c1">کپی ساب</button><button class="btn" id="c2">Clash</button><button class="btn" id="c3">sing-box</button></div>';
+        var subs = d.subscriptions || [{ name: d.user.name, token: d.user.token, subUrl: d.subUrl }];
+        var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد</div>';
+        subs.forEach(function (sub, i) {
+          var link = sub.subUrl || subLink(sub.token, '');
+          out += '<div class="sub-result"><b>' + esc(sub.name) + '</b><div class="uri">' + esc(link) + '</div>';
+          out += '<div class="row"><button class="btn" data-copy-url="' + esc(link) + '">کپی ساب</button>';
+          out += '<button class="btn" data-copy-url="' + esc(sub.clashUrl || subLink(sub.token, 'clash')) + '">Clash</button>';
+          out += '<button class="btn" data-copy-url="' + esc(sub.singboxUrl || subLink(sub.token, 'singbox')) + '">sing-box</button></div></div>';
+        });
         (d.iron || []).forEach(function (p) {
           out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span><div class="uri">' + esc(p.json) + '</div></div>';
         });
         $('#mk-out').innerHTML = out;
-        $('#c1').onclick = function () { copyText(link, 'ساب'); };
-        $('#c2').onclick = function () { copyText(subLink(u.token, 'clash'), 'Clash'); };
-        $('#c3').onclick = function () { copyText(subLink(u.token, 'singbox'), 'sing-box'); };
-        toast('ساب بهینه ساخته شد', true);
+        document.querySelectorAll('[data-copy-url]').forEach(function (el) {
+          el.onclick = function () { copyText(el.getAttribute('data-copy-url'), 'لینک'); };
+        });
+        toast(String(subs.length) + ' ساب ساخته شد', true);
         return loadUsers();
-      }).catch(function (e) { toast(e.message); });
+      }).catch(function (e) { toast(e.message); }).finally(function () {
+        button.disabled = false; button.textContent = 'ساخت اتومات ساب';
+      });
     };
   }
 
@@ -315,6 +344,44 @@
     };
   }
 
+  function viewRecovery() {
+    if (!can(STATE.me, 'backup:export')) { shell('<div class="card">دسترسی بکاپ ندارید.</div>'); return; }
+    var html = '<div class="card"><h2>بکاپ و بازیابی ساب‌ها</h2>';
+    html += '<p class="muted">اگر حساب Cloudflare حذف شود، Worker و دامنه workers.dev آن حساب هم از بین می‌رود. برای بازیابی: این فایل را نگه دارید، AMINNOVA را روی حساب جدید Deploy و همین‌جا Restore کنید.</p>';
+    html += '<p class="muted">این فایل شامل Token و UUID مشترک‌هاست؛ آن را محرمانه نگه دارید.</p>';
+    html += '<div class="row"><button class="btn primary" id="backup-download">دانلود بکاپ JSON</button></div>';
+    if (STATE.me.role === 'owner') {
+      html += '<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">';
+      html += '<label>فایل بکاپ AMINNOVA</label><input id="backup-file" type="file" accept="application/json,.json">';
+      html += '<button class="btn" id="backup-restore">بازیابی روی این دامنه</button>';
+      html += '<p class="muted">Token و UUID حفظ می‌شوند و مسیرها به دامنه فعلی متصل می‌شوند. برای ثابت ماندن لینک قدیمی باید از Custom Domain خودتان استفاده و DNS آن را به Deploy جدید منتقل کنید.</p>';
+    }
+    html += '</div>';
+    shell(html);
+    $('#backup-download').onclick = function () {
+      api('POST', '/api/backup', {}).then(function (d) {
+        downloadJson(d, 'AMINNOVA-backup-' + new Date().toISOString().slice(0, 10) + '.json');
+        toast('بکاپ دانلود شد', true);
+      }).catch(function (e) { toast(e.message); });
+    };
+    var restore = $('#backup-restore');
+    if (restore) restore.onclick = function () {
+      var input = $('#backup-file');
+      if (!input.files || !input.files[0]) { toast('اول فایل بکاپ را انتخاب کنید'); return; }
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var backup = JSON.parse(String(reader.result || ''));
+          api('POST', '/api/restore', { backup: backup }).then(function (d) {
+            toast(d.message || 'بازیابی شد', true);
+            return Promise.all([loadUsers(), loadScan()]).then(function () { TAB = 'sell'; paint(); });
+          }).catch(function (e) { toast(e.message); });
+        } catch (e) { toast('JSON بکاپ نامعتبر است'); }
+      };
+      reader.readAsText(input.files[0]);
+    };
+  }
+
   function viewSettings() {
     var s = STATE.settings || {};
     if (!can(STATE.me, 'settings:manage')) { shell('<div class="card">دسترسی تنظیمات ندارید.</div>'); return; }
@@ -393,6 +460,7 @@
     if (TAB === 'sell') viewSell();
     else if (TAB === 'iron') viewIron();
     else if (TAB === 'scan') viewScan();
+    else if (TAB === 'recovery') viewRecovery();
     else if (TAB === 'settings') viewSettings();
     else if (TAB === 'caps') viewCaps();
     else if (TAB === 'help') viewHelp();

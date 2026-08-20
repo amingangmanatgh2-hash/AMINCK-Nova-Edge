@@ -4,9 +4,8 @@
 //                   settings, users, admins, audit log, sessions, probe results.
 //                   No D1, no KV and no manual provisioning required: the
 //                   migration below creates the class automatically on deploy.
-// Secrets (set via `wrangler secret put` or the dashboard, NOT in this file):
+// Required secret (the official Deploy button asks for it automatically):
 //   ADMIN_PASSWORD — password of the owner (username: AMINCK)
-//   SESSION_SECRET — HMAC-SHA256 key used to sign session cookies
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aminnova",
@@ -20,8 +19,11 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  "compatibility_date": "2025-06-01",
+  "compatibility_date": "2026-08-18",
   "compatibility_flags": [],
+  "secrets": {
+    "required": ["ADMIN_PASSWORD"]
+  },
   "durable_objects": {
     "bindings": [
       {

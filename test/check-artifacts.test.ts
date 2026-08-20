@@ -41,7 +41,13 @@ describe('artifact checks (runtime smoke steps)', () => {
     const example = readFileSync('.dev.vars.example', 'utf8');
     expect(example.length).toBeGreaterThan(0);
     expect(example).toContain('ADMIN_PASSWORD');
-    expect(example).toContain('SESSION_SECRET');
+    expect(example).not.toContain('SESSION_SECRET');
+    const wrangler = readFileSync('wrangler.jsonc', 'utf8');
+    expect(wrangler).toMatch(/"required"\s*:\s*\["ADMIN_PASSWORD"\]/);
+    expect(wrangler).not.toContain('SESSION_SECRET');
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    expect(Object.keys(pkg.cloudflare.bindings)).toEqual(['ADMIN_PASSWORD']);
+    expect(readFileSync('README.md', 'utf8')).not.toContain('SESSION_SECRET');
     const gitignore = readFileSync('.gitignore', 'utf8');
     expect(gitignore).toContain('.dev.vars');
   });

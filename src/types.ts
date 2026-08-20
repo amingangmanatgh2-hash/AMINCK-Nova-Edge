@@ -41,6 +41,8 @@ export const POWER_LEVELS: Record<PowerLevel, PowerSpec> = {
 export const MAX_ENDPOINTS = 50;
 /** Maximum number of paths a user subscription may hold. */
 export const MAX_PATHS = 200;
+/** Maximum subscriptions created by one automatic batch request. */
+export const MAX_BATCH_SUBSCRIPTIONS = 10;
 /** Minimum accepted admin password length. */
 export const MIN_PASSWORD_LENGTH = 10;
 /** Hard minimum for password-protected accounts. */
@@ -399,6 +401,7 @@ export type AuditAction =
   | 'endpoints.probe'
   | 'endpoints.update'
   | 'backup.export'
+  | 'backup.restore'
   | 'panel.hot_update';
 
 export interface AuditEvent {

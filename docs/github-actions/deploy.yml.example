@@ -29,14 +29,12 @@ jobs:
       - run: npm run check
       - run: npm test
       - name: Deploy Worker and encrypted secrets
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
           secrets: |
             ADMIN_PASSWORD
-            SESSION_SECRET
         env:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}

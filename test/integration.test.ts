@@ -65,6 +65,10 @@ describe('owner login & session', () => {
     expect(r.me.role).toBe('owner');
     expect(r.me.power).toBe('ultra');
     expect(r.me.permissions.length).toBe(10);
+    expect(r.cookie).toMatch(/^[0-9a-f]{64}$/);
+    const second = await w.login('AMINCK', OWNER_PASSWORD);
+    expect(second.cookie).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.cookie).not.toBe(r.cookie);
   });
 
   it('accepts owner with empty username', async () => {
@@ -246,15 +250,18 @@ describe('power-level enforcement (backend, not UI)', () => {
     expect(cfg.data.truncated).toBe(true);
   });
 
-  it('limited admin is forbidden from privileged ops (settings/admins/backup)', async () => {
+  it('limits settings/admin/restore privileges while allowing a redacted export', async () => {
     const lim = await w.login('lim1', 'LimitedPass123!');
     const settings = await w.api(lim.cookie, '/api/settings', { settings: { title: 'hack' } });
     expect(settings.status).toBe(403);
     const admins = await w.api(lim.cookie, '/api/admins/list', {});
     expect(admins.status).toBe(403);
-    // admin role legitimately holds backup:export — this must NOT be blocked
+    // admin role legitimately holds backup:export, but staff password hashes stay owner-only.
     const backup = await w.api(lim.cookie, '/api/backup', {});
     expect(backup.status).toBe(200);
+    expect(backup.data.admins).toEqual([]);
+    const restore = await w.api(lim.cookie, '/api/restore', { backup: backup.data });
+    expect(restore.status).toBe(403);
   });
 
   it('support role cannot create/delete users', async () => {
@@ -382,8 +389,8 @@ describe('backup', () => {
   it('exports the full JSON backup', async () => {
     const r = await w.api(ownerCookie, '/api/backup', {});
     expect(r.status).toBe(200);
-    expect(r.data.app).toBe('AMINCK GOD Edition');
-    expect(r.data.version).toBe('AMINCK GOD Edition');
+    expect(r.data.app).toBe('AMINNOVA');
+    expect(r.data.version).toBe(2);
     expect(Array.isArray(r.data.users)).toBe(true);
     expect(r.data.users.length).toBeGreaterThanOrEqual(4);
     expect(Array.isArray(r.data.admins)).toBe(true);
@@ -644,6 +651,58 @@ describe('AMINNOVA reliability regressions', () => {
     expect(updated.data.user.limitSeconds).toBe(3600);
     expect(updated.data.user.maxConnections).toBe(4);
     expect(updated.data.user.limitRequests).toBe(9);
+  });
+
+  it('creates a selectable batch of independent subscriptions', async () => {
+    const built = await w.api(ownerCookie, '/api/auto-build', {
+      name: 'batch-vip',
+      subscriptionCount: 3,
+      paths: 4,
+      ironCount: 2,
+      speedPreset: 'god',
+    });
+    expect(built.status).toBe(200);
+    expect(built.data.subscriptionCount).toBe(3);
+    expect(built.data.subscriptions).toHaveLength(3);
+    expect(new Set(built.data.subscriptions.map((x: any) => x.token)).size).toBe(3);
+    expect(built.data.users.every((u: any) => u.routes.length === 4)).toBe(true);
+    expect(built.data.iron).toHaveLength(2);
+    for (const sub of built.data.subscriptions) {
+      const res = await w.mf.dispatchFetch(sub.subUrl.replace('https://nova.test', w.base));
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it('rejects malformed restore files without replacing current data', async () => {
+    const before = await w.api(ownerCookie, '/api/users', {});
+    const rejected = await w.api(ownerCookie, '/api/restore', { backup: { users: [] } });
+    expect(rejected.status).toBe(400);
+    const after = await w.api(ownerCookie, '/api/users', {});
+    expect(after.data.users).toHaveLength(before.data.users.length);
+  });
+
+  it('exports and restores subscribers while preserving token and UUID', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'portable-recovery-user',
+      paths: 3,
+    });
+    const original = created.data.user;
+    const backup = await w.api(ownerCookie, '/api/backup', {});
+    expect(backup.status).toBe(200);
+    expect(backup.data.app).toBe('AMINNOVA');
+    await w.api(ownerCookie, '/api/user-delete', { id: original.id });
+    expect((await w.mf.dispatchFetch(`${w.base}/sub/${original.token}`)).status).toBe(404);
+
+    // Version-1 exports used this product marker; migration must remain possible.
+    const legacyCompatible = { ...backup.data, app: 'AMINCK GOD Edition', version: 'AMINCK GOD Edition' };
+    const restored = await w.api(ownerCookie, '/api/restore', { backup: legacyCompatible });
+    expect(restored.status).toBe(200);
+    expect(restored.data.restoredUsers).toBeGreaterThan(0);
+    const list = await w.api(ownerCookie, '/api/users', { q: 'portable-recovery-user' });
+    expect(list.data.users[0].token).toBe(original.token);
+    expect(list.data.users[0].uuid).toBe(original.uuid);
+    expect(list.data.users[0].routes.every((r: any) => r.host === 'nova.test')).toBe(true);
+    expect((await w.mf.dispatchFetch(`${w.base}/sub/${original.token}`)).status).toBe(200);
   });
 
   it('builds a requested route count without persisting when save is false', async () => {

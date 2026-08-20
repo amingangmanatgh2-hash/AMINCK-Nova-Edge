@@ -61,4 +61,3 @@ export function routesFor(userId: string, endpoints = FIXTURE_ENDPOINTS, count =
 }
 
 export const OWNER_PASSWORD = 'OwnerPass123!';
-export const SESSION_SECRET = 'test-session-secret-0123456789abcdef';
