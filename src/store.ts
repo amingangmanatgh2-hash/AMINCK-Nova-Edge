@@ -58,6 +58,7 @@ import {
   isCloudflareIpv4Candidate,
   planRoutes,
   resolveAntiDetect,
+  rollingRouteWindow,
   validateNameTemplate,
 } from './config';
 
@@ -332,6 +333,11 @@ export class AMINCKStore {
           ...u,
           limitRequests: Number(u.limitRequests) >= 0 ? Number(u.limitRequests) : 0,
           requestCount: Number(u.requestCount) >= 0 ? Number(u.requestCount) : 0,
+          dynamicPool: u.dynamicPool === true,
+          rotationMinutes: clamp(Math.floor(Number(u.rotationMinutes)) || 1, 1, 60),
+          poolCleanIps: Array.isArray(u.poolCleanIps)
+            ? [...new Set(u.poolCleanIps.map(String).filter(isCloudflareIpv4Candidate))].slice(0, 50)
+            : [],
         }))
         .sort((a, b) => a.createdAt - b.createdAt);
     }
@@ -680,10 +686,23 @@ export class AMINCKStore {
     user.lastSubAt = Date.now();
     await this.persistUsers();
     await this.audit('system', 'config.sub_fetch', user.name, `دریافت ساب (${ua.slice(0, 60) || 'بدون UA'})`, ip);
-    const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']);
+    const generatedAt = Date.now();
+    const rolling = rollingRouteWindow(user, generatedAt);
+    const built = buildFormats(this.ctx(user, host, generatedAt), ['v2ray', 'raw', 'clash', 'singbox']);
     const payloads: Record<string, string> = {};
     for (const b of built) payloads[b.format] = b.payload;
-    return json({ user: { ...user }, settings: this.settingsCache, payloads });
+    return json({
+      user: { ...user },
+      settings: this.settingsCache,
+      payloads,
+      rotation: {
+        enabled: rolling.enabled,
+        epoch: rolling.epoch,
+        nextRotationAt: rolling.nextRotationAt,
+        rotationMinutes: rolling.rotationMinutes,
+        activeRoutes: rolling.routes.length,
+      },
+    });
   }
 
   private async intStats(uuid: string, up: number, down: number): Promise<Response> {
@@ -999,6 +1018,11 @@ export class AMINCKStore {
           ? (String(u.fingerprint) as User['fingerprint'])
           : null,
         configNameTemplate: templateResult.ok ? templateResult.value : null,
+        dynamicPool: u.dynamicPool === true,
+        rotationMinutes: clamp(Math.floor(Number(u.rotationMinutes)) || 1, 1, 60),
+        poolCleanIps: Array.isArray(u.poolCleanIps)
+          ? [...new Set(u.poolCleanIps.map(String).filter(isCloudflareIpv4Candidate))].slice(0, 50)
+          : [],
         note: cleanText(u.note, 1000),
         createdAt: finiteFloor(u.createdAt, Date.now()),
         expiresAt: finiteFloor(u.expiresAt),
@@ -1177,6 +1201,10 @@ export class AMINCKStore {
     if (body.speedPreset !== undefined && (body.speedPreset as string) in SPEED_PRESETS) {
       user.speedPreset = body.speedPreset as SpeedPreset;
     }
+    if (body.dynamicPool !== undefined) user.dynamicPool = body.dynamicPool === true;
+    if (body.rotationMinutes !== undefined) {
+      user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
+    }
     if (body.note !== undefined) user.note = String(body.note).slice(0, 1000);
     if (body.configNameTemplate !== undefined) {
       const v = validateNameTemplate(String(body.configNameTemplate).trim() || DEFAULT_NAME_TEMPLATE);
@@ -1216,6 +1244,9 @@ export class AMINCKStore {
         : s.profileMode,
       fingerprint: null,
       configNameTemplate: String(body.configNameTemplate ?? '').trim() || null,
+      dynamicPool: body.dynamicPool === true,
+      rotationMinutes: clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60),
+      poolCleanIps: body.useCleanCatalog === true ? CLEAN_IP_CATALOG.map((candidate) => candidate.ip) : [],
       note: String(body.note ?? '').slice(0, 1000),
       createdAt: Date.now(),
       expiresAt: limits.limitSeconds === 0 ? 0 : Date.now() + limits.limitSeconds * 1000,
@@ -1268,14 +1299,15 @@ export class AMINCKStore {
     return json({ ok: true, configs: built, truncated, saved: save });
   }
 
-  private ctx(user: User, host: string): BuildContext {
+  private ctx(user: User, host: string, generatedAt = Date.now()): BuildContext {
     const s = this.settings!;
     // Zooz/BPB multi-port: clone each route across selected TLS ports for
     // subscription output only — stored path count is unchanged.
     const anti = resolveAntiDetect(s);
-    let routes = user.routes;
+    const rolling = rollingRouteWindow(user, generatedAt);
+    let routes = rolling.routes;
     if (anti.multiPort && s.tlsPorts.length > 1) {
-      routes = expandRoutesMultiPort(user.routes, s.tlsPorts);
+      routes = expandRoutesMultiPort(routes, s.tlsPorts);
     }
     const view: User = { ...user, routes };
     return {
@@ -1365,6 +1397,9 @@ export class AMINCKStore {
       const user = this.newUser(`${baseName}${suffix}`.slice(0, 80), limits, body, 1);
       user.speedPreset = speedPreset;
       user.profileMode = profileMode;
+      user.dynamicPool = body.dynamicPool === true;
+      user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
+      user.poolCleanIps = [...cleanIps];
       const baseRouteCount = cleanIps.length > 0
         ? Math.max(1, Math.ceil(paths / (cleanIps.length + 1)))
         : paths;
@@ -1418,6 +1453,14 @@ export class AMINCKStore {
       selectedEndpoints: ordered.map((e) => e.id),
       cleanIpsUsed: cleanIps,
       directAndFrontedRoutes: cleanIps.length > 0,
+      rollingPool: {
+        enabled: first.dynamicPool === true,
+        activeWindow: first.routes.length,
+        rotationMinutes: first.rotationMinutes ?? 1,
+        note: first.dynamicPool === true
+          ? 'پنجره فعال در هر Refresh می‌چرخد؛ تعداد هم‌زمان برای پایداری کلاینت محدود است'
+          : '',
+      },
       aiAssistance: {
         requested: body.useCloudflareAi === true,
         applied: body.aiApplied === true,

@@ -762,6 +762,44 @@ export function expandTunnelFronts(routes: Route[], ips: string[], cap = 200): R
   return out;
 }
 
+export interface RollingRouteWindow {
+  routes: Route[];
+  enabled: boolean;
+  epoch: number;
+  nextRotationAt: number;
+  rotationMinutes: number;
+}
+
+/**
+ * Build the active route window for a rolling subscription. The URL paths stay
+ * persisted and valid (avoiding disconnects), while order and Cloudflare
+ * Anycast connection addresses change at a deterministic minute boundary.
+ * Direct routes are retained regularly so a bad candidate can never remove the
+ * deployment hostname from the profile.
+ */
+export function rollingRouteWindow(user: User, now = Date.now()): RollingRouteWindow {
+  const rotationMinutes = clamp(Math.floor(Number(user.rotationMinutes)) || 1, 1, 60);
+  const duration = rotationMinutes * 60_000;
+  const epoch = Math.floor(now / duration);
+  const nextRotationAt = (epoch + 1) * duration;
+  if (!user.dynamicPool || user.routes.length < 2) {
+    return { routes: [...user.routes], enabled: false, epoch, nextRotationAt, rotationMinutes };
+  }
+  const cleanIps = [...new Set((user.poolCleanIps ?? []).filter(isCloudflareIpv4Candidate))];
+  const offset = epoch % user.routes.length;
+  const ordered = user.routes.slice(offset).concat(user.routes.slice(0, offset));
+  const routes = ordered.map((route, index) => {
+    const base: Route = { ...route, index: index + 1, frontIp: undefined, sni: route.sni || route.host };
+    // Keep route 1 and every tenth route direct. All other entries rotate over
+    // the validated candidate pool and are measured by client url-test.
+    if (cleanIps.length > 0 && index > 0 && index % 10 !== 0) {
+      base.frontIp = cleanIps[(epoch + index - 1) % cleanIps.length];
+    }
+    return base;
+  });
+  return { routes, enabled: true, epoch, nextRotationAt, rotationMinutes };
+}
+
 /** Xray / V2RayNG / MahsaNG / NapsternetV compatible outbound JSON. */
 export function buildXrayJson(ctx: BuildContext): string {
   const speed = SPEED_PRESETS[ctx.speedPreset];

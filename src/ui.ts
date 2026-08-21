@@ -189,7 +189,195 @@ ul.api code { color: var(--fg); }
   .badge { font-size: 10px; padding: 2px 8px; }
   .btn { border-radius: 10px; }
 }
+/* Liquid Glass Pro layer */
+:root {
+  --bg: #060815;
+  --bg2: rgba(13, 18, 40, .72);
+  --bg3: rgba(32, 39, 72, .54);
+  --card: rgba(15, 21, 48, .62);
+  --line: rgba(255,255,255,.13);
+  --brand: #7c3aed;
+  --brand2: #22d3ee;
+  --pink: #ec4899;
+  --glass: blur(22px) saturate(145%);
+  --shadow: 0 20px 70px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.08);
+}
+html[data-theme="light"] {
+  --bg: #eaf0ff;
+  --bg2: rgba(255,255,255,.72);
+  --bg3: rgba(255,255,255,.56);
+  --card: rgba(255,255,255,.64);
+  --line: rgba(58,75,118,.17);
+  --shadow: 0 24px 60px rgba(42,58,110,.16), inset 0 1px 0 rgba(255,255,255,.8);
+}
+html { scroll-behavior: smooth; }
+body { overflow-x: hidden; background-color: var(--bg); }
+body::before, body::after {
+  content: ""; position: fixed; border-radius: 999px; filter: blur(8px); opacity: .34;
+  pointer-events: none; z-index: -1; animation: liquidFloat 14s ease-in-out infinite alternate;
+}
+body::before { width: 38vw; height: 38vw; min-width: 320px; min-height: 320px; top: -14vw; right: -9vw; background: radial-gradient(circle, #7c3aed, transparent 66%); }
+body::after { width: 34vw; height: 34vw; min-width: 280px; min-height: 280px; bottom: -16vw; left: -8vw; background: radial-gradient(circle, #06b6d4, transparent 67%); animation-delay: -5s; }
+.wrap { max-width: 1220px; position: relative; padding-top: 32px; }
+.card, .pill, .sub-result, .top-glass, .mobile-nav {
+  backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
+}
+.card { position: relative; overflow: hidden; background: linear-gradient(145deg, rgba(255,255,255,.075), transparent 45%), var(--card); }
+.card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(115deg, rgba(255,255,255,.1), transparent 25%, transparent 74%, rgba(34,211,238,.05)); }
+.card > * { position: relative; }
+.card:hover { transform: translateY(-2px); border-color: rgba(34,211,238,.34); }
+.card, .pill, .btn, input, select, textarea { transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease, background .22s ease; }
+.pill { min-height: 100px; display: flex; flex-direction: column; justify-content: center; border-color: rgba(255,255,255,.14); background: linear-gradient(145deg, rgba(124,58,237,.16), rgba(34,211,238,.06)), var(--bg3); }
+.pill b { font-size: 25px; line-height: 1.2; background: linear-gradient(90deg, var(--brand2), #a78bfa, #f472b6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.btn { position: relative; overflow: hidden; font-weight: 650; }
+.btn::after { content: ""; position: absolute; inset: 0; transform: translateX(-110%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.16), transparent); transition: transform .5s; }
+.btn:hover::after { transform: translateX(110%); }
+.btn:hover { transform: translateY(-1px); box-shadow: 0 10px 26px rgba(34,211,238,.12); text-decoration: none; }
+.btn.primary { background: linear-gradient(125deg, #06b6d4, #7c3aed 52%, #db2777); box-shadow: 0 12px 32px rgba(124,58,237,.28); }
+.btn.danger { color: #fecaca; border-color: rgba(239,68,68,.38); }
+.btn.big { min-height: 50px; padding: 12px 20px; font-size: 14px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--brand2); box-shadow: 0 0 0 4px rgba(34,211,238,.11); }
+input, select, textarea { background: rgba(4,8,24,.52); }
+html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme="light"] textarea { background: rgba(255,255,255,.68); }
+.hero { padding: 16px 4px; }
+.mark { position: relative; overflow: hidden; background: linear-gradient(145deg, #22d3ee, #7c3aed 54%, #ec4899); box-shadow: 0 18px 45px rgba(124,58,237,.34); animation: logoPulse 5s ease-in-out infinite; }
+.mark svg { width: 38px; height: 38px; }
+.topbar { position: sticky; top: 10px; z-index: 30; padding: 9px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg2); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); box-shadow: var(--shadow); }
+.tabs { padding: 7px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg2); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); position: sticky; top: 80px; z-index: 25; }
+.tab { display: inline-flex; gap: 7px; align-items: center; }
+.tab svg, .btn svg, .status-dot svg, .alert svg, .section-title > svg { width: 17px; height: 17px; flex: 0 0 17px; }
+.section-title > svg { width: 28px; height: 28px; color: var(--brand2); }
+.tab.on { box-shadow: 0 9px 24px rgba(124,58,237,.24); }
+.section-title { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 15px; }
+.section-title h2 { font-size: 19px; }
+.eyebrow { color: var(--brand2); text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 800; }
+.hero-panel { padding: 24px; background: linear-gradient(125deg, rgba(34,211,238,.09), rgba(124,58,237,.14), rgba(236,72,153,.08)), var(--card); }
+.status-dot { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg2); font-size: 11px; }
+.status-dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 13px var(--ok); }
+.status-dot.offline::before { background: var(--err); box-shadow: 0 0 13px var(--err); }
+.endpoint-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 9px; margin: 10px 0; }
+.check { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.035); }
+.check input { accent-color: #7c3aed; }
+.progress-line { height: 4px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.08); }
+.progress-line span { display: block; height: 100%; background: linear-gradient(90deg, #22d3ee, #7c3aed, #ec4899); animation: progressGlow 2s linear infinite; }
+.feature-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+.feature-tile { border: 1px solid var(--line); border-radius: 16px; padding: 15px; background: var(--bg3); min-height: 126px; }
+.feature-tile svg { width: 24px; height: 24px; color: var(--brand2); }
+.mobile-nav { display: none; }
+.skeleton { min-height: 18px; border-radius: 8px; background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.14), rgba(255,255,255,.05)); background-size: 220% 100%; animation: shimmer 1.4s infinite; }
+.install-banner { border-color: rgba(167,139,250,.35); background: linear-gradient(120deg, rgba(124,58,237,.2), rgba(34,211,238,.09)), var(--card); }
+.guide-step { display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: start; margin: 14px 0; }
+.guide-step strong:first-child { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: linear-gradient(135deg,#06b6d4,#7c3aed); color: white; }
+.cap-toolbar { display: grid; grid-template-columns: 1fr 220px; gap: 10px; margin-bottom: 14px; }
+.cap-list { display: grid; gap: 9px; }
+.cap-item { border: 1px solid var(--line); border-radius: 13px; padding: 11px 13px; background: rgba(255,255,255,.035); }
+@keyframes liquidFloat { from { transform: translate3d(0,0,0) scale(.94); } to { transform: translate3d(5vw,4vh,0) scale(1.08); } }
+@keyframes logoPulse { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(2deg); } }
+@keyframes progressGlow { to { filter: hue-rotate(360deg); } }
+@keyframes shimmer { to { background-position: -220% 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: none; } }
+#app .card, #app .pill { animation: rise .42s both; }
+#app .card:nth-child(2) { animation-delay: .04s; }
+#app .card:nth-child(3) { animation-delay: .08s; }
+@media (max-width: 820px) {
+  .feature-grid { grid-template-columns: 1fr 1fr; }
+  .tabs { display: none; }
+  .mobile-nav { display: flex; overflow-x: auto; scrollbar-width: none; position: fixed; right: 10px; left: 10px; bottom: max(10px, env(safe-area-inset-bottom)); z-index: 45; padding: 7px; border: 1px solid var(--line); border-radius: 20px; background: var(--bg2); box-shadow: var(--shadow); }
+  .mobile-nav::-webkit-scrollbar { display: none; }
+  .mobile-nav button { border: 0; color: var(--fg2); background: transparent; display: grid; justify-items: center; gap: 2px; font: inherit; font-size: 9px; padding: 5px 8px; min-width: 66px; flex: 1 0 66px; }
+  .mobile-nav button.on { color: var(--brand2); }
+  .mobile-nav svg { width: 20px; height: 20px; }
+  .wrap { padding-bottom: 105px; }
+  .topbar { top: 5px; }
+}
+@media (max-width: 560px) {
+  .feature-grid { grid-template-columns: 1fr; }
+  .cap-toolbar { grid-template-columns: 1fr; }
+  .hero-panel { padding: 17px; }
+  .grid { grid-template-columns: 1fr 1fr; }
+  .endpoint-pick { grid-template-columns: 1fr; }
+  .pill b { font-size: 21px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
 /*NOVA-CSS-END*/
+`;
+
+export const UI_MANIFEST_JSON = JSON.stringify({
+  id: '/',
+  name: 'AMINNOVA Liquid Glass',
+  short_name: 'AMINNOVA',
+  description: 'پنل نصب‌پذیر مدیریت Subscription و پروفایل‌های AMINCK',
+  lang: 'fa',
+  dir: 'rtl',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
+  orientation: 'any',
+  background_color: '#060815',
+  theme_color: '#7c3aed',
+  categories: ['utilities', 'productivity'],
+  icons: [
+    { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+  ],
+  shortcuts: [
+    { name: 'ساخت ساب', short_name: 'ساخت', url: '/?tab=dash', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
+    { name: 'مدیریت کاربران', short_name: 'کاربران', url: '/?tab=sell', icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }] },
+  ],
+});
+
+export const UI_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#22d3ee"/><stop offset=".48" stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient><filter id="s"><feGaussianBlur stdDeviation="14"/></filter></defs>
+<rect width="512" height="512" rx="116" fill="#080b19"/><circle cx="118" cy="100" r="75" fill="#22d3ee" opacity=".24" filter="url(#s)"/><circle cx="405" cy="412" r="105" fill="#ec4899" opacity=".2" filter="url(#s)"/>
+<path d="M103 356V156c0-29 24-53 53-53h200c29 0 53 24 53 53v200c0 29-24 53-53 53H156c-29 0-53-24-53-53Z" fill="url(#g)"/>
+<path d="M169 341V171h37l100 104V171h38v170h-34L207 234v107h-38Z" fill="white"/><path d="M131 131h250v250H131z" fill="none" stroke="white" stroke-opacity=".28" stroke-width="5" rx="35"/>
+</svg>`;
+
+export const UI_SW_JS = `/* AMINNOVA privacy-safe PWA service worker */
+'use strict';
+var CACHE = 'aminnova-shell-v4';
+var SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
+var PRIVATE_PREFIXES = ['/api/', '/sub/', '/ws', '/healthz', '/connect', '/e'];
+function isPrivatePath(path) { return PRIVATE_PREFIXES.some(function (prefix) { return path.indexOf(prefix) === 0; }); }
+self.addEventListener('install', function (event) {
+  event.waitUntil(caches.open(CACHE).then(function (cache) { return cache.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
+});
+self.addEventListener('activate', function (event) {
+  event.waitUntil(caches.keys().then(function (keys) {
+    return Promise.all(keys.filter(function (key) { return key !== CACHE; }).map(function (key) { return caches.delete(key); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+self.addEventListener('message', function (event) {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+self.addEventListener('fetch', function (event) {
+  var req = event.request;
+  if (req.method !== 'GET') return;
+  var url = new URL(req.url);
+  if (url.origin !== self.location.origin || isPrivatePath(url.pathname)) return;
+  if (req.mode === 'navigate') {
+    if (url.pathname !== '/') return;
+    event.respondWith(fetch(req).then(function (res) {
+      if (!res.ok) return res;
+      var copy = res.clone();
+      return caches.open(CACHE).then(function (cache) { return cache.put('/', copy); }).then(function () { return res; });
+    }).catch(function () { return caches.match('/'); }));
+    return;
+  }
+  if (url.search || SHELL.indexOf(url.pathname) < 0) return;
+  event.respondWith(caches.match(req).then(function (cached) {
+    var network = fetch(req).then(function (res) {
+      if (!res.ok) return res;
+      return caches.open(CACHE).then(function (cache) { return cache.put(req, res.clone()); }).then(function () { return res; });
+    });
+    if (cached) { event.waitUntil(network.catch(function () {})); return cached; }
+    return network;
+  }));
+});
 `;
 
 export const UI_SHELL_HTML = `<!--NOVA-SHELL-START-->
@@ -197,10 +385,19 @@ export const UI_SHELL_HTML = `<!--NOVA-SHELL-START-->
 <html lang="fa" dir="rtl" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{TITLE}</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="AMINNOVA — پنل فروش ساب VLESS روی Cloudflare Workers">
+<meta name="description" content="AMINNOVA — پنل نصب‌پذیر مدیریت ساب VLESS روی Cloudflare Workers">
+<meta name="theme-color" content="#7c3aed">
+<meta name="color-scheme" content="dark light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AMINNOVA">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -226,8 +423,32 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   var APP = 'AMINNOVA';
   var EDITION = 'AMINNOVA — پنل فروش ساب AMINCK';
   var TAB = 'dash';
+  var INSTALL_EVENT = null;
+  var MONITOR_TIMER = null;
   var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, settings: null, iron: null, clean: [], ironUser: '', launch: null, caps: [] };
+  var ICON_PATHS = {
+    dash: '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+    iron: '<path d="m12 2 8 4v6c0 5-3.4 9.2-8 10-4.6-.8-8-5-8-10V6l8-4Zm-3 10 2 2 4-5"/>',
+    scan: '<path d="M4 17V7m4 10v-6m4 6V4m4 13v-9m4 9v-3M3 21h18"/>',
+    settings: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-3.5a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.7 3h-4l-.4 3a8 8 0 0 0-1.7 1L6.1 6 4 9.4 6.1 11a7 7 0 0 0 0 2L4 14.6 6 18l2.5-1a8 8 0 0 0 1.7 1l.4 3h4l.4-3a8 8 0 0 0 1.7-1l2.5 1 2-3.4-2-1.6a7 7 0 0 0 .1-1Z"/>',
+    app: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M9 6h6"/>',
+    help: '<circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.7 2.7 0 1 1 4.4 2.1c-1.2.8-1.9 1.3-1.9 2.9M12 18h.01"/>',
+    install: '<path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/>',
+    spark: '<path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Zm7 11 .8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 15l.8 2.2L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.8L5 15Z"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/>',
+    shield: '<path d="m12 2 8 4v6c0 5-3.4 9.2-8 10-4.6-.8-8-5-8-10V6l8-4Z"/><path d="m9 12 2 2 4-5"/>',
+    infinity: '<path d="M8.5 8.5c-5-4-8 5-3 7 3 1 5-2 6.5-4 1.5-2 3.5-5 6.5-4 5 2 2 11-3 7l-7-6Z"/>',
+    cloud: '<path d="M17.5 19H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9.5 4.8 4.8 0 0 1 17.5 19Z"/>',
+    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14Zm0 0A2.5 2.5 0 0 0 6.5 22H20"/>',
+    logout: '<path d="M10 17l5-5-5-5m5 5H3m10-9h7v18h-7"/>',
+    theme: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'
+  };
 
+  function icon(name) {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICON_PATHS[name] || ICON_PATHS.spark) + '</svg>';
+  }
   function $(sel, root) { return (root || document).querySelector(sel); }
   function esc(s) {
     return String(s == null ? '' : s)
@@ -267,6 +488,35 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var a = document.createElement('a');
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+  function installApp() {
+    if (isStandalone()) { toast('AMINNOVA همین حالا به‌صورت اپ اجرا شده', true); return; }
+    if (!INSTALL_EVENT) { toast('از منوی مرورگر گزینه Add to Home Screen / نصب برنامه را بزنید'); return; }
+    INSTALL_EVENT.prompt();
+    INSTALL_EVENT.userChoice.then(function (choice) {
+      if (choice.outcome === 'accepted') toast('اپ AMINNOVA نصب شد', true);
+      INSTALL_EVENT = null;
+    });
+  }
+  function registerPwa() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      reg.addEventListener('updatefound', function () {
+        var worker = reg.installing;
+        if (worker) worker.addEventListener('statechange', function () {
+          if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('نسخه جدید اپ آماده شد', true);
+        });
+      });
+    }).catch(function () {});
+  }
+  function shareValue(title, text, url) {
+    if (navigator.share) {
+      navigator.share({ title: title, text: text, url: url }).catch(function () {});
+    } else copyText(url || text, title);
   }
   function api(method, path, body) {
     var opts = { method: method || 'GET', headers: { 'content-type': 'application/json' }, credentials: 'same-origin' };
@@ -355,8 +605,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var L = STATE.launch || {};
     var depA = $('#btn-deploy');
     var repoA = $('#btn-repo');
-    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/IR-penalty-';
-    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/IR-penalty-';
+    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
+    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
     var mb = $('#cf-menu-btn');
     if (mb) mb.onclick = function () {
       var box = $('#cf-menu');
@@ -368,20 +618,21 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var theme = localStorage.getItem('edge-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     var html = '<div class="wrap">';
-    html += '<div class="topbar"><button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button></div>';
-    html += '<div class="hero"><div class="mark">N</div><div><h1>AMINNOVA</h1><div class="sub">' + esc(EDITION) + '</div></div></div>';
-    html += domainMenuHtml();
-    html += '<div class="card login-box"><h2>ورود پنل فروش</h2>';
-    html += '<p class="muted">مالک: <b>AMINCK</b> · رمز: <code>ADMIN_PASSWORD</code></p>';
-    html += '<label>نام کاربری</label><input id="u" value="AMINCK" style="width:100%;margin-bottom:8px">';
-    html += '<label>رمز</label><input id="p" type="password" style="width:100%;margin-bottom:12px">';
-    html += '<button class="btn primary" id="login-btn" style="width:100%">ورود</button></div>';
-    html += '<div class="card"><h2>کلاینت‌ها</h2><p class="muted">V2Box · V2RayNG · MahsaNG · NapsternetV · Clash · sing-box</p></div></div>';
+    html += '<div class="topbar"><span class="status-dot' + (navigator.onLine ? '' : ' offline') + '">' + (navigator.onLine ? 'Cloudflare Online' : 'Offline') + '</span><button class="btn" id="install-btn">' + icon('install') + 'نصب اپ</button><button class="btn" id="theme-btn">' + icon('theme') + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button></div>';
+    html += '<div class="hero hero-panel card"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">AMINCK NOVA EDGE</div><h1>AMINNOVA Liquid</h1><div class="sub">' + esc(EDITION) + ' · PWA امن و نصب‌پذیر</div></div></div>';
+    html += '<div class="grid"><div>' + domainMenuHtml() + '</div><div class="card login-box"><div class="section-title"><div><div class="eyebrow">Secure Access</div><h2>ورود مرکز کنترل</h2></div>' + icon('shield') + '</div>';
+    html += '<p class="muted">مالک: <b>AMINCK</b> · رمز فقط در Secret امن <code>ADMIN_PASSWORD</code></p>';
+    html += '<label>نام کاربری</label><input id="u" value="AMINCK" autocomplete="username" style="width:100%;margin-bottom:8px">';
+    html += '<label>رمز</label><input id="p" type="password" autocomplete="current-password" style="width:100%;margin-bottom:12px">';
+    html += '<button class="btn primary big" id="login-btn" style="width:100%;justify-content:center">' + icon('shield') + 'ورود امن</button></div></div>';
+    html += '<div class="feature-grid"><div class="feature-tile">' + icon('infinity') + '<h3>Smart Pool ∞</h3><p class="muted">پنجره فعال سبک با چرخش دوره‌ای بدون خروجی بی‌نهایت و Crash کلاینت.</p></div><div class="feature-tile">' + icon('app') + '<h3>اپ موبایل PWA</h3><p class="muted">نصب مستقیم، اشتراک‌گذاری و مدیریت ساب از Home Screen.</p></div><div class="feature-tile">' + icon('shield') + '<h3>امنیت Edge</h3><p class="muted">نشست HttpOnly، SameSite، CSP و عدم Cache داده حساس.</p></div></div></div>';
     $('#app').innerHTML = html;
     $('#theme-btn').onclick = function () {
       localStorage.setItem('edge-theme', theme === 'dark' ? 'light' : 'dark');
       renderLogin();
     };
+    var install = $('#install-btn');
+    if (install) install.onclick = installApp;
     bindDomainMenu();
     $('#login-btn').onclick = function () {
       api('POST', '/api/login', { username: $('#u').value, password: $('#p').value })
@@ -391,26 +642,36 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
 
   function shell(inner) {
+    if (TAB !== 'app' && MONITOR_TIMER) { clearInterval(MONITOR_TIMER); MONITOR_TIMER = null; }
     var me = STATE.me;
     var theme = localStorage.getItem('edge-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
-    var tabs = [['dash', 'داشبورد'], ['sell', 'فروش / ویرایش'], ['iron', 'آهنین'], ['scan', 'پینگ'], ['recovery', 'بکاپ'], ['settings', 'تنظیمات'], ['caps', 'قابلیت‌ها'], ['help', 'راهنما']];
+    var tabs = [['dash', 'داشبورد', 'dash'], ['sell', 'مشترک‌ها', 'users'], ['iron', 'آهنین', 'iron'], ['scan', 'شبکه', 'scan'], ['app', 'اپ موبایل', 'app'], ['recovery', 'بکاپ', 'shield'], ['settings', 'تنظیمات', 'settings'], ['caps', 'قابلیت‌ها', 'spark'], ['help', 'راهنما', 'book']];
     var html = '<div class="wrap"><div class="topbar">';
-    html += '<button class="btn" id="theme-btn">' + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
+    html += '<span id="network-state" class="status-dot' + (navigator.onLine ? '' : ' offline') + '">' + (navigator.onLine ? 'آنلاین' : 'آفلاین') + '</span>';
+    html += '<button class="btn" id="install-btn">' + icon('install') + (isStandalone() ? 'نصب‌شده' : 'نصب اپ') + '</button>';
+    html += '<button class="btn" id="theme-btn" aria-label="تعویض پوسته">' + icon('theme') + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
     html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
-    html += '<button class="btn" id="logout-btn">خروج</button>';
-    if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">آپدیت یک‌کلیکی</button>';
-    html += '</div><div class="hero"><div class="mark">N</div><div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
+    html += '<button class="btn" id="logout-btn">' + icon('logout') + 'خروج</button>';
+    if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">' + icon('spark') + 'آپدیت امن</button>';
+    html += '</div><div class="hero"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">Liquid Glass Control Center</div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
     html += domainMenuHtml();
     html += '<div class="tabs">';
     tabs.forEach(function (t) {
-      html += '<button class="tab' + (TAB === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>';
+      html += '<button class="tab' + (TAB === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + t[1] + '</button>';
     });
-    html += '</div>' + inner + '</div>';
+    html += '</div>' + inner;
+    html += '<nav class="mobile-nav" aria-label="ناوبری موبایل">';
+    tabs.forEach(function (t) {
+      html += '<button class="' + (TAB === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + '<span>' + t[1] + '</span></button>';
+    });
+    html += '</nav></div>';
     $('#app').innerHTML = html;
-    document.querySelectorAll('.tab').forEach(function (el) {
-      el.addEventListener('click', function () { TAB = el.getAttribute('data-tab'); paint(); });
+    document.querySelectorAll('[data-tab]').forEach(function (el) {
+      el.addEventListener('click', function () { TAB = el.getAttribute('data-tab'); history.replaceState(null, '', '/?tab=' + TAB); paint(); });
     });
+    var install = $('#install-btn');
+    if (install) install.onclick = installApp;
     $('#theme-btn').onclick = function () {
       localStorage.setItem('edge-theme', theme === 'dark' ? 'light' : 'dark');
       paint();
@@ -430,34 +691,47 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var html = '<div class="grid">';
     html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
-    html += '<div class="pill"><b>' + (STATE.caps.length || '۲۰۰+') + '</b><span>قابلیت</span></div>';
-    html += '<div class="pill"><b>Auto</b><span>انتخاب Endpoint سالم</span></div></div>';
-    html += '<div class="card" style="margin-top:16px"><h2>ساخت اتومات AMINNOVA</h2>';
-    html += '<p class="muted">Endpointهای سالم و کم‌تاخیر Edge + نام AMINCK + تا ۲۰۰ مسیر در یک ساب. هیچ سرعت یا دسترسی روی همه ISPها تضمین نمی‌شود.</p>';
+    html += '<div class="pill"><b>' + (STATE.caps.length || '۳۵۰+') + '</b><span>قابلیت مستند</span></div>';
+    html += '<div class="pill"><b>∞ Pool</b><span>چرخش پنجره فعال</span></div></div>';
+    html += '<div class="card hero-panel" style="margin-top:16px"><div class="section-title"><div><div class="eyebrow">Smart Subscription Studio</div><h2>ساخت اتومات حرفه‌ای AMINNOVA</h2></div>' + icon('spark') + '</div>';
+    html += '<p class="muted">Probe واقعی Edge، مسیر مستقیم + Anycast، خروجی‌های چندکلاینت و Smart Pool چرخان. هیچ سرویس اینترنتی نمی‌تواند نبود قطعی روی همه ISPها را تضمین کند؛ Failover احتمال قطعی را کم می‌کند.</p>';
+    html += '<div class="row"><button class="btn primary" id="heavy-preset" type="button">' + icon('iron') + 'فعال‌سازی MAX Heavy</button><span class="badge">GOD · 200 Active · Iron 5</span></div>';
     html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
     html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
     html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
-    html += '<div class="card"><label>دامنه‌های متصل به همین Worker</label><p class="muted">فقط workers.dev یا Custom Domain متعلق به خودت و Route‌شده به همین Worker. دامنه شخص ثالث با TLS کار نمی‌کند.</p>';
+    html += '<div class="card"><label>دامنه‌های متصل به همین Worker</label><p class="muted">فقط workers.dev یا Custom Domain متعلق به خودت و Route‌شده به همین Worker. دامنه شخص ثالث با TLS کار نمی‌کند.</p><div class="endpoint-pick">';
     if (STATE.endpoints.length === 0) html += '<span class="muted">Endpoint ثبت نشده؛ دامنه فعلی خودکار اضافه می‌شود.</span>';
     STATE.endpoints.forEach(function (endpoint) {
       var result = STATE.probe[endpoint.id];
       html += '<label class="check"><input type="checkbox" data-build-endpoint="' + esc(endpoint.id) + '" checked> ' + esc(endpoint.host + ':' + endpoint.port) + ' <span class="badge">' + (result && result.ok ? ('سالم ' + Math.round(result.latencyMs || 0) + 'ms') : 'نیازمند تست') + '</span></label>';
     });
-    html += '<button class="btn" id="domains-all" type="button">انتخاب همه</button></div>';
+    html += '</div><div class="row"><button class="btn" id="domains-all" type="button">انتخاب همه</button><button class="btn" id="domains-none" type="button">لغو همه</button></div></div>';
     html += '<div class="card"><label class="check"><input id="clean-auto" type="checkbox" checked> افزودن کاندیدهای Cloudflare Anycast برای تست واقعی داخل کلاینت</label>';
     html += '<p class="muted">این IPها تضمین «تمیز» نیستند؛ direct + Anycast با SNI واقعی Worker ساخته می‌شود و url-test/leastPing روی ISP خودت بهترین را انتخاب می‌کند.</p>';
     html += '<label>IPv4 دستی از بازه رسمی Cloudflare (اختیاری، با فاصله یا ویرگول)</label><textarea id="clean-manual" rows="2" placeholder="مثال: 162.159.36.1"></textarea></div>';
+    html += '<div class="card install-banner"><label class="check"><input id="dynamic-pool" type="checkbox" checked> ' + icon('infinity') + ' Smart Pool نامحدود زمانی</label>';
+    html += '<div class="grid"><div><label>تعویض پنجره کاندیدها (دقیقه)</label><input id="rotation-minutes" type="number" min="1" max="60" value="1" style="width:100%"></div><div><label>پنجره فعال هم‌زمان</label><div class="muted">حداکثر ۲۰۰ مسیر برای جلوگیری از هنگ کلاینت</div></div></div>';
+    html += '<p class="muted">∞ یعنی نسل‌های نامحدود در Refreshهای متوالی، نه بی‌نهایت خط در یک پاسخ. URL و Path معتبر می‌مانند تا چرخش باعث قطع عمدی نشود. کلاینت باید ساب را Refresh کند؛ Clash/sing-box بین مسیرهای حاضر خودکار تست می‌کنند.</p></div>';
     html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> کمک اختیاری Cloudflare Workers AI برای انتخاب Profile</label>';
     html += '<p class="muted">AI فقط از عددهای Probe بین Profileهای معتبر انتخاب می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
     html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
     html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰)</label><input id="paths" type="number" min="1" max="200" value="20" style="width:100%"></div></div>';
     html += '<label>تعداد کانفیگ آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(1) + '</select> ';
-    html += '<button class="btn primary" id="auto">ساخت اتومات ساب</button><div id="mk-out"></div></div>';
+    html += '<button class="btn primary big" id="auto">' + icon('spark') + 'ساخت Smart Subscription</button><div id="mk-out"></div></div>';
     shell(html);
     bindInf();
     var domainsAll = $('#domains-all');
     if (domainsAll) domainsAll.onclick = function () {
       document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = true; });
+    };
+    var domainsNone = $('#domains-none');
+    if (domainsNone) domainsNone.onclick = function () {
+      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = false; });
+    };
+    var heavy = $('#heavy-preset');
+    if (heavy) heavy.onclick = function () {
+      $('#paths').value = '200'; $('#iron-n').value = '5'; $('#dynamic-pool').checked = true; $('#clean-auto').checked = true;
+      $('#rotation-minutes').value = '1'; toast('پروفایل MAX Heavy فعال شد', true);
     };
     $('#auto').onclick = function () {
       var name = $('#n').value || ('AMINCK-' + Date.now());
@@ -474,6 +748,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         endpointIds: Array.prototype.slice.call(document.querySelectorAll('[data-build-endpoint]:checked')).map(function (input) { return input.getAttribute('data-build-endpoint'); }),
         useCleanCatalog: !!($('#clean-auto') && $('#clean-auto').checked),
         cleanIps: $('#clean-manual') ? $('#clean-manual').value : '',
+        dynamicPool: !!($('#dynamic-pool') && $('#dynamic-pool').checked),
+        rotationMinutes: Number($('#rotation-minutes').value || 1),
         useCloudflareAi: !!($('#cf-ai') && $('#cf-ai').checked),
         limitBytes: numOrZero('lim-b'),
         limitSeconds: numOrZero('lim-s'),
@@ -483,6 +759,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       api('POST', '/api/auto-build', payload).then(function (d) {
         var subs = d.subscriptions || [{ name: d.user.name, token: d.user.token, subUrl: d.subUrl }];
         var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد · ' + esc(String((d.selectedEndpoints || []).length)) + ' دامنه · ' + esc(String((d.cleanIpsUsed || []).length)) + ' کاندید Anycast</div>';
+        if (d.rollingPool && d.rollingPool.enabled) {
+          out += '<div class="alert">' + icon('infinity') + ' Smart Pool فعال: ' + esc(d.rollingPool.activeWindow) + ' مسیر در پنجره فعال، چرخش هر ' + esc(d.rollingPool.rotationMinutes) + ' دقیقه هنگام Refresh ساب.</div>';
+        }
         if (d.aiAssistance && d.aiAssistance.requested) {
           out += '<div class="alert">Workers AI: ' + (d.aiAssistance.applied ? ('پیشنهاد اعمال شد (' + esc(d.aiAssistance.recommendation) + ')') : 'در دسترس نبود؛ موتور Probe تعیین‌پذیر استفاده شد') + '</div>';
         }
@@ -491,7 +770,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
           var link = sub.subUrl || subLink(sub.token, '');
           out += '<div class="sub-result"><b>' + esc(sub.name) + '</b><div class="uri">' + esc(link) + '</div>';
           var rawLink = sub.rawUrl || subLink(sub.token, 'raw');
-          out += '<div class="row"><button class="btn" data-copy-url="' + esc(link) + '">کپی ساب</button>';
+          out += '<div class="row"><button class="btn" data-copy-url="' + esc(link) + '">' + icon('copy') + 'کپی ساب</button>';
+          out += '<button class="btn" data-share-url="' + esc(link) + '">' + icon('share') + 'ارسال به موبایل</button>';
           out += '<button class="btn" data-copy-url="' + esc(rawLink) + '">کپی VLESS خام</button>';
           out += '<a class="btn" target="_blank" rel="noopener" href="' + esc(rawLink) + '">تست و نمایش</a>';
           out += '<button class="btn" data-copy-url="' + esc(sub.clashUrl || subLink(sub.token, 'clash')) + '">Clash</button>';
@@ -505,6 +785,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         $('#mk-out').innerHTML = out;
         document.querySelectorAll('[data-copy-url]').forEach(function (el) {
           el.onclick = function () { copyText(el.getAttribute('data-copy-url'), 'لینک'); };
+        });
+        document.querySelectorAll('[data-share-url]').forEach(function (el) {
+          el.onclick = function () { shareValue('AMINNOVA Subscription', 'لینک خصوصی ساب را فقط برای صاحب آن ارسال کنید.', el.getAttribute('data-share-url')); };
         });
         document.querySelectorAll('[data-copy-iron]').forEach(function (el) {
           el.onclick = function () {
@@ -523,7 +806,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         toast(String(subs.length) + ' ساب ساخته شد', true);
         return loadUsers();
       }).catch(function (e) { toast(e.message); }).finally(function () {
-        button.disabled = false; button.textContent = 'ساخت اتومات ساب';
+        button.disabled = false; button.innerHTML = icon('spark') + 'ساخت Smart Subscription';
       });
     };
   }
@@ -531,7 +814,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   function viewSell() {
     var html = '<div class="card"><h2>مشترک‌ها و ویرایش</h2><table><thead><tr><th>نام</th><th>مسیر</th><th></th></tr></thead><tbody>';
     STATE.users.forEach(function (u) {
-      html += '<tr><td>' + esc(u.name) + '</td><td>' + (u.routes ? u.routes.length : 0) + '</td>';
+      html += '<tr><td>' + esc(u.name) + (u.dynamicPool ? ' <span class="badge">∞ ' + esc(u.rotationMinutes || 1) + 'm</span>' : '') + '</td><td>' + (u.routes ? u.routes.length : 0) + '</td>';
       html += '<td><button class="btn" data-copy="' + esc(u.token) + '">کپی ساب</button> ';
       html += '<button class="btn" data-edit="' + esc(u.id) + '">ویرایش</button></td></tr>';
     });
@@ -552,7 +835,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var h = '<h2>ویرایش ' + esc(u.name) + '</h2>';
     h += '<label>نام</label><input id="en" value="' + esc(u.name) + '" style="width:100%">';
     h += '<label>قالب نام</label><input id="et" value="' + esc(u.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
-    h += '<label>تعداد مسیر ساب (۱ تا ۲۰۰)</label><input id="ep" type="number" min="1" max="200" value="' + esc(u.routes ? u.routes.length : 3) + '">';
+    h += '<label>تعداد مسیر فعال (۱ تا ۲۰۰)</label><input id="ep" type="number" min="1" max="200" value="' + esc(u.routes ? u.routes.length : 3) + '">';
+    h += '<label class="check"><input id="edyn" type="checkbox"' + (u.dynamicPool ? ' checked' : '') + '> Smart Pool چرخان</label>';
+    h += '<label>چرخش (دقیقه)</label><input id="erot" type="number" min="1" max="60" value="' + esc(u.rotationMinutes || 1) + '">';
     h += limRow('حجم', 'eb') + limRow('ثانیه', 'es') + limRow('اتصال', 'ec') + limRow('سقف درخواست', 'er');
     h += '<button class="btn primary" id="esave">ذخیره ویرایش</button>';
     box.innerHTML = h;
@@ -567,6 +852,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         name: $('#en').value,
         configNameTemplate: $('#et').value,
         paths: Number($('#ep').value || 3),
+        dynamicPool: $('#edyn').checked,
+        rotationMinutes: Number($('#erot').value || 1),
         limitBytes: numOrZero('eb'),
         limitSeconds: numOrZero('es'),
         maxConnections: numOrZero('ec'),
@@ -615,6 +902,54 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     };
     $('#pr').onclick = function () {
       api('POST', '/api/probe', {}).then(function (d) { STATE.probe = d.results || {}; toast('پینگ شد', true); paint(); }).catch(function (e) { toast(e.message); });
+    };
+  }
+
+  function viewApp() {
+    var html = '<div class="card hero-panel"><div class="section-title"><div><div class="eyebrow">Installable Mobile Companion</div><h2>اپ موبایل AMINNOVA</h2></div>' + icon('app') + '</div>';
+    html += '<p class="muted">این نسخه PWA روی Android، iOS و دسکتاپ نصب می‌شود و پنل، ساب‌ها، Share و مانیتور Refresh را داخل یک اپ نگه می‌دارد.</p>';
+    html += '<div class="row"><button class="btn primary big" id="app-install">' + icon('install') + (isStandalone() ? 'اپ نصب شده' : 'نصب روی صفحه اصلی') + '</button><button class="btn" id="app-update">' + icon('spark') + 'بررسی آپدیت اپ</button></div></div>';
+    html += '<div class="grid"><div class="card"><h2>انتخاب مشترک</h2><select id="app-user" style="width:100%">';
+    STATE.users.forEach(function (u) { html += '<option value="' + esc(u.token) + '">' + esc(u.name) + (u.dynamicPool ? ' · ∞ Pool' : '') + '</option>'; });
+    html += '</select><div id="app-links"></div></div>';
+    html += '<div class="card"><h2>مانیتور چرخش یک‌دقیقه‌ای</h2><p class="muted">فقط وقتی اپ باز است، هر دقیقه ساب انتخابی را Refresh و هدر Rotation را نمایش می‌دهد. اپ بسته یا Client خارجی را سیستم‌عامل کنترل می‌کند.</p><button class="btn primary" id="monitor-btn">شروع مانیتور</button><div id="monitor-state" class="uri">خاموش</div></div></div>';
+    html += '<div class="card"><h2>اتصال به کانفیگ</h2><div class="alert">مرورگر/PWA اجازه ساخت VPN سیستمی ندارد. برای اتصال واقعی باید لینک را در V2RayNG، V2Box، MahsaNG، Clash/Mihomo یا sing-box Import کنید. AMINNOVA هیچ‌وقت اتصال جعلی یا VPN مرورگری ادعا نمی‌کند.</div>';
+    html += '<div class="feature-grid"><div class="feature-tile">' + icon('copy') + '<h3>V2Ray / Raw</h3><p class="muted">کپی Base64 یا VLESS خام برای کلاینت‌های V2Ray.</p></div><div class="feature-tile">' + icon('scan') + '<h3>Clash / Mihomo</h3><p class="muted">YAML کامل با url-test و fallback.</p></div><div class="feature-tile">' + icon('iron') + '<h3>sing-box / Iron</h3><p class="muted">JSON استاندارد با Selector و URLTest.</p></div></div></div>';
+    shell(html);
+    var install = $('#app-install'); if (install) install.onclick = installApp;
+    var update = $('#app-update'); if (update) update.onclick = function () {
+      if (!navigator.serviceWorker) { toast('Service Worker پشتیبانی نمی‌شود'); return; }
+      navigator.serviceWorker.getRegistration('/').then(function (reg) { if (reg) return reg.update(); }).then(function () { toast('بررسی آپدیت انجام شد', true); });
+    };
+    function paintLinks() {
+      var token = $('#app-user') ? $('#app-user').value : '';
+      if (!token) { $('#app-links').innerHTML = '<div class="alert">اول از داشبورد یک مشترک بساز.</div>'; return; }
+      var base = subLink(token, '');
+      var links = [
+        ['ساب خودکار', base], ['VLESS خام', subLink(token, 'raw')], ['Clash/Mihomo', subLink(token, 'clash')], ['sing-box', subLink(token, 'singbox')]
+      ];
+      var out = '';
+      links.forEach(function (item) {
+        out += '<div class="sub-result"><b>' + item[0] + '</b><div class="uri">' + esc(item[1]) + '</div><div class="row"><button class="btn" data-app-copy="' + esc(item[1]) + '">' + icon('copy') + 'کپی</button><button class="btn" data-app-share="' + esc(item[1]) + '">' + icon('share') + 'Share</button></div></div>';
+      });
+      $('#app-links').innerHTML = out;
+      document.querySelectorAll('[data-app-copy]').forEach(function (el) { el.onclick = function () { copyText(el.getAttribute('data-app-copy'), 'لینک Import'); }; });
+      document.querySelectorAll('[data-app-share]').forEach(function (el) { el.onclick = function () { shareValue('AMINNOVA', 'Subscription خصوصی', el.getAttribute('data-app-share')); }; });
+    }
+    if ($('#app-user')) { $('#app-user').onchange = paintLinks; paintLinks(); }
+    var monitor = $('#monitor-btn');
+    function runMonitor() {
+      var token = $('#app-user') ? $('#app-user').value : '';
+      if (!token) return;
+      fetch(subLink(token, 'raw'), { cache: 'no-store', credentials: 'omit' }).then(function (res) {
+        if (res.body && res.body.cancel) res.body.cancel().catch(function () {});
+        var box = $('#monitor-state'); if (!box) return;
+        box.textContent = 'HTTP ' + res.status + ' · mode=' + (res.headers.get('x-aminck-pool-mode') || 'fixed') + ' · epoch=' + (res.headers.get('x-aminck-rotation-epoch') || '—') + ' · ' + new Date().toLocaleTimeString('fa-IR');
+      }).catch(function () { var box = $('#monitor-state'); if (box) box.textContent = 'شبکه در دسترس نیست'; });
+    }
+    if (monitor) monitor.onclick = function () {
+      if (MONITOR_TIMER) { clearInterval(MONITOR_TIMER); MONITOR_TIMER = null; monitor.textContent = 'شروع مانیتور'; $('#monitor-state').textContent = 'خاموش'; return; }
+      runMonitor(); MONITOR_TIMER = setInterval(runMonitor, 60000); monitor.textContent = 'توقف مانیتور';
     };
   }
 
@@ -713,17 +1048,36 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
 
   function viewCaps() {
-    var html = '<div class="card"><h2>مانیفست قابلیت‌ها (' + STATE.caps.length + ')</h2><ul class="api">';
-    STATE.caps.forEach(function (c) {
-      html += '<li><b>' + esc(c.title) + '</b> — ' + esc(c.description) + '</li>';
-    });
-    html += '</ul></div>';
+    var categories = [];
+    STATE.caps.forEach(function (c) { if (categories.indexOf(c.category) < 0) categories.push(c.category); });
+    var html = '<div class="card hero-panel"><div class="section-title"><div><div class="eyebrow">Verified Feature Manifest</div><h2>' + STATE.caps.length + '+ قابلیت واقعی</h2></div>' + icon('spark') + '</div><p class="muted">همه موارد به کد، API، UI، امنیت، خروجی یا PWA موجود متصل‌اند؛ شعار و قابلیت خیالی ثبت نمی‌شود.</p></div>';
+    html += '<div class="card"><div class="cap-toolbar"><input id="cap-search" placeholder="جست‌وجوی قابلیت…"><select id="cap-cat"><option value="">همه دسته‌ها</option>';
+    categories.forEach(function (cat) { html += '<option value="' + esc(cat) + '">' + esc(cat) + '</option>'; });
+    html += '</select></div><div id="cap-count" class="muted"></div><div id="cap-list" class="cap-list"></div></div>';
     shell(html);
+    function filterCaps() {
+      var q = ($('#cap-search').value || '').trim().toLowerCase();
+      var cat = $('#cap-cat').value;
+      var list = STATE.caps.filter(function (c) {
+        return (!cat || c.category === cat) && (!q || (c.title + ' ' + c.description).toLowerCase().indexOf(q) >= 0);
+      });
+      $('#cap-count').textContent = list.length + ' مورد نمایش داده می‌شود';
+      $('#cap-list').innerHTML = list.map(function (c) {
+        return '<article class="cap-item"><span class="badge">' + esc(c.category) + '</span><b>' + esc(c.title) + '</b><div class="muted">' + esc(c.description) + '</div></article>';
+      }).join('');
+    }
+    $('#cap-search').oninput = filterCaps; $('#cap-cat').onchange = filterCaps; filterCaps();
   }
 
   function viewHelp() {
-    var html = '<div class="card"><h2>ستاپ راحت و امن</h2><p class="muted">از Deploy رسمی استفاده کنید. توکن Cloudflare فقط باید در Secretهای Cloudflare/GitHub باشد و این پنل هیچ‌وقت آن را دریافت نمی‌کند.</p>';
-    html += '<p><a class="btn primary" id="easy" target="_blank" rel="noopener">ستاپ یک‌کلیکی کلودفلر</a></p></div>';
+    var html = '<div class="card hero-panel"><div class="section-title"><div><div class="eyebrow">AMINNOVA Academy</div><h2>راهنمای کامل از Deploy تا اتصال</h2></div>' + icon('book') + '</div><p class="muted">قدم‌ها را به ترتیب انجام بده؛ هیچ Cloudflare Token داخل پنل وارد نکن.</p><a class="btn primary big" id="easy" target="_blank" rel="noopener">' + icon('cloud') + 'Deploy رسمی</a></div>';
+    html += '<div class="grid"><div class="card"><h2>راه‌اندازی</h2>';
+    html += '<div class="guide-step"><strong>۱</strong><div><b>Deploy</b><p class="muted">لینک رسمی را باز و فقط ADMIN_PASSWORD قوی تعیین کن.</p></div></div>';
+    html += '<div class="guide-step"><strong>۲</strong><div><b>ورود</b><p class="muted">با نام AMINCK وارد شو؛ دامنه جاری خودکار Endpoint می‌شود.</p></div></div>';
+    html += '<div class="guide-step"><strong>۳</strong><div><b>ساخت</b><p class="muted">Endpoint، تعداد مسیر، Anycast و Smart Pool را انتخاب و ساخت را بزن.</p></div></div></div>';
+    html += '<div class="card"><h2>Import در کلاینت</h2><div class="guide-step"><strong>۱</strong><div><b>لینک مناسب</b><p class="muted">V2Ray Base64 برای V2RayNG/V2Box؛ YAML برای Clash؛ JSON برای sing-box.</p></div></div><div class="guide-step"><strong>۲</strong><div><b>Refresh</b><p class="muted">برای Pool یک‌دقیقه‌ای، Refresh ساب کلاینت را روی کمترین بازه پشتیبانی‌شده تنظیم کن. url-test خودش مسیر حاضر را انتخاب می‌کند.</p></div></div><div class="guide-step"><strong>۳</strong><div><b>تست</b><p class="muted">نتیجه WSS پنل و تست داخل همان ISP را بررسی کن؛ Edge Ping معادل وضعیت اینترنت کاربر نیست.</p></div></div></div></div>';
+    html += '<div class="card"><h2>Smart Pool و پایداری</h2><ul class="api"><li>∞ به معنی تولید نامحدود پنجره‌های جدید در طول زمان است؛ پاسخ واقعاً بی‌نهایت باعث مصرف حافظه و Crash کلاینت می‌شود.</li><li>Path و Token در چرخش خودکار ثابت می‌مانند تا اتصال‌های موجود عمداً شکسته نشوند.</li><li>همیشه مسیر Direct میان Anycastها حفظ می‌شود.</li><li>هیچ Worker، IP یا ISP بدون قطعی تضمین نمی‌شود؛ Custom Domain، بکاپ و Deploy دوم راهکار واقعی Failover هستند.</li></ul></div>';
+    html += '<div class="card"><h2>اپ موبایل</h2><p class="muted">در تب «اپ موبایل» PWA را نصب، لینک‌ها را Share و Rotation را مانیتور کن. PWA مرورگر مجوز VpnService سیستم‌عامل ندارد؛ اتصال واقعی با کلاینت استاندارد انجام می‌شود.</p></div>';
     shell(html);
     var a = $('#easy');
     if (a && STATE.launch) a.href = STATE.launch.deployUrl;
@@ -734,6 +1088,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     if (TAB === 'sell') viewSell();
     else if (TAB === 'iron') viewIron();
     else if (TAB === 'scan') viewScan();
+    else if (TAB === 'app') viewApp();
     else if (TAB === 'recovery') viewRecovery();
     else if (TAB === 'settings') viewSettings();
     else if (TAB === 'caps') viewCaps();
@@ -767,10 +1122,23 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
 
   function boot() {
+    var requestedTab = new URLSearchParams(location.search).get('tab');
+    if (['dash','sell','iron','scan','app','recovery','settings','caps','help'].indexOf(requestedTab) >= 0) TAB = requestedTab;
+    registerPwa();
     api('GET', '/api/launch').then(function (d) { STATE.launch = d; }).catch(function () {}).finally(function () {
       api('GET', '/api/me').then(function (d) { render(d && d.me ? d.me : null); }).catch(function () { render(null); });
     });
   }
+
+  window.addEventListener('beforeinstallprompt', function (event) { event.preventDefault(); INSTALL_EVENT = event; });
+  window.addEventListener('appinstalled', function () { INSTALL_EVENT = null; toast('AMINNOVA روی دستگاه نصب شد', true); });
+  function updateNetworkState() {
+    var badge = $('#network-state'); if (!badge) return;
+    badge.className = 'status-dot' + (navigator.onLine ? '' : ' offline');
+    badge.textContent = navigator.onLine ? 'آنلاین' : 'آفلاین';
+  }
+  window.addEventListener('online', updateNetworkState);
+  window.addEventListener('offline', updateNetworkState);
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

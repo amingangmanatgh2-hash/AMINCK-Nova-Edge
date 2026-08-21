@@ -39,7 +39,7 @@ export const POWER_LEVELS: Record<PowerLevel, PowerSpec> = {
 
 /** Maximum number of endpoints the scanner/settings accept. */
 export const MAX_ENDPOINTS = 50;
-/** Maximum number of paths a user subscription may hold. */
+/** Maximum simultaneously emitted routes in one client-safe rolling window. */
 export const MAX_PATHS = 200;
 /** Maximum subscriptions created by one automatic batch request. */
 export const MAX_BATCH_SUBSCRIPTIONS = 10;
@@ -292,6 +292,12 @@ export interface User {
   fingerprint?: Fingerprint | null;
   /** Per-user config name template; falls back to settings.configNameTemplate. */
   configNameTemplate?: string | null;
+  /** Rolling pool emits a bounded, client-safe window that changes on refresh. */
+  dynamicPool?: boolean;
+  /** Rotation cadence in minutes; the UI defaults to one minute. */
+  rotationMinutes?: number;
+  /** Validated Cloudflare Anycast candidates assigned to routes each rotation. */
+  poolCleanIps?: string[];
   /** Internal note, only visible to admins. */
   note: string;
   createdAt: number;
@@ -427,6 +433,8 @@ export interface BuildRequest {
   fingerprint?: Fingerprint;
   configNameTemplate?: string;
   endpointIds?: string[]; // optional subset of endpoints to use
+  dynamicPool?: boolean; // rotating active window; never emits an unbounded response
+  rotationMinutes?: number; // 1..60
 }
 
 export interface BuiltConfig {

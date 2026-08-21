@@ -23,9 +23,21 @@ import type { VlessTarget } from './protocol';
 import { parseVlessHeader } from './protocol';
 import { isPrivateLiteral } from './utils';
 import { defaultRuntimeHooks, probeAll } from './probe';
-import { UI_APP_CSS, UI_APP_JS, uiShell } from './ui';
+import {
+  UI_APP_CSS,
+  UI_APP_JS,
+  UI_ICON_SVG,
+  UI_MANIFEST_JSON,
+  UI_SW_JS,
+  uiShell,
+} from './ui';
 
 export { AMINCKStore };
+
+const PANEL_ASSETS = new Set([
+  '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
+  '/icon.svg', '/icon-192.png', '/icon-512.png', '/favicon.ico',
+]);
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -42,25 +54,44 @@ export default {
       );
     }
 
-    if (request.method === 'GET' && (path === '/' || path === '/app.js' || path === '/app.css')) {
-      // Static panel assets are generated from src/ui.ts and still go through
-      // the Worker so security headers apply.
-      if (env.ASSETS) {
+    if (request.method === 'GET' && PANEL_ASSETS.has(path)) {
+      // Static PWA assets are generated from src/ui.ts and still go through
+      // the Worker so security headers apply. API/subscription responses are
+      // deliberately excluded from the service-worker cache.
+      if (env.ASSETS && path !== '/favicon.ico') {
         const assetRes = await env.ASSETS.fetch(request);
-        if (assetRes.status !== 404) return withHeaders(assetRes, {});
+        if (assetRes.status !== 404) {
+          const headers = new Headers(assetRes.headers);
+          if (path === '/sw.js') {
+            headers.set('cache-control', 'no-cache, no-store, must-revalidate');
+            headers.set('service-worker-allowed', '/');
+          }
+          return withHeaders(new Response(assetRes.body, { status: assetRes.status, headers }), {});
+        }
       }
       if (path === '/') return withHeaders(html(uiShell('AMINNOVA')), {});
       if (path === '/app.js') {
-        return withHeaders(
-          new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
-          {},
-        );
+        return withHeaders(new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }), {});
       }
-      return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
+      if (path === '/app.css') {
+        return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
+      }
+      if (path === '/manifest.webmanifest') {
+        return withHeaders(new Response(UI_MANIFEST_JSON, { headers: { 'content-type': 'application/manifest+json; charset=utf-8' } }), {});
+      }
+      if (path === '/sw.js') {
+        return withHeaders(new Response(UI_SW_JS, { headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'no-cache, no-store, must-revalidate',
+          'service-worker-allowed': '/',
+        } }), {});
+      }
+      if (path === '/icon-192.png' || path === '/icon-512.png') {
+        return withHeaders(json({ error: 'asset-binding-required' }, 404), {});
+      }
+      return withHeaders(new Response(UI_ICON_SVG, { headers: { 'content-type': 'image/svg+xml; charset=utf-8' } }), {});
     }
-    if (request.method === 'GET' && (path === '/favicon.ico' || path === '/robots.txt')) {
-      return new Response('', { status: 204 });
-    }
+    if (request.method === 'GET' && path === '/robots.txt') return new Response('', { status: 204 });
 
     if (path.startsWith('/api/')) {
       return handleApi(request, env, ctx, host);
@@ -130,7 +161,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
       ip: clientIp(request),
     });
     const data = await doRes.json().catch(() => ({}));
-    const headers = new Headers();
+    const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
     if (data && typeof data === 'object' && (data as { ok?: boolean }).ok && typeof (data as { session?: string }).session === 'string') {
       headers.set(
         'set-cookie',
@@ -335,6 +366,13 @@ async function handleSub(
     user: User;
     settings: PanelSettings;
     payloads: Record<ConfigFormat, string>;
+    rotation?: {
+      enabled: boolean;
+      epoch: number;
+      nextRotationAt: number;
+      rotationMinutes: number;
+      activeRoutes: number;
+    };
   };
 
   let format: ConfigFormat;
@@ -364,7 +402,20 @@ async function handleSub(
   );
   headers.set('profile-update-interval', `${settings.updateIntervalHours || 24}h`);
   if (settings.supportUrl) headers.set('support-url', settings.supportUrl);
-  headers.set('cache-control', 'no-store');
+  const rotation = data.rotation;
+  if (rotation?.enabled) {
+    headers.set('x-aminck-pool-mode', 'rolling');
+    headers.set('x-aminck-rotation-epoch', String(rotation.epoch));
+    headers.set('x-aminck-rotation-minutes', String(rotation.rotationMinutes));
+    headers.set('x-aminck-next-rotation', String(rotation.nextRotationAt));
+    headers.set('x-aminck-active-routes', String(rotation.activeRoutes));
+    headers.set('x-aminck-refresh-seconds', String(rotation.rotationMinutes * 60));
+  } else {
+    headers.set('x-aminck-pool-mode', 'fixed');
+  }
+  headers.set('etag', `W/"aminnova-${data.user.id}-${settings.configGeneration}-${rotation?.epoch ?? 0}-${format}"`);
+  headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
+  headers.set('pragma', 'no-cache');
   return withHeaders(new Response(payload, { status: 200, headers }), {});
 }
 

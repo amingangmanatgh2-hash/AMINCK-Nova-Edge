@@ -3,7 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UI_APP_CSS, UI_APP_JS, UI_SHELL_HTML } from '../src/ui';
+import {
+  UI_APP_CSS,
+  UI_APP_JS,
+  UI_ICON_SVG,
+  UI_MANIFEST_JSON,
+  UI_SHELL_HTML,
+  UI_SW_JS,
+} from '../src/ui';
 
 describe('artifact checks (runtime smoke steps)', () => {
   it('browser JavaScript passes node --check', () => {
@@ -29,8 +36,26 @@ describe('artifact checks (runtime smoke steps)', () => {
     expect(js).toBe(UI_APP_JS);
     expect(css).toBe(UI_APP_CSS);
     expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'AMINNOVA'));
+    expect(readFileSync('public/manifest.webmanifest', 'utf8')).toBe(UI_MANIFEST_JSON);
+    expect(readFileSync('public/sw.js', 'utf8')).toBe(UI_SW_JS);
+    expect(readFileSync('public/icon.svg', 'utf8')).toBe(UI_ICON_SVG);
+    const icon192 = readFileSync('public/icon-192.png');
+    const icon512 = readFileSync('public/icon-512.png');
+    expect(icon192.subarray(1, 4).toString()).toBe('PNG');
+    expect(icon512.subarray(1, 4).toString()).toBe('PNG');
+    const pngWidth = (icon: Uint8Array) => (((icon[16]! << 24) >>> 0) + (icon[17]! << 16) + (icon[18]! << 8) + icon[19]!);
+    expect(pngWidth(icon192)).toBe(192);
+    expect(pngWidth(icon512)).toBe(512);
+    expect(JSON.parse(UI_MANIFEST_JSON).display).toBe('standalone');
+    expect(UI_SW_JS).toContain("'/api/'");
+    expect(UI_SW_JS).toContain("'/sub/'");
+    expect(UI_SW_JS).toContain("'/healthz'");
+    expect(UI_SW_JS).toContain("'/connect'");
+    expect(UI_SW_JS).toContain('SHELL.indexOf(url.pathname) < 0');
+    expect(UI_SHELL_HTML).toContain('rel="manifest"');
     // the committed assets are also valid JS
     execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
+    execFileSync(process.execPath, ['--check', 'public/sw.js'], { stdio: 'pipe', cwd: process.cwd() });
   });
 
   it('no secrets or .dev.vars are tracked in git', () => {
@@ -59,7 +84,7 @@ describe('artifact checks (runtime smoke steps)', () => {
 
   it('capability manifest satisfies the contract', async () => {
     const { CAPABILITIES, ownerCapabilitiesCount } = await import('../src/capabilities');
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(200);
+    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(350);
     expect(ownerCapabilitiesCount()).toBeGreaterThanOrEqual(50);
   });
 });

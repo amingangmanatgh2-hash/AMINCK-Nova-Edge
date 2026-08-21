@@ -86,6 +86,19 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
 - No third-party CDN, analytics, or tracking is used by the panel.
 
+### PWA and rolling subscriptions
+
+- The service worker caches only the public shell (HTML, CSS, JavaScript,
+  manifest and icons). `/api`, `/sub`, `/healthz`, `/connect` and `/e…`
+  WebSocket paths are excluded.
+- Subscription responses use `private, no-store, must-revalidate` plus legacy
+  `pragma: no-cache`; tokens and generated profiles are not offline-cached.
+- Rolling mode keeps the token, UUID and authorized paths stable. Automatically
+  rotating credentials every minute would break installed clients and active
+  sessions, so only route order and validated Cloudflare connection IPs rotate.
+- Manual front IPs must belong to Cloudflare's published IPv4 ranges; TLS SNI
+  and WebSocket Host remain the real Worker/custom-domain hostname.
+
 ### Honest measurements
 
 - The scanner reports HTTPS response-header latency measured from the

@@ -11,6 +11,7 @@ import {
   isCloudflareIpv4Candidate,
   planRoutes,
   renderConfigName,
+  rollingRouteWindow,
   validateNameTemplate,
   validateTlsPorts,
   vlessUriFor,
@@ -315,6 +316,33 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(10);
     expect(CLEAN_IP_CATALOG.every((item) => isCloudflareIpv4Candidate(item.ip))).toBe(true);
     expect(isCloudflareIpv4Candidate('8.8.8.8')).toBe(false);
+  });
+
+  it('rotates a client-safe Anycast window without invalidating stored paths', () => {
+    const user = userFixture({
+      routes: routesFor('u'.repeat(24), undefined, 20),
+      dynamicPool: true,
+      rotationMinutes: 1,
+      poolCleanIps: ['162.159.36.1', '104.16.132.229', '8.8.8.8'],
+    });
+    const first = rollingRouteWindow(user, 120_000);
+    const second = rollingRouteWindow(user, 180_000);
+    expect(first.enabled).toBe(true);
+    expect(first.routes).toHaveLength(20);
+    expect(first.routes[0]!.frontIp).toBeUndefined();
+    expect(first.routes[10]!.frontIp).toBeUndefined();
+    expect(first.routes.filter((route) => route.frontIp).length).toBeGreaterThan(15);
+    expect(first.routes.every((route) => user.routes.some((stored) => stored.path === route.path))).toBe(true);
+    expect(first.routes.map((route) => route.path)).not.toEqual(second.routes.map((route) => route.path));
+    expect(first.routes.some((route) => route.frontIp === '8.8.8.8')).toBe(false);
+    expect(first.nextRotationAt).toBe(180_000);
+  });
+
+  it('keeps fixed subscriptions unchanged by rolling-window logic', () => {
+    const user = userFixture({ dynamicPool: false, rotationMinutes: 1 });
+    const window = rollingRouteWindow(user, 120_000);
+    expect(window.enabled).toBe(false);
+    expect(window.routes).toEqual(user.routes);
   });
 
   it('iron pack puts every route into each aggregate JSON profile', () => {

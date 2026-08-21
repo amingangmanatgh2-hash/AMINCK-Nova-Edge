@@ -8,12 +8,12 @@
 
 ## امکانات اصلی
 
-- پنل سادهٔ فارسی، RTL، واکنش‌گرا و Dark/Light
+- پنل حرفه‌ای **Liquid Glass** فارسی/RTL با Dark/Light، انیمیشن، SVG Icon، Bottom Navigation و Reduced Motion
 - ورود مالک و ادمین‌های چندنقشی با Permissionهای Backend
 - ساخت، ویرایش، فعال/غیرفعال و حذف مشترک
 - حجم، زمان، اتصال همزمان و تعداد درخواست ساب؛ مقدار `0` یعنی نامحدود
 - ساخت دسته‌ای ۱، ۲، ۳، ۵ یا ۱۰ ساب مستقل با یک کلیک
-- انتخاب ۱ تا ۲۰۰ کانفیگ داخل هر Subscription (با سقف نقش ادمین)
+- انتخاب ۱ تا ۲۰۰ مسیر هم‌زمان داخل هر Subscription، یا **Smart Pool ∞** برای نسل‌های نامحدود پنجره چرخان در طول زمان
 - قالب نام با `{brand}`، `{app}`، `{user}`، `{profile}`، `{index}`، `{endpoint}` و `{port}`
 - نام پیش‌فرض دارای برند **AMINCK**
 - خروجی V2Ray Base64، Raw VLESS، Clash Meta و sing-box
@@ -37,7 +37,8 @@
 - شمارش تقریبی مصرف، نشست زنده، انقضا و سقف درخواست
 - Audit log، Backup/Restore قابل حمل، چرخش UUID/Token و Hot Update مسیرها
 - Session تصادفی ۲۵۶ بیتی، PBKDF2، Lockout، Same-Origin و Security Headerها
-- مانیفست داخل پنل با **۲۰۰+ کنترل و قابلیت پیاده‌سازی‌شده**
+- PWA نصب‌پذیر روی Android/iOS/Desktop با Manifest، Service Worker امن، Share و مانیتور Rotation
+- مانیفست قابل جست‌وجو با **۳۵۰+ کنترل و قابلیت پیاده‌سازی‌شده**
 
 ## نصب سریع و امن
 
@@ -67,6 +68,16 @@ npx wrangler login
 npx wrangler secret put ADMIN_PASSWORD
 npm run deploy
 ```
+
+برای Preview محلی بدون اتصال Workers AI به حساب Cloudflare:
+
+```bash
+cp .dev.vars.example .dev.vars
+# مقدار ADMIN_PASSWORD را در .dev.vars تعیین کنید
+npm run dev:local
+```
+
+فایل `wrangler.local.jsonc` فقط Binding هوش مصنوعی راه‌دور را از Preview حذف می‌کند؛ تنظیم Production همچنان `wrangler.jsonc` است.
 
 ### روش ۳: GitHub Actions (قالب آماده)
 
@@ -144,6 +155,25 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 4. DNS همان Custom Domain را به Deploy جدید منتقل کنید. Token و UUID مشترک‌ها حفظ می‌شوند و مسیرها به Worker جدید Rebind می‌شوند.
 
 برای Zero-downtime واقعی باید یک Deploy دوم در حساب/ارائه‌دهنده‌ای مستقل و DNS failover بیرون از حساب حذف‌شونده داشته باشید. این موضوع نمی‌تواند فقط با یک Worker در یک حساب تضمین شود.
+
+## Smart Pool ∞ و تعویض یک‌دقیقه‌ای
+
+پاسخ واقعاً «بی‌نهایت خط» نه در HTTP عملی است و نه توسط کلاینت‌های موبایل قابل Import؛ چنین خروجی‌ای حافظه و CPU را تمام می‌کند. حالت **Smart Pool ∞** راه امن این نیاز است:
+
+- هر پاسخ یک پنجره فعال ۱ تا ۲۰۰ مسیره و قابل Import دارد.
+- در هر Refresh و با بازه پیش‌فرض یک دقیقه، ترتیب مسیرها و تخصیص IPهای Anycast معتبر تغییر می‌کند.
+- Path، Token و UUID ثابت می‌مانند تا Rotation اتصال‌های موجود را عمداً خراب نکند.
+- مسیر اول و هر دهمین مسیر Direct است؛ بنابراین کاندید Anycast نامناسب همه خروجی را حذف نمی‌کند.
+- Headerهای `x-aminck-pool-mode`، `x-aminck-rotation-epoch`، `x-aminck-refresh-seconds` و `x-aminck-active-routes` برای مانیتورینگ صادر می‌شوند.
+- تعویض Server-side فقط هنگام Refresh ساب دیده می‌شود؛ کلاینت باید Refresh دوره‌ای داشته باشد. Clash/Mihomo و sing-box مسیرهای حاضر را با `url-test` پیوسته بررسی می‌کنند.
+
+این روش قطعی صفر را تضمین نمی‌کند. برای دسترس‌پذیری جدی از Custom Domain خودتان، Backup، Deploy دوم و DNS Failover خارج از حساب اصلی استفاده کنید.
+
+## اپ موبایل نصب‌پذیر
+
+پنل یک **Progressive Web App** در همان مخزن و همان Worker است. از دکمه «نصب اپ» می‌توان آن را روی Home Screen نصب کرد. اپ همراه مدیریت مشترک، Copy/Share همه فرمت‌ها، بررسی آپدیت و مانیتور یک‌دقیقه‌ای Pool را ارائه می‌دهد. Service Worker فقط Shell عمومی را Cache می‌کند و عمداً `/api`، `/sub`، `/healthz`، `/connect` و WebSocket را Cache نمی‌کند.
+
+PWA مرورگر اجازه ایجاد VPN سیستمی (`VpnService`/Network Extension) ندارد؛ بنابراین برای اتصال واقعی، Subscription را در V2RayNG، V2Box، MahsaNG، NapsternetV، Clash/Mihomo یا sing-box Import کنید. تب «اپ موبایل» لینک مناسب هر فرمت را می‌دهد؛ جزئیات در [راهنمای اپ موبایل و Smart Pool](docs/MOBILE-PWA-FA.md) آمده است.
 
 ## Host Alias و Multi-port
 

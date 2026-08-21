@@ -46,6 +46,19 @@ describe('health & headers', () => {
     const css = await w.mf.dispatchFetch(`${w.base}/app.css`);
     expect(css.status).toBe(200);
     expect((await css.text()).length).toBeGreaterThan(500);
+
+    const manifest = await w.mf.dispatchFetch(`${w.base}/manifest.webmanifest`);
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers.get('content-type')).toContain('manifest');
+    expect(((await manifest.json()) as any).display).toBe('standalone');
+    const sw = await w.mf.dispatchFetch(`${w.base}/sw.js`);
+    expect(sw.status).toBe(200);
+    expect(sw.headers.get('service-worker-allowed')).toBe('/');
+    expect(sw.headers.get('cache-control')).toContain('no-store');
+    expect(await sw.text()).toContain("'/sub/'");
+    const icon = await w.mf.dispatchFetch(`${w.base}/icon.svg`);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get('content-type')).toContain('image/svg+xml');
   });
 });
 
@@ -459,10 +472,10 @@ describe('endpoints', () => {
 });
 
 describe('capabilities API', () => {
-  it('reports ≥150 capabilities and ≥50 owner/admin ones', async () => {
+  it('reports ≥350 capabilities and ≥50 owner/admin ones', async () => {
     const r = await w.api(ownerCookie, '/api/capabilities', {});
     expect(r.status).toBe(200);
-    expect(r.data.total).toBeGreaterThanOrEqual(150);
+    expect(r.data.total).toBeGreaterThanOrEqual(350);
     expect(r.data.ownerCount).toBeGreaterThanOrEqual(50);
     expect(r.data.capabilities.length).toBe(r.data.total);
   });
@@ -665,6 +678,8 @@ describe('AMINNOVA reliability regressions', () => {
       speedPreset: 'god',
       endpointIds: [selectedId],
       useCleanCatalog: true,
+      dynamicPool: true,
+      rotationMinutes: 1,
       useCloudflareAi: true,
       aiApplied: true,
       aiRecommendation: 'forged',
@@ -676,6 +691,8 @@ describe('AMINNOVA reliability regressions', () => {
     expect(new Set(built.data.subscriptions.map((x: any) => x.token)).size).toBe(3);
     expect(built.data.users.every((u: any) => u.routes.length === 4)).toBe(true);
     expect(built.data.cleanIpsUsed.length).toBeGreaterThan(10);
+    expect(built.data.rollingPool).toEqual(expect.objectContaining({ enabled: true, activeWindow: 4, rotationMinutes: 1 }));
+    expect(built.data.users.every((u: any) => u.dynamicPool && u.rotationMinutes === 1)).toBe(true);
     expect(built.data.aiAssistance).toEqual({ requested: true, applied: false, recommendation: '' });
     expect(built.data.users.every((u: any) => u.routes.some((r: any) => r.frontIp))).toBe(true);
     expect(built.data.users.flatMap((u: any) => u.routes).filter((r: any) => r.frontIp).every((r: any) => r.sni === 'nova.test')).toBe(true);
@@ -685,6 +702,11 @@ describe('AMINNOVA reliability regressions', () => {
     for (const sub of built.data.subscriptions) {
       const res = await w.mf.dispatchFetch(sub.subUrl.replace('https://nova.test', w.base));
       expect(res.status).toBe(200);
+      expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
+      expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
+      expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
+      expect(res.headers.get('cache-control')).toContain('no-store');
+      expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
       const raw = await w.mf.dispatchFetch(sub.rawUrl.replace('https://nova.test', w.base));
       expect(raw.status).toBe(200);
@@ -714,6 +736,9 @@ describe('AMINNOVA reliability regressions', () => {
     const created = await w.api(ownerCookie, '/api/user-create', {
       name: 'portable-recovery-user',
       paths: 3,
+      dynamicPool: true,
+      rotationMinutes: 1,
+      useCleanCatalog: true,
     });
     const original = created.data.user;
     const backup = await w.api(ownerCookie, '/api/backup', {});
@@ -730,6 +755,9 @@ describe('AMINNOVA reliability regressions', () => {
     const list = await w.api(ownerCookie, '/api/users', { q: 'portable-recovery-user' });
     expect(list.data.users[0].token).toBe(original.token);
     expect(list.data.users[0].uuid).toBe(original.uuid);
+    expect(list.data.users[0].dynamicPool).toBe(true);
+    expect(list.data.users[0].rotationMinutes).toBe(1);
+    expect(list.data.users[0].poolCleanIps.length).toBeGreaterThan(10);
     expect(list.data.users[0].routes.every((r: any) => r.host === 'nova.test')).toBe(true);
     expect((await w.mf.dispatchFetch(`${w.base}/sub/${original.token}`)).status).toBe(200);
   });

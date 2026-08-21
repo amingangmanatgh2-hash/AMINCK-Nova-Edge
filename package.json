@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:local": "wrangler dev --config wrangler.local.jsonc --ip 0.0.0.0",
     "build": "npm run build:public && npm run check",
     "predeploy": "npm run build:public",
     "check": "npm run check:ts && npm run check:ui",
