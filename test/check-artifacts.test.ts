@@ -47,6 +47,8 @@ describe('artifact checks (runtime smoke steps)', () => {
     expect(wrangler).not.toContain('SESSION_SECRET');
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
     expect(Object.keys(pkg.cloudflare.bindings)).toEqual(['ADMIN_PASSWORD']);
+    expect(pkg.scripts.build).toContain('build:public');
+    expect(pkg.scripts.predeploy).toBe('npm run build:public');
     expect(readFileSync('README.md', 'utf8')).not.toContain('SESSION_SECRET');
     const gitignore = readFileSync('.gitignore', 'utf8');
     expect(gitignore).toContain('.dev.vars');

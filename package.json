@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "build": "npm run check",
+    "build": "npm run build:public && npm run check",
+    "predeploy": "npm run build:public",
     "check": "npm run check:ts && npm run check:ui",
     "check:ts": "tsc --noEmit",
     "check:ui": "node scripts/check-ui.mjs",

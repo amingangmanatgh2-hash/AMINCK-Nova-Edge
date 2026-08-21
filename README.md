@@ -46,9 +46,13 @@
 |---|---|
 | `ADMIN_PASSWORD` | رمز ورود مالک با نام کاربری `AMINCK`؛ حداقل ۱۰ کاراکتر |
 
-بعد از اتمام Deploy، URL ورکر را باز کنید، وارد شوید و دکمهٔ **ساخت اتومات ساب** را بزنید. Durable Object، Assets، Cron و Endpoint اولیه خودکار Provision می‌شوند و تنظیم دستی D1/KV لازم نیست. [Deploy Buttonهای Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) از Secretهای تعریف‌شده در `.dev.vars.example` پشتیبانی می‌کنند.
+بعد از اتمام Deploy، URL ورکر را باز کنید، وارد شوید و دکمهٔ **ساخت اتومات ساب** را بزنید. Durable Object، Assets، Cron و Endpoint اولیه خودکار Provision می‌شوند و تنظیم دستی D1/KV لازم نیست. [Deploy Buttonهای Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) از Secretهای تعریف‌شده در `.dev.vars.example` پشتیبانی می‌کنند. اسکریپت `build` پوشه `public/` را پیش از استقرار بازتولید و بررسی می‌کند و `predeploy` نیز برای اجرای مستقیم `npm run deploy` همین کار را تکرار می‌کند.
 
 > توکن Cloudflare را داخل صفحهٔ یک Worker عمومی Paste نکنید. AMINNOVA عمداً فرم دریافت توکن ندارد.
+
+### رفع خطای Static Assets
+
+اگر Cloudflare پیام `Could not detect a directory containing static files` نشان داد، مخزن Source انتخاب‌شده ناقص است. ریشهٔ Repository باید حداقل `package.json`، `wrangler.jsonc`، پوشه‌های `src/` و `public/` را داشته باشد؛ مخزنی که فقط `README.md` دارد قابل Deploy نیست. در Build settings، فرمان Build را `npm run build` و فرمان Deploy را `npm run deploy` نگه دارید.
 
 ### روش ۲: Wrangler
 
