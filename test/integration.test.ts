@@ -596,7 +596,7 @@ describe('AMINNOVA reliability regressions', () => {
     const res = await w.mf.dispatchFetch(`${w.base}/api/launch`);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.repo).toContain('IR-penalty-');
+    expect(data.repo).toContain('AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge');
     expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
     expect(data.tokenUrl).toBeUndefined();
     expect(JSON.stringify(data)).not.toContain('api-tokens');

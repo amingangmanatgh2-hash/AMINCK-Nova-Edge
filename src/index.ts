@@ -586,7 +586,7 @@ async function runCronProbe(env: Env): Promise<void> {
 // helpers
 // ---------------------------------------------------------------------------
 
-const REPO = 'https://github.com/amingangmanatgh2-hash/IR-penalty-';
+const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
 const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
 
 function launchInfo(): Record<string, unknown> {
