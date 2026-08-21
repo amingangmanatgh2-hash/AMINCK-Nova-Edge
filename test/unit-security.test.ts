@@ -86,6 +86,16 @@ describe('classifyTarget', () => {
     const r = classifyTarget(target({ addressType: 3, address: 'fd00::1' }), TLS_PORTS);
     expect(r).toEqual({ allowed: false, reason: 'private-ip' });
   });
+
+  it('blocks local and special-use hostnames before runtime DNS fallback', () => {
+    for (const hostname of ['localhost', 'router.local', 'metadata.google.internal', 'service.lan', 'x.test']) {
+      expect(classifyTarget(target({ address: hostname }), TLS_PORTS)).toEqual({
+        allowed: false,
+        reason: 'private-hostname',
+      });
+    }
+    expect(classifyTarget(target({ address: 'www.gstatic.com' }), TLS_PORTS).allowed).toBe(true);
+  });
 });
 
 describe('resolvePublicTarget + DNS failover', () => {

@@ -47,12 +47,13 @@ Smart Pool پاسخ نامتناهی تولید نمی‌کند. در هر در�
 
 نسخه Timeout Fix جهت `WebSocketPair` را اصلاح کرده است؛ در نسخه قدیمی `101 Switching Protocols` موفق بود اما Frameهای VLESS به سمت Worker تحویل نمی‌شدند. بنابراین فقط Refresh‌کردن Subscription روی Backend قدیمی کافی نیست و Worker باید دوباره Deploy شود.
 
-1. `/healthz` دامنه Deploy را باز کنید و مطمئن شوید `release` برابر `2026.08.21-timeout-fix.1` یا جدیدتر است.
-2. Subscription را در کلاینت Refresh کنید و ابتدا Route دارای برچسب **DIRECT SAFE** را آزمایش کنید.
-3. نتیجه تست داخل داشبورد باید «WSS + VLESS + TCP موفق» باشد؛ بازشدن WebSocket به‌تنهایی نشانه کارکرد تونل نیست.
-4. Health URL را روی خود Worker قرار ندهید. Worker نمی‌تواند از TCP Socket به خودش یا IPهای Cloudflare Loop بزند؛ AMINNOVA به‌طور پیش‌فرض از gstatic استفاده می‌کند.
-5. اگر DIRECT SAFE کار کرد ولی Anycastها نه، Anycast را برای آن شبکه خاموش کنید؛ «IP تمیز همگانی» وجود ندارد.
-6. اگر مقصد نهایی روی Cloudflare میزبانی شده باشد، محدودیت Workers Sockets ممکن است اتصال آن مقصد را مسدود کند؛ Route بیشتر یا SNI جعلی این محدودیت را رفع نمی‌کند.
+1. `/healthz` دامنه Deploy را باز کنید و مطمئن شوید `release` برابر `2026.08.21-rescue-mobile.2` یا جدیدتر است.
+2. اگر کانفیگ‌ها هنوز دامنه Deploy قبلی را دارند، بالای پنل دکمه **«تعمیر همه کانفیگ‌ها روی دامنه فعلی»** را بزنید. UUID و Token حفظ می‌شود ولی Routeها به دامنه فعال بازسازی می‌شوند.
+3. Subscription را در کلاینت Refresh کنید و Route دارای برچسب **DIRECT SAFE** را آزمایش کنید. تمام Routeهای مستقیم بدون Early Data، Padding و Fragment صادر می‌شوند.
+4. نتیجه تست داخل داشبورد باید وضعیت `WSS + VLESS + TCP` را نشان دهد؛ بازشدن WebSocket به‌تنهایی نشانه کارکرد تونل نیست.
+5. Health URL را روی خود Worker قرار ندهید. Worker نمی‌تواند از TCP Socket به خودش یا IPهای Cloudflare Loop بزند؛ AMINNOVA به‌طور پیش‌فرض از gstatic استفاده می‌کند.
+6. اگر DIRECT SAFE کار کرد ولی Anycastها نه، Anycast را برای آن شبکه خاموش کنید؛ «IP تمیز همگانی» وجود ندارد. فرم ساخت موبایل اکنون در حالت Stable/Direct شروع می‌شود و Heavy اختیاری است.
+7. اگر مقصد نهایی روی Cloudflare میزبانی شده باشد، محدودیت Workers Sockets ممکن است اتصال آن مقصد را مسدود کند؛ Route بیشتر یا SNI جعلی این محدودیت را رفع نمی‌کند.
 
 ## چرا خود PWA مستقیماً VPN نمی‌شود؟
 

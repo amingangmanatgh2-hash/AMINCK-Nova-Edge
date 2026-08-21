@@ -23,7 +23,7 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
-    expect(data.release).toBe('2026.08.21-timeout-fix.1');
+    expect(data.release).toBe('2026.08.21-rescue-mobile.2');
     expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
@@ -619,6 +619,19 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
     expect(nu.routes[0].path).not.toBe(oldPath);
   });
 
+  it('rescue update rebinds every profile to the active request hostname', async () => {
+    const r = await w.api(ownerCookie, '/api/hot-update', { rescue: true, speedPreset: 'stable' });
+    expect(r.status).toBe(200);
+    expect(r.data.rescue).toBe(true);
+    expect(r.data.endpoint).toBe('nova.test');
+    const users = await w.api(ownerCookie, '/api/users', {});
+    for (const user of users.data.users) {
+      expect(user.speedPreset).toBe('stable');
+      expect(user.dynamicPool).toBe(false);
+      expect(user.routes.every((route: { host: string; frontIp?: string }) => route.host === 'nova.test' && !route.frontIp)).toBe(true);
+    }
+  });
+
   it('settings accept hostAliases and antiDetect', async () => {
     const r = await w.api(ownerCookie, '/api/settings', {
       settings: {
@@ -759,7 +772,7 @@ describe('AMINNOVA reliability regressions', () => {
       expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
       expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
       expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
-      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-timeout-fix.1');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-rescue-mobile.2');
       expect(res.headers.get('cache-control')).toContain('no-store');
       expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);

@@ -408,7 +408,8 @@ export type AuditAction =
   | 'endpoints.update'
   | 'backup.export'
   | 'backup.restore'
-  | 'panel.hot_update';
+  | 'panel.hot_update'
+  | 'panel.rescue_update';
 
 export interface AuditEvent {
   id: string;

@@ -405,12 +405,18 @@ export const CAPABILITIES: Capability[] = [
   c('security', 'pwa-same-origin-assets', 'دارایی‌های PWA هم‌مبدأ', 'Manifest، Service Worker، CSS، JavaScript و Icon فقط از همان Worker و زیر هدرهای امنیتی ارائه می‌شوند.'),
   c('security', 'sub-pragma-no-cache', 'Pragma امن Subscription', 'علاوه بر Cache-Control، هدر pragma no-cache برای واسط‌های قدیمی روی ساب تنظیم می‌شود.'),
   c('config', 'cfg-nonloop-health', 'Health Check بدون TCP Loop', 'URLTest پیش‌فرض به مقصد عمومی مستقل می‌رود و هرگز Worker را از داخل تونل خودش صدا نمی‌زند؛ این کار Timeout کاذب همه مسیرها را حذف می‌کند.'),
-  c('config', 'cfg-direct-safe-anchor', 'مسیر DIRECT SAFE سازگار', 'مسیر اول بدون Anycast، Path padding و Early Data صادر می‌شود تا کلاینت یا Middlebox ناسازگار همیشه یک مسیر محافظه‌کار داشته باشد.'),
+  c('config', 'cfg-direct-safe-anchor', 'مسیر DIRECT SAFE سازگار', 'تمام مسیرهای مستقیم بدون Anycast، Fragment، Path padding و Early Data صادر می‌شوند تا کلاینت یا Middlebox ناسازگار مسیر محافظه‌کار داشته باشد.'),
   c('protocol', 'proto-ws-pair-direction', 'جهت صحیح WebSocketPair', 'سمت Client از Pair به پاسخ 101 برگردانده و سمت Server داخل Worker accept می‌شود تا Frameهای VLESS واقعاً به Handler برسند.'),
   c('protocol', 'proto-connect-deadline', 'Deadline واقعی اتصال TCP', 'بازشدن Socket و مرحله Connect هر دو Deadline دارند؛ مقصد خراب دیگر WebSocket را بی‌نهایت باز و معطل نگه نمی‌دارد.'),
   c('protocol', 'proto-fast-doh-race', 'Failover هم‌زمان DoH', 'Resolverهای مجاز هم‌زمان پرسیده می‌شوند تا خرابی Resolver اول چند Timeout متوالی پیش از اتصال ایجاد نکند.'),
   c('scanner', 'scan-vless-payload', 'Probe با Payload واقعی VLESS', 'تست مرورگر بعد از 101 یک Packet استاندارد VLESS و درخواست HTTP می‌فرستد و صرف بازشدن WebSocket را موفق گزارش نمی‌کند.'),
   c('deploy', 'deploy-release-marker', 'شناسه Release قابل بررسی', 'healthz، Subscription و Topbar شناسه نسخه Timeout Fix را نمایش می‌دهند تا Deploy قدیمی فوراً تشخیص داده شود.'),
+  c('protocol', 'proto-native-dns-fallback', 'Fallback امن DNS داخلی Worker', 'اگر همه DoHهای مجاز موقتاً قطع باشند، پس از رد نام‌های محلی و خاص، DNS داخلی Workers Sockets اجازه نمی‌دهد کل اینترنت با dns-unresolvable از کار بیفتد.'),
+  c('protocol', 'proto-dns-short-cache', 'Cache کوتاه DNS عمومی', 'پاسخ عمومی DoH برای شصت ثانیه در Isolate نگهداری می‌شود تا اتصال‌های متوالی موبایل هر بار هزینه Resolve و Timeout ندهند.'),
+  c('config', 'cfg-current-host-priority', 'اولویت دامنه فعال پنل', 'دامنه‌ای که درخواست ساخت را به همین Worker رسانده همیشه در انتخاب مجاز Route اول است تا Endpoint قدیمی یا حذف‌شده کانفیگ اصلی نشود.'),
+  c('config', 'cfg-rescue-rebind', 'تعمیر یک‌کلیکی همه ساب‌ها', 'دکمه نجات Token و UUID را حفظ می‌کند اما Route همه مشترک‌ها را با Stable و DIRECT SAFE به دامنه فعال فعلی متصل می‌کند.'),
+  c('ui', 'ui-mobile-action-sheet', 'منوی پایین موبایل با Action Sheet', 'چهار بخش اصلی در نوار پایین پنج‌ستونه و ابزارهای تکمیلی در Sheet شیشه‌ای لمسی قرار می‌گیرند تا ناوبری موبایل فشرده و خوانا باشد.'),
+  c('ui', 'ui-mobile-touch-layout', 'فرم لمسی تک‌ستونه', 'در موبایل فیلدها حداقل ارتفاع لمسی، فونت بدون Zoom ناخواسته iOS، Grid تک‌ستونه، آمار دو ستونه و Safe Area واقعی دارند.'),
 ];
 
 export function totalCapabilities(): number {

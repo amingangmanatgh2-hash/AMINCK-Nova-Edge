@@ -17,6 +17,7 @@ export type BlockReason =
   | 'udp-not-dns'
   | 'port-not-allowed'
   | 'bad-address-type'
+  | 'private-hostname'
   | 'dns-unresolvable'
   | 'connect-failed';
 
@@ -24,12 +25,21 @@ export type TargetDecision =
   | { allowed: true }
   | { allowed: false; reason: BlockReason };
 
+/** Reject local/special-use names before native runtime DNS fallback. */
+export function isPublicProxyHostname(value: string): boolean {
+  const host = value.trim().toLowerCase().replace(/\.$/, '');
+  if (host.length === 0 || host.length > 253 || !host.includes('.')) return false;
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(host) || host.includes('..')) return false;
+  const blocked = ['localhost', 'local', 'internal', 'lan', 'home.arpa', 'test', 'invalid', 'example', 'onion'];
+  return !blocked.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 /**
  * Pure classification of a VLESS target before any socket is opened.
  * - UDP is only permitted for DNS on port 53 (no open proxy)
  * - SMTP ports are always blocked
  * - outbound port must be in the deployment's conservative TCP allow-list
- * - IP literals pointing at private/reserved space are blocked
+ * - private IP literals and local/special-use hostnames are blocked
  */
 export function classifyTarget(
   target: VlessTarget,
@@ -47,6 +57,9 @@ export function classifyTarget(
   }
   if (target.addressType !== 1 && target.addressType !== 2 && target.addressType !== 3) {
     return { allowed: false, reason: 'bad-address-type' };
+  }
+  if (target.addressType === 2 && !/^\d+\.\d+\.\d+\.\d+$/.test(target.address) && !isPublicProxyHostname(target.address)) {
+    return { allowed: false, reason: 'private-hostname' };
   }
   const isIpLiteral =
     target.addressType === 1 || target.addressType === 3 || /^\d+\.\d+\.\d+\.\d+$/.test(target.address);

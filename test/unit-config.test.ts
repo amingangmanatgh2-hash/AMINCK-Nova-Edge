@@ -124,11 +124,13 @@ describe('config builder — output formats', () => {
     expect(uri.endsWith('#AMINCK GOD Edition')).toBe(true);
   });
 
-  it('keeps the first direct route as a no-early-data compatibility anchor', () => {
-    const user = userFixture({
-      routes: routesFor('u'.repeat(24), undefined, 3).map((route) => ({ ...route, padding: 'padvalue' })),
-      speedPreset: 'god',
-    });
+  it('keeps direct routes conservative while tuning only optional Anycast copies', () => {
+    const routes = routesFor('u'.repeat(24), undefined, 3).map((route, index) => ({
+      ...route,
+      padding: 'padvalue',
+      frontIp: index === 0 ? undefined : `104.16.0.${index}`,
+    }));
+    const user = userFixture({ routes, speedPreset: 'god' });
     const raw = buildFormats(ctx(user), ['raw'])[0]!.payload.split('\n');
     expect(raw[0]).toContain('ed=0');
     expect(raw[0]).toContain('DIRECT SAFE');
@@ -141,6 +143,18 @@ describe('config builder — output formats', () => {
     const vless = singbox.outbounds.filter((outbound: { type: string }) => outbound.type === 'vless');
     expect(vless[0].transport.max_early_data).toBeUndefined();
     expect(vless[1].transport.max_early_data).toBe(4096);
+  });
+
+  it('emits every hostname-direct route without early data or padding', () => {
+    const user = userFixture({
+      routes: routesFor('u'.repeat(24), undefined, 3).map((route) => ({ ...route, padding: 'padvalue' })),
+      speedPreset: 'god',
+    });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!.payload.split('\n');
+    expect(raw.every((line) => line.includes('ed=0') && line.includes('DIRECT SAFE'))).toBe(true);
+    expect(raw.every((line) => !line.includes('pad%3D'))).toBe(true);
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('max-early-data:');
   });
 
   it('clash yaml contains NOVA groups, unified-delay and store-selected', () => {
@@ -164,7 +178,7 @@ describe('config builder — output formats', () => {
     expect(clash).toContain('MATCH,NOVA-SMART');
     expect(clash).toContain('client-fingerprint: chrome');
     expect(clash).toContain('udp: true');
-    expect(clash).toContain('max-early-data:');
+    expect(clash).not.toContain('max-early-data:');
   });
 
   it('god preset enables tcp-concurrent, stable does not', () => {

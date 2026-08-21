@@ -469,7 +469,7 @@ export class AMINCKStore {
       case 'ensure-self': {
         const host = String(body.host ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
         const s = this.settingsCache!;
-        if (host && /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(host) && !s.endpoints.some((e) => e.host === host)) {
+        if (host && /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(host) && !s.endpoints.some((e) => e.host === host && e.port === 443)) {
           if (s.endpoints.length < MAX_ENDPOINTS) {
             s.endpoints.push({
               id: newId(),
@@ -851,6 +851,13 @@ export class AMINCKStore {
   /** Bump config generation + rebuild every subscriber's routes in-place. */
   private async hotUpdate(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
     const s = this.settingsCache!;
+    const rescue = body.rescue === true;
+    const requestHost = String(body.reqHost ?? '').toLowerCase().replace(/:\d+$/, '');
+    const selfEndpoint = s.endpoints.find((endpoint) => endpoint.host.toLowerCase() === requestHost && endpoint.port === 443)
+      ?? s.endpoints.find((endpoint) => endpoint.host.toLowerCase() === requestHost);
+    if (rescue && !selfEndpoint) {
+      return json({ error: 'self-endpoint-missing', message: 'دامنه فعلی Worker هنوز ثبت نشده؛ صفحه را تازه‌سازی و دوباره تلاش کنید' }, 409);
+    }
     s.configGeneration = (s.configGeneration || 0) + 1;
     if (body.speedPreset !== undefined && String(body.speedPreset) in SPEED_PRESETS) {
       s.speedPreset = body.speedPreset as SpeedPreset;
@@ -873,16 +880,24 @@ export class AMINCKStore {
     let rebuilt = 0;
     for (const user of this.usersCache) {
       const n = Math.max(1, user.routes.length || s.defaultPaths);
-      user.routes = this.buildRoutesFor(user, n);
+      if (rescue && selfEndpoint) {
+        user.speedPreset = 'stable';
+        user.dynamicPool = false;
+        user.poolCleanIps = [];
+        user.routes = buildRoutes(user.id, planRoutes([selfEndpoint], n), s);
+      } else {
+        user.routes = this.buildRoutesFor(user, n);
+      }
       rebuilt += 1;
     }
+    if (rescue) s.speedPreset = 'stable';
     await this.persistSettings();
     await this.persistUsers();
     await this.audit(
       me.username,
-      'panel.hot_update',
+      rescue ? 'panel.rescue_update' : 'panel.hot_update',
       'panel',
-      `آپدیت بدون قطعی دامنه — gen=${s.configGeneration} — ${rebuilt} مشترک`,
+      `${rescue ? 'بازسازی مستقیم روی دامنه فعلی' : 'آپدیت بدون قطعی دامنه'} — gen=${s.configGeneration} — ${rebuilt} مشترک`,
       ip,
     );
     return json({
@@ -890,7 +905,11 @@ export class AMINCKStore {
       configGeneration: s.configGeneration,
       rebuiltUsers: rebuilt,
       domainUnchanged: true,
-      message: 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
+      rescue,
+      endpoint: rescue ? selfEndpoint?.host : undefined,
+      message: rescue
+        ? 'همه کانفیگ‌ها روی دامنه فعلی و حالت DIRECT SAFE بازسازی شدند؛ ساب را در کلاینت Refresh کنید'
+        : 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
     });
   }
 
@@ -1349,6 +1368,7 @@ export class AMINCKStore {
       .map((e) => this.settings!.endpoints.find((x) => x.id === e.id)!)
       .filter((e) => !!e && endpointAllowed(e) && Number(e.port) > 0)
       .slice(0, MAX_ENDPOINTS);
+    const requestHost = String(body.reqHost ?? '').toLowerCase().replace(/:\d+$/, '');
     if (ordered.length === 0) {
       const sorted = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults)
         .filter((e) => endpointAllowed(e) && Number(e.port) > 0);
@@ -1357,9 +1377,18 @@ export class AMINCKStore {
       // AMINNOVA. The hostname of this API request and workers.dev are safe
       // fallbacks because the request itself reached this deployment; unrelated
       // third-party domains are never emitted as fake SNI/Host values.
-      const requestHost = String(body.reqHost ?? '').toLowerCase();
       const ownWorkerHosts = sorted.filter((e) => e.host.endsWith('.workers.dev') || e.host === requestHost);
       ordered = healthy.length > 0 ? healthy : ownWorkerHosts;
+    }
+    // The request hostname just reached this exact Worker, so it is the most
+    // reliable compatibility endpoint. Keep it first whenever the selection
+    // permits it; stale/deleted workers.dev entries must never become route #1.
+    const eligibleSelfEndpoints = this.settings!.endpoints.filter((endpoint) =>
+      endpoint.host.toLowerCase() === requestHost && endpointAllowed(endpoint) && Number(endpoint.port) > 0,
+    );
+    const selfEndpoint = eligibleSelfEndpoints.find((endpoint) => endpoint.port === 443) ?? eligibleSelfEndpoints[0];
+    if (selfEndpoint) {
+      ordered = [selfEndpoint, ...ordered.filter((endpoint) => endpoint.id !== selfEndpoint.id)].slice(0, MAX_ENDPOINTS);
     }
     if (ordered.length === 0) {
       return json({

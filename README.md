@@ -171,15 +171,17 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 
 ## رفع Timeout کانفیگ
 
-Release `2026.08.21-timeout-fix.1` چند علت واقعی Timeout را برطرف می‌کند:
+Release `2026.08.21-rescue-mobile.2` مجموعهٔ قبلی Timeout Fix را کامل‌تر می‌کند:
 
-- جهت `WebSocketPair` اصلاح شد: نسخه قبلی سمت اشتباه Pair را `accept` می‌کرد؛ Handshake با کد `101` باز می‌شد اما Frameهای VLESS هرگز به Handler داخل Worker نمی‌رسیدند و همه کانفیگ‌ها Timeout می‌شدند.
-- Health Check دیگر آدرس همان Worker را از داخل تونل صدا نمی‌زند. این کار یک TCP Loop می‌ساخت و چون Cloudflare Workers اتصال Socket خروجی به IPهای Cloudflare را مسدود می‌کند، همه Routeها در `url-test` به‌اشتباه Timeout دیده می‌شدند. مقصد پیش‌فرض اکنون `https://www.gstatic.com/generate_204` است.
-- مسیر اول هر Subscription با برچسب **DIRECT SAFE** بدون Anycast، Early Data و Path padding صادر می‌شود تا کلاینت‌ها و Middleboxهای حساس یک مسیر سازگار داشته باشند.
-- DoH failover هم‌زمان اجرا می‌شود و بازشدن Socket Deadline قطعی دارد؛ اتصال خراب سریع بسته می‌شود و بی‌نهایت معطل نمی‌ماند.
-- تست داخل پنل دیگر فقط موفقیت `101 WebSocket` را گزارش نمی‌کند؛ Packet واقعی VLESS و یک درخواست TCP ارسال می‌شود و باید پاسخ باینری معتبر دریافت شود.
+- جهت `WebSocketPair` اصلاح شده است: نسخه قبلی سمت اشتباه Pair را `accept` می‌کرد؛ Handshake با کد `101` باز می‌شد اما Frameهای VLESS هرگز به Handler داخل Worker نمی‌رسیدند.
+- Health Check دیگر آدرس همان Worker را از داخل تونل صدا نمی‌زند. این کار TCP Loop می‌ساخت و چون Cloudflare Workers اتصال Socket خروجی به IPهای Cloudflare را مسدود می‌کند، Routeها در `url-test` به‌اشتباه Timeout دیده می‌شدند. مقصد پیش‌فرض `https://www.gstatic.com/generate_204` است.
+- **تمام** Routeهای مستقیم با برچسب **DIRECT SAFE** بدون Anycast، Fragment، Early Data و Path padding صادر می‌شوند؛ تنظیمات پیشرفته فقط روی کپی‌های اختیاری Anycast اعمال می‌شود.
+- دامنه‌ای که پنل از روی آن باز شده Route اول است؛ Endpoint قدیمی یا Worker حذف‌شده دیگر به‌صورت ناخواسته Route اصلی نمی‌شود.
+- اگر DoHهای تنظیم‌شده موقتاً در دسترس نباشند، پس از مسدودسازی نام‌های Local/Special-use، DNS داخلی Workers Sockets به‌عنوان Fallback استفاده می‌شود. پاسخ عمومی DoH نیز ۶۰ ثانیه Cache می‌شود.
+- دکمه **«تعمیر همه کانفیگ‌ها روی دامنه فعلی»** UUID و Token را نگه می‌دارد اما تمام مشترک‌ها را در حالت Stable و DIRECT SAFE به همین Deploy متصل می‌کند. پس از آن Subscription کلاینت باید Refresh شود.
+- تست داخل پنل فقط موفقیت `101 WebSocket` را گزارش نمی‌کند؛ Packet واقعی VLESS و درخواست TCP ارسال و وضعیت پاسخ داده می‌شود.
 
-در `/healthz` و هدر `x-aminck-release` نسخه Deploy را بررسی کنید. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Subscription قدیمی با Refresh به‌تنهایی Backend را ارتقا نمی‌دهد.
+در `/healthz` و هدر `x-aminck-release` نسخه Deploy را بررسی کنید. مقدار فعلی باید `2026.08.21-rescue-mobile.2` یا جدیدتر باشد. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Refresh اشتراک به‌تنهایی Backend را ارتقا نمی‌دهد.
 
 محدودیت پلتفرم: طبق [ملاحظات رسمی Cloudflare TCP Sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/#considerations)، مقصد نهایی‌ای که خودش روی IPهای Cloudflare میزبانی می‌شود ممکن است با Workers TCP Sockets قابل اتصال نباشد. این محدودیت با جعل SNI یا افزودن تعداد Route حل نمی‌شود؛ برای چنین مقصدی Gateway مستقل و متعلق به اپراتور لازم است.
 

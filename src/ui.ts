@@ -263,7 +263,7 @@ html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme
 .feature-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
 .feature-tile { border: 1px solid var(--line); border-radius: 16px; padding: 15px; background: var(--bg3); min-height: 126px; }
 .feature-tile svg { width: 24px; height: 24px; color: var(--brand2); }
-.mobile-nav { display: none; }
+.mobile-nav, .mobile-sheet { display: none; }
 .skeleton { min-height: 18px; border-radius: 8px; background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.14), rgba(255,255,255,.05)); background-size: 220% 100%; animation: shimmer 1.4s infinite; }
 .install-banner { border-color: rgba(167,139,250,.35); background: linear-gradient(120deg, rgba(124,58,237,.2), rgba(34,211,238,.09)), var(--card); }
 .guide-step { display: grid; grid-template-columns: 38px 1fr; gap: 12px; align-items: start; margin: 14px 0; }
@@ -287,16 +287,70 @@ html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme
   .mobile-nav button { border: 0; color: var(--fg2); background: transparent; display: grid; justify-items: center; gap: 2px; font: inherit; font-size: 9px; padding: 5px 8px; min-width: 66px; flex: 1 0 66px; }
   .mobile-nav button.on { color: var(--brand2); }
   .mobile-nav svg { width: 20px; height: 20px; }
+  .mobile-sheet { position: fixed; right: 12px; left: 12px; bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 44; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--bg2); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); box-shadow: var(--shadow); opacity: 0; visibility: hidden; transform: translateY(12px) scale(.98); transition: .2s ease; }
+  .mobile-sheet.open { opacity: 1; visibility: visible; transform: none; }
+  .mobile-sheet button { min-height: 48px; border: 1px solid var(--line); border-radius: 14px; color: var(--fg); background: var(--bg3); font: inherit; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .mobile-sheet button.on { border-color: var(--brand2); color: var(--brand2); }
+  .mobile-sheet svg { width: 19px; height: 19px; }
   .wrap { padding-bottom: 105px; }
   .topbar { top: 5px; }
 }
 @media (max-width: 560px) {
-  .feature-grid { grid-template-columns: 1fr; }
-  .cap-toolbar { grid-template-columns: 1fr; }
-  .hero-panel { padding: 17px; }
-  .grid { grid-template-columns: 1fr 1fr; }
-  .endpoint-pick { grid-template-columns: 1fr; }
-  .pill b { font-size: 21px; }
+  body { font-size: 14px; line-height: 1.68; }
+  .wrap { width: 100%; padding: 12px 10px calc(96px + env(safe-area-inset-bottom)); }
+  .feature-grid, .cap-toolbar, .grid { grid-template-columns: minmax(0, 1fr); }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .endpoint-pick { grid-template-columns: minmax(0, 1fr); }
+  .hero-panel { padding: 16px 14px; }
+  .hero { gap: 11px; margin-bottom: 14px; align-items: center; flex-direction: row; }
+  .hero .mark { width: 52px; height: 52px; flex-basis: 52px; border-radius: 16px; }
+  .hero .mark svg { width: 29px; height: 29px; }
+  .eyebrow { font-size: 8px; letter-spacing: .08em; }
+  h1 { font-size: 20px; }
+  .sub { max-width: 72vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card { padding: 15px 13px; border-radius: 17px; margin-bottom: 11px; }
+  .card:hover { transform: none; }
+  .section-title { margin-bottom: 10px; }
+  .section-title h2, .card h2 { font-size: 16px; line-height: 1.45; }
+  .pill { min-height: 82px; padding: 12px; border-radius: 15px; }
+  .pill b { font-size: 20px; }
+  .pill span { font-size: 11px; }
+  input, select, textarea { width: 100%; min-width: 0; min-height: 47px; padding: 11px 12px; font-size: 16px; border-radius: 13px; }
+  textarea { min-height: 84px; }
+  label { margin-top: 8px; font-size: 12px; }
+  .row { width: 100%; gap: 7px; align-items: stretch; }
+  .row > input, .row > select, .row > textarea { flex: 1 1 100%; }
+  .row > .btn, .row > a.btn { flex: 1 1 auto; justify-content: center; }
+  .btn { min-height: 45px; padding: 10px 12px; border-radius: 13px; justify-content: center; }
+  .btn.big { width: 100%; min-height: 52px; }
+  .check { min-height: 48px; padding: 10px 11px; line-height: 1.45; }
+  .check input { width: 20px; min-height: 20px; flex: 0 0 20px; }
+  .topbar { position: sticky; top: max(5px, env(safe-area-inset-top)); display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 6px; padding: 7px; border-radius: 17px; margin-bottom: 12px; }
+  .topbar .btn { min-height: 39px; padding: 8px 9px; font-size: 0; }
+  .topbar .btn svg { width: 19px; height: 19px; margin: 0; }
+  .topbar #hot-btn { grid-column: 1 / -1; font-size: 12px; min-height: 42px; }
+  .topbar .badge { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; }
+  .topbar .badge.mono { display: none; }
+  .status-dot { white-space: nowrap; padding: 5px 7px; font-size: 10px; }
+  .domain-menu-card .mono { max-width: 56vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .domain-menu-card .row { align-items: center; }
+  .domain-menu-card #cf-menu-btn { flex-basis: 100%; }
+  .sub-result { padding: 12px 10px; border-radius: 15px; }
+  .uri { max-height: 150px; padding: 10px; font-size: 10px; line-height: 1.55; }
+  .alert { padding: 11px; font-size: 12px; }
+  table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+  th, td { padding: 10px 8px; }
+  #toasts { right: 10px !important; left: 10px !important; top: calc(10px + env(safe-area-inset-top)) !important; }
+  #toasts > div { max-width: none !important; }
+  .mobile-nav { right: 8px; left: 8px; bottom: max(7px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; padding: 7px 5px; border-radius: 22px; }
+  .mobile-nav button { min-width: 0; width: 100%; padding: 4px 2px; font-size: 9px; border-radius: 14px; }
+  .mobile-nav button.on { color: #fff; background: linear-gradient(145deg, rgba(34,211,238,.22), rgba(124,58,237,.62)); }
+  .mobile-nav svg { width: 21px; height: 21px; }
+  .mobile-sheet { position: fixed; right: 10px; left: 10px; bottom: calc(85px + env(safe-area-inset-bottom)); z-index: 44; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--bg2); backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass); box-shadow: var(--shadow); opacity: 0; visibility: hidden; transform: translateY(12px) scale(.98); transition: .2s ease; }
+  .mobile-sheet.open { opacity: 1; visibility: visible; transform: none; }
+  .mobile-sheet button { min-height: 48px; border: 1px solid var(--line); border-radius: 14px; color: var(--fg); background: var(--bg3); font: inherit; display: flex; align-items: center; justify-content: center; gap: 7px; }
+  .mobile-sheet button.on { border-color: var(--brand2); color: var(--brand2); }
+  .mobile-sheet svg { width: 19px; height: 19px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
@@ -339,7 +393,7 @@ export const UI_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 
 export const UI_SW_JS = `/* AMINNOVA privacy-safe PWA service worker */
 'use strict';
-var CACHE = 'aminnova-shell-v5-timeout-fix';
+var CACHE = 'aminnova-shell-v6-rescue-mobile';
 var SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 var PRIVATE_PREFIXES = ['/api/', '/sub/', '/ws', '/healthz', '/connect', '/e'];
 function isPrivatePath(path) { return PRIVATE_PREFIXES.some(function (prefix) { return path.indexOf(prefix) === 0; }); }
@@ -443,7 +497,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     cloud: '<path d="M17.5 19H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9.5 4.8 4.8 0 0 1 17.5 19Z"/>',
     book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14Zm0 0A2.5 2.5 0 0 0 6.5 22H20"/>',
     logout: '<path d="M10 17l5-5-5-5m5 5H3m10-9h7v18h-7"/>',
-    theme: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'
+    theme: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>'
   };
 
   function icon(name) {
@@ -546,8 +601,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       var settled = false;
       function finish(result) { if (settled) return; settled = true; clearTimeout(timer); resolve(result); }
       function packet() {
-        var domain = new TextEncoder().encode('www.gstatic.com');
-        var request = new TextEncoder().encode('GET /generate_204 HTTP/1.1\\r\\nHost: www.gstatic.com\\r\\nConnection: close\\r\\n\\r\\n');
+        var domain = new TextEncoder().encode('connectivitycheck.gstatic.com');
+        var request = new TextEncoder().encode('GET /generate_204 HTTP/1.1\\r\\nHost: connectivitycheck.gstatic.com\\r\\nConnection: close\\r\\n\\r\\n');
         var header = new Uint8Array(23 + domain.length);
         var off = 0; header[off++] = 0;
         for (var i = 0; i < 16; i++) header[off++] = parseInt(uuidHex.slice(i * 2, i * 2 + 2), 16);
@@ -575,7 +630,12 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
           else if (event.data && event.data.arrayBuffer) event.data.arrayBuffer().then(inspect).catch(function () { finish({ ok: false, error: 'پاسخ باینری خوانده نشد' }); });
         };
         socket.onclose = function (event) {
-          if (!settled) finish({ ok: false, error: 'تونل بسته شد: ' + event.code + (event.reason ? ' / ' + event.reason : '') });
+          if (settled) return;
+          if (event.code === 1000 && event.reason === 'upstream-closed') {
+            finish({ ok: false, tcpOpened: true, latencyMs: Date.now() - started, error: 'TCP باز شد اما مقصد تست بدون ارسال داده بسته شد' });
+            return;
+          }
+          finish({ ok: false, error: 'تونل بسته شد: ' + event.code + (event.reason ? ' / ' + event.reason : '') });
         };
         socket.onerror = function () { finish({ ok: false, error: 'WebSocket روی این دامنه/ISP باز نشد' }); };
       } catch (e) { finish({ ok: false, error: String(e.message || e) }); }
@@ -614,7 +674,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
 
   function domainMenuHtml() {
-    var html = '<div class="card" style="position:relative">';
+    var html = '<div class="card domain-menu-card" style="position:relative">';
     html += '<div class="row" style="justify-content:space-between">';
     html += '<div><b>دامنه این پنل</b><div class="mono">' + esc(location.host) + '</div></div>';
     html += '<button class="btn primary" id="cf-menu-btn">راه‌اندازی امن کلودفلر ▾</button></div>';
@@ -674,6 +734,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var theme = localStorage.getItem('edge-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     var tabs = [['dash', 'داشبورد', 'dash'], ['sell', 'مشترک‌ها', 'users'], ['iron', 'آهنین', 'iron'], ['scan', 'شبکه', 'scan'], ['app', 'اپ موبایل', 'app'], ['recovery', 'بکاپ', 'shield'], ['settings', 'تنظیمات', 'settings'], ['caps', 'قابلیت‌ها', 'spark'], ['help', 'راهنما', 'book']];
+    var mobileTabs = tabs.filter(function (t) { return ['dash', 'sell', 'scan', 'app'].indexOf(t[0]) >= 0; });
+    var moreTabs = tabs.filter(function (t) { return ['dash', 'sell', 'scan', 'app'].indexOf(t[0]) < 0; });
+    var moreActive = moreTabs.some(function (t) { return TAB === t[0]; });
     var html = '<div class="wrap"><div class="topbar">';
     html += '<span id="network-state" class="status-dot' + (navigator.onLine ? '' : ' offline') + '">' + (navigator.onLine ? 'آنلاین' : 'آفلاین') + '</span>';
     html += '<button class="btn" id="install-btn">' + icon('install') + (isStandalone() ? 'نصب‌شده' : 'نصب اپ') + '</button>';
@@ -681,7 +744,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
     if (STATE.launch && STATE.launch.release) html += '<span class="badge mono">' + esc(STATE.launch.release) + '</span>';
     html += '<button class="btn" id="logout-btn">' + icon('logout') + 'خروج</button>';
-    if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">' + icon('spark') + 'آپدیت امن</button>';
+    if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">' + icon('shield') + 'تعمیر همه کانفیگ‌ها روی دامنه فعلی</button>';
     html += '</div><div class="hero"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">Liquid Glass Control Center</div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
     html += domainMenuHtml();
     html += '<div class="tabs">';
@@ -690,14 +753,27 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     });
     html += '</div>' + inner;
     html += '<nav class="mobile-nav" aria-label="ناوبری موبایل">';
-    tabs.forEach(function (t) {
+    mobileTabs.forEach(function (t) {
       html += '<button class="' + (TAB === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + '<span>' + t[1] + '</span></button>';
     });
-    html += '</nav></div>';
+    html += '<button id="mobile-more-btn" class="' + (moreActive ? 'on' : '') + '" aria-expanded="false">' + icon('menu') + '<span>بیشتر</span></button></nav>';
+    html += '<div class="mobile-sheet" id="mobile-sheet" aria-label="بخش‌های بیشتر">';
+    moreTabs.forEach(function (t) {
+      html += '<button class="' + (TAB === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + '<span>' + t[1] + '</span></button>';
+    });
+    html += '</div></div>';
     $('#app').innerHTML = html;
     document.querySelectorAll('[data-tab]').forEach(function (el) {
       el.addEventListener('click', function () { TAB = el.getAttribute('data-tab'); history.replaceState(null, '', '/?tab=' + TAB); paint(); });
     });
+    var moreButton = $('#mobile-more-btn');
+    if (moreButton) moreButton.onclick = function () {
+      var sheet = $('#mobile-sheet');
+      if (!sheet) return;
+      var open = !sheet.classList.contains('open');
+      sheet.classList.toggle('open', open);
+      moreButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
     var install = $('#install-btn');
     if (install) install.onclick = installApp;
     $('#theme-btn').onclick = function () {
@@ -710,20 +786,25 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     bindDomainMenu();
     var hot = $('#hot-btn');
     if (hot) hot.onclick = function () {
-      api('POST', '/api/hot-update', { speedPreset: 'god' }).then(function (d) { toast('آپدیت gen=' + d.configGeneration, true); }).catch(function (e) { toast(e.message); });
+      hot.disabled = true;
+      api('POST', '/api/hot-update', { speedPreset: 'stable', rescue: true }).then(function (d) {
+        toast(d.message || ('تعمیر شد · gen=' + d.configGeneration), true);
+        return Promise.all([loadUsers(), loadScan()]).then(function () { paint(); });
+      }).catch(function (e) { toast(e.message); }).finally(function () { hot.disabled = false; });
     };
   }
 
   function viewDash() {
     var s = STATE.stats || {};
-    var html = '<div class="grid">';
+    var html = '<div class="grid stats-grid">';
     html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
     html += '<div class="pill"><b>' + (STATE.caps.length || '۳۵۰+') + '</b><span>قابلیت مستند</span></div>';
     html += '<div class="pill"><b>∞ Pool</b><span>چرخش پنجره فعال</span></div></div>';
     html += '<div class="card hero-panel" style="margin-top:16px"><div class="section-title"><div><div class="eyebrow">Smart Subscription Studio</div><h2>ساخت اتومات حرفه‌ای AMINNOVA</h2></div>' + icon('spark') + '</div>';
     html += '<p class="muted">Probe واقعی Edge، مسیر مستقیم + Anycast، خروجی‌های چندکلاینت و Smart Pool چرخان. هیچ سرویس اینترنتی نمی‌تواند نبود قطعی روی همه ISPها را تضمین کند؛ Failover احتمال قطعی را کم می‌کند.</p>';
-    html += '<div class="row"><button class="btn primary" id="heavy-preset" type="button">' + icon('iron') + 'فعال‌سازی MAX Heavy</button><span class="badge">GOD · 200 Active · Iron 5</span></div>';
+    html += '<div class="alert deployment-doctor">' + icon('shield') + '<b>دامنه فعال:</b> <span class="mono">' + esc(location.hostname) + '</span> · Release <span class="mono">' + esc((STATE.launch && STATE.launch.release) || 'نامشخص') + '</span><br><span class="muted">اگر کانفیگ به دامنه حذف‌شده قبلی اشاره کند، همیشه Timeout می‌شود. حالت نجات فقط دامنه همین پنل را استفاده می‌کند.</span></div>';
+    html += '<div class="row"><button class="btn primary" id="safe-preset" type="button">' + icon('shield') + 'حالت نجات DIRECT SAFE</button><button class="btn" id="heavy-preset" type="button">' + icon('iron') + 'MAX Heavy پیشرفته</button></div>';
     html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
     html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
     html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
@@ -734,16 +815,18 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       html += '<label class="check"><input type="checkbox" data-build-endpoint="' + esc(endpoint.id) + '" checked> ' + esc(endpoint.host + ':' + endpoint.port) + ' <span class="badge">' + (result && result.ok ? ('سالم ' + Math.round(result.latencyMs || 0) + 'ms') : 'نیازمند تست') + '</span></label>';
     });
     html += '</div><div class="row"><button class="btn" id="domains-all" type="button">انتخاب همه</button><button class="btn" id="domains-none" type="button">لغو همه</button></div></div>';
-    html += '<div class="card"><label class="check"><input id="clean-auto" type="checkbox" checked> افزودن کاندیدهای Cloudflare Anycast برای تست واقعی داخل کلاینت</label>';
+    html += '<div class="card"><label class="check"><input id="clean-auto" type="checkbox"> افزودن کاندیدهای Cloudflare Anycast برای تست واقعی داخل کلاینت</label>';
     html += '<p class="muted">این IPها تضمین «تمیز» نیستند؛ direct + Anycast با SNI واقعی Worker ساخته می‌شود و url-test/leastPing روی ISP خودت بهترین را انتخاب می‌کند.</p>';
     html += '<label>IPv4 دستی از بازه رسمی Cloudflare (اختیاری، با فاصله یا ویرگول)</label><textarea id="clean-manual" rows="2" placeholder="مثال: 162.159.36.1"></textarea></div>';
-    html += '<div class="card install-banner"><label class="check"><input id="dynamic-pool" type="checkbox" checked> ' + icon('infinity') + ' Smart Pool نامحدود زمانی</label>';
+    html += '<div class="card install-banner"><label class="check"><input id="dynamic-pool" type="checkbox"> ' + icon('infinity') + ' Smart Pool نامحدود زمانی</label>';
     html += '<div class="grid"><div><label>تعویض پنجره کاندیدها (دقیقه)</label><input id="rotation-minutes" type="number" min="1" max="60" value="1" style="width:100%"></div><div><label>پنجره فعال هم‌زمان</label><div class="muted">حداکثر ۲۰۰ مسیر برای جلوگیری از هنگ کلاینت</div></div></div>';
     html += '<p class="muted">∞ یعنی نسل‌های نامحدود در Refreshهای متوالی، نه بی‌نهایت خط در یک پاسخ. URL و Path معتبر می‌مانند تا چرخش باعث قطع عمدی نشود. کلاینت باید ساب را Refresh کند؛ Clash/sing-box بین مسیرهای حاضر خودکار تست می‌کنند.</p></div>';
     html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> کمک اختیاری Cloudflare Workers AI برای انتخاب Profile</label>';
     html += '<p class="muted">AI فقط از عددهای Probe بین Profileهای معتبر انتخاب می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
+    html += '<div class="grid"><div><label>حالت اتصال</label><select id="build-speed" style="width:100%"><option value="stable" selected>Stable · پیشنهادی موبایل</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD · پیشرفته</option></select></div>';
+    html += '<div><label>مدیریت مسیر</label><select id="build-mode" style="width:100%"><option value="auto" selected>Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select></div></div>';
     html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
-    html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰)</label><input id="paths" type="number" min="1" max="200" value="20" style="width:100%"></div></div>';
+    html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰)</label><input id="paths" type="number" min="1" max="200" value="3" style="width:100%"></div></div>';
     html += '<label>تعداد کانفیگ آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(1) + '</select> ';
     html += '<button class="btn primary big" id="auto">' + icon('spark') + 'ساخت Smart Subscription</button><div id="mk-out"></div></div>';
     shell(html);
@@ -756,10 +839,26 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     if (domainsNone) domainsNone.onclick = function () {
       document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = false; });
     };
+    var safe = $('#safe-preset');
+    if (safe) safe.onclick = function () {
+      $('#paths').value = '1'; $('#iron-n').value = '0'; $('#dynamic-pool').checked = false; $('#clean-auto').checked = false;
+      $('#cf-ai').checked = false; $('#build-speed').value = 'stable'; $('#build-mode').value = 'auto'; $('#clean-manual').value = '';
+      var matchedCurrent = false;
+      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) {
+        var endpoint = STATE.endpoints.find(function (item) { return item.id === input.getAttribute('data-build-endpoint'); });
+        input.checked = !!endpoint && endpoint.host === location.hostname;
+        if (input.checked) matchedCurrent = true;
+      });
+      if (!matchedCurrent) {
+        var firstEndpoint = $('[data-build-endpoint]');
+        if (firstEndpoint) firstEndpoint.checked = true;
+      }
+      toast('حالت نجات: فقط دامنه فعلی، یک مسیر مستقیم و بدون Anycast', true);
+    };
     var heavy = $('#heavy-preset');
     if (heavy) heavy.onclick = function () {
       $('#paths').value = '200'; $('#iron-n').value = '5'; $('#dynamic-pool').checked = true; $('#clean-auto').checked = true;
-      $('#rotation-minutes').value = '1'; toast('پروفایل MAX Heavy فعال شد', true);
+      $('#build-speed').value = 'god'; $('#build-mode').value = 'auto'; $('#rotation-minutes').value = '1'; toast('پروفایل MAX Heavy فعال شد', true);
     };
     $('#auto').onclick = function () {
       var name = $('#n').value || ('AMINCK-' + Date.now());
@@ -770,8 +869,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         subscriptionCount: Number($('#sub-count').value || 1),
         paths: Number($('#paths').value || 5),
         ironCount: Number($('#iron-n').value || 0),
-        speedPreset: 'god',
-        profileMode: 'auto',
+        speedPreset: $('#build-speed').value,
+        profileMode: $('#build-mode').value,
         configNameTemplate: $('#tpl').value,
         endpointIds: Array.prototype.slice.call(document.querySelectorAll('[data-build-endpoint]:checked')).map(function (input) { return input.getAttribute('data-build-endpoint'); }),
         useCleanCatalog: !!($('#clean-auto') && $('#clean-auto').checked),
@@ -828,8 +927,10 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
           if (!box) return;
           box.textContent = result.ok
             ? ('تست کامل WSS + VLESS + TCP موفق شد: ' + result.latencyMs + 'ms')
-            : ('هشدار واقعی تونل: ' + result.error + '؛ اول مسیر DIRECT SAFE و سپس دامنه Worker را بررسی کن.');
-          box.style.borderColor = result.ok ? 'var(--ok)' : 'var(--err)';
+            : result.tcpOpened
+              ? ('مسیر WSS + VLESS + TCP باز شد (' + result.latencyMs + 'ms)، ولی مقصد آزمایشی داده نفرستاد. خود Gateway Timeout نیست.')
+              : ('هشدار واقعی تونل: ' + result.error + '؛ اول حالت نجات DIRECT SAFE و سپس دامنه Worker را بررسی کن.');
+          box.style.borderColor = result.ok ? 'var(--ok)' : (result.tcpOpened ? 'var(--warn)' : 'var(--err)');
         });
         toast(String(subs.length) + ' ساب ساخته شد', true);
         return loadUsers();
@@ -886,7 +987,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         limitSeconds: numOrZero('es'),
         maxConnections: numOrZero('ec'),
         limitRequests: numOrZero('er'),
-        speedPreset: 'god'
+        speedPreset: u.speedPreset || 'stable'
       }).then(function () { toast('ذخیره شد', true); return loadUsers().then(paint); })
         .catch(function (e) { toast(e.message); });
     };

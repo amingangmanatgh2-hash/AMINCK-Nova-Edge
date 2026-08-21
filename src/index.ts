@@ -34,7 +34,8 @@ import {
 
 export { AMINCKStore };
 
-const AMINNOVA_RELEASE = '2026.08.21-timeout-fix.1';
+const AMINNOVA_RELEASE = '2026.08.21-rescue-mobile.2';
+const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
 
 const PANEL_ASSETS = new Set([
   '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
@@ -338,8 +339,15 @@ const seededHosts = new Set<string>();
 async function ensureSelfEndpoint(env: Env, host: string): Promise<void> {
   const clean = host.replace(/:\d+$/, '').toLowerCase();
   if (!clean || seededHosts.has(clean)) return;
-  seededHosts.add(clean);
-  await callDo(env, '/int/ensure-self', { host: clean }).catch(() => undefined);
+  // Mark the host as seeded only after Durable Object persistence succeeds.
+  // A transient cold-start failure must not poison this isolate and leave the
+  // deployment's own (known-working) hostname absent from generated routes.
+  try {
+    const response = await callDo(env, '/int/ensure-self', { host: clean });
+    if (response.ok) seededHosts.add(clean);
+  } catch {
+    // Retry on the next API request.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -643,14 +651,17 @@ function makeSessionHooks(policy: {
       let ip = host;
       const isIpLiteral = /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':');
       if (!isIpLiteral) {
-        const resolved = await resolvePublic(host, policy.dohList, opts.timeoutMs);
-        if (!resolved) throw new Error('dns-unresolvable');
-        ip = resolved;
+        // Prefer a public IP validated through DoH. If every configured DoH
+        // provider is temporarily unreachable, let the Workers Sockets runtime
+        // resolve the already policy-checked public hostname instead of making
+        // every website fail with dns-unresolvable. Cloudflare still blocks
+        // private-network and same-Worker socket targets at the platform layer.
+        const resolved = await resolvePublic(host, policy.dohList, Math.min(opts.timeoutMs, 2500));
+        ip = resolved || host;
       }
       const { connect } = await import('cloudflare:sockets');
       // VLESS carries the client's own TLS handshake. The Worker must open a
-      // raw TCP socket; wrapping it in another TLS layer breaks HTTPS. Dial the
-      // public DoH-validated IP to avoid a check/connect DNS-rebinding gap.
+      // raw TCP socket; wrapping it in another TLS layer breaks HTTPS.
       const socket = connect(
         { hostname: ip, port },
         { secureTransport: 'off', allowHalfOpen: false },
@@ -712,6 +723,10 @@ function socketAdapter(socket: Socket): TcpSocket {
 }
 
 async function resolvePublic(hostname: string, dohList: string[], timeoutMs: number): Promise<string | null> {
+  const cacheKey = hostname.toLowerCase().replace(/\.$/, '');
+  const cached = DNS_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.ip;
+  if (cached) DNS_CACHE.delete(cacheKey);
   const { buildDnsQuery, parseDnsAnswers } = await import('./protocol');
   const resolvers = [...new Set(dohList.filter((doh) => /^https:\/\//i.test(doh)))];
   // Run resolver failover concurrently. The old serial loop could consume
@@ -733,7 +748,12 @@ async function resolvePublic(hostname: string, dohList: string[], timeoutMs: num
       return null;
     }
   }));
-  return answers.find((ip): ip is string => typeof ip === 'string' && ip.length > 0) ?? null;
+  const ip = answers.find((answer): answer is string => typeof answer === 'string' && answer.length > 0) ?? null;
+  if (ip) {
+    if (DNS_CACHE.size >= 512) DNS_CACHE.delete(DNS_CACHE.keys().next().value as string);
+    DNS_CACHE.set(cacheKey, { ip, expiresAt: Date.now() + 60_000 });
+  }
+  return ip;
 }
 
 // ---------------------------------------------------------------------------

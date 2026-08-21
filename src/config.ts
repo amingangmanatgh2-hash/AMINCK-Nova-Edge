@@ -398,13 +398,16 @@ interface WsTransportTuning {
 }
 
 /**
- * Route #1 is deliberately a conservative compatibility anchor: direct host,
- * no early-data header and no padded query. Some mobile WebSocket stacks and
- * middleboxes time out on large Sec-WebSocket-Protocol headers; advanced
- * routes keep the selected speed preset while the first route remains usable.
+ * Direct-host routes are conservative compatibility anchors: no early-data
+ * header and no padded query. Some mobile WebSocket stacks and middleboxes
+ * time out on large Sec-WebSocket-Protocol headers; only optional Anycast
+ * copies keep the selected advanced speed tuning.
  */
-function wsTransportTuning(route: Route, index: number, speed: SpeedSpec, anti: AntiDetectSettings): WsTransportTuning {
-  const compatibilityAnchor = index === 0 && !route.frontIp;
+function wsTransportTuning(route: Route, _index: number, speed: SpeedSpec, anti: AntiDetectSettings): WsTransportTuning {
+  // Every hostname-direct route is a compatibility route. Advanced tuning is
+  // useful only for optional Anycast-fronted copies; applying Early Data or a
+  // padded path to direct routes made otherwise healthy mobile clients fail.
+  const compatibilityAnchor = !route.frontIp;
   const earlyData = compatibilityAnchor ? 0 : speed.earlyData;
   const path = !compatibilityAnchor && anti.pathPadding && route.padding
     ? `${route.path}?ed=${earlyData}&pad=${route.padding}`
@@ -414,7 +417,7 @@ function wsTransportTuning(route: Route, index: number, speed: SpeedSpec, anti: 
 
 function routeNames(ctx: BuildContext): RouteNames {
   const brand = ctx.settings.brand || BRAND;
-  const names = ctx.user.routes.map((r, index) => {
+  const names = ctx.user.routes.map((r) => {
     const name = renderConfigName(ctx.nameTemplate, {
       brand,
       app: APP_NAME,
@@ -424,7 +427,7 @@ function routeNames(ctx: BuildContext): RouteNames {
       endpoint: `${r.host}:${r.port}`,
       port: r.port,
     });
-    return index === 0 && !r.frontIp ? `${name} · DIRECT SAFE` : name;
+    return !r.frontIp ? `${name} · DIRECT SAFE` : name;
   });
   return { names, health: healthOrDefault(ctx.settings, ctx.user.routes[0]) };
 }
@@ -442,7 +445,7 @@ function buildVlessLines(ctx: BuildContext, speed: SpeedSpec): {
       earlyData: tuning.earlyData,
       name: names[i]!,
       padding: tuning.earlyData > 0 && anti.pathPadding,
-      fragment: anti.fragment,
+      fragment: anti.fragment && !!r.frontIp,
       fragmentLength: anti.fragmentLength,
       fragmentInterval: anti.fragmentInterval,
     });
@@ -615,9 +618,9 @@ export function buildSingBoxJson(ctx: BuildContext): string {
       },
       transport,
     };
-    if (anti.fragment) {
-      // Official sing-box outbound TLS fields. Kept opt-in because older mobile
-      // clients may not know these keys.
+    if (anti.fragment && r.frontIp) {
+      // Official sing-box outbound TLS fields. Direct routes deliberately stay
+      // conservative because older mobile clients may not know these keys.
       ob.tls = {
         ...(ob.tls as object),
         fragment: true,
