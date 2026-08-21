@@ -4,7 +4,7 @@
 
 > **شفافیت فنی:** هیچ پروژه‌ای نمی‌تواند سرعت، پایداری، عبور از DPI یا کارکرد روی «نت ملی» را برای همهٔ اپراتورها تضمین کند. AMINNOVA به‌جای دامنه/SNI جعلی از hostname واقعی Worker یا دامنه‌های متعلق به خود اپراتور استفاده می‌کند. Probe نیز تأخیر HTTPS از Edge کلودفلر است، نه Ping اینترنت گوشی کاربر.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FAMINCK-Nova-Edge%2Ftree%2Fb9711fcbe3c77924101e8249c05756028ae304e7)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FAMINCK-Nova-Edge%2Ftree%2Farena%2F01a01b70-aminck-nova-edge)
 
 ## امکانات اصلی
 
@@ -40,7 +40,7 @@
 
 ### روش ۱: Deploy رسمی
 
-روی دکمهٔ بالا بزنید. این لینک از Snapshot عمومی و تست‌شدهٔ کامل پروژه استفاده می‌کند تا به مخزن Seed ناقص وابسته نباشد. Wizard رسمی Cloudflare از روی `.dev.vars.example` فقط یک مورد از شما می‌پرسد:
+روی دکمهٔ بالا بزنید. این لینک مستقیماً شاخهٔ عمومی و تست‌شدهٔ کامل پروژه را Clone می‌کند تا به مخزن Seed ناقص وابسته نباشد. Wizard رسمی Cloudflare از روی `.dev.vars.example` فقط یک مورد از شما می‌پرسد:
 
 | Secret | مقدار |
 |---|---|
@@ -57,9 +57,8 @@
 ### روش ۲: Wrangler
 
 ```bash
-git clone https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git aminnova
+git clone --branch arena/01a01b70-aminck-nova-edge --single-branch https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git aminnova
 cd aminnova
-git checkout b9711fcbe3c77924101e8249c05756028ae304e7
 npm ci
 npx wrangler login
 npx wrangler secret put ADMIN_PASSWORD
