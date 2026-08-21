@@ -448,24 +448,33 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         maxConnections: numOrZero('lim-c'),
         limitRequests: numOrZero('lim-r')
       };
-      api('POST', '/api/probe', {}).catch(function () { return null; }).then(function () {
-        return api('POST', '/api/auto-build', payload);
-      }).then(function (d) {
+      api('POST', '/api/auto-build', payload).then(function (d) {
         var subs = d.subscriptions || [{ name: d.user.name, token: d.user.token, subUrl: d.subUrl }];
         var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد</div>';
         subs.forEach(function (sub, i) {
           var link = sub.subUrl || subLink(sub.token, '');
           out += '<div class="sub-result"><b>' + esc(sub.name) + '</b><div class="uri">' + esc(link) + '</div>';
+          var rawLink = sub.rawUrl || subLink(sub.token, 'raw');
           out += '<div class="row"><button class="btn" data-copy-url="' + esc(link) + '">کپی ساب</button>';
+          out += '<button class="btn" data-copy-url="' + esc(rawLink) + '">کپی VLESS خام</button>';
+          out += '<a class="btn" target="_blank" rel="noopener" href="' + esc(rawLink) + '">تست و نمایش</a>';
           out += '<button class="btn" data-copy-url="' + esc(sub.clashUrl || subLink(sub.token, 'clash')) + '">Clash</button>';
           out += '<button class="btn" data-copy-url="' + esc(sub.singboxUrl || subLink(sub.token, 'singbox')) + '">sing-box</button></div></div>';
         });
-        (d.iron || []).forEach(function (p) {
-          out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span><div class="uri">' + esc(p.json) + '</div></div>';
+        (d.iron || []).forEach(function (p, ironIndex) {
+          out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span> ';
+          out += '<button class="btn" data-copy-iron="' + ironIndex + '">کپی JSON آهنین</button>';
+          out += '<div class="uri">' + esc(p.json) + '</div></div>';
         });
         $('#mk-out').innerHTML = out;
         document.querySelectorAll('[data-copy-url]').forEach(function (el) {
           el.onclick = function () { copyText(el.getAttribute('data-copy-url'), 'لینک'); };
+        });
+        document.querySelectorAll('[data-copy-iron]').forEach(function (el) {
+          el.onclick = function () {
+            var item = (d.iron || [])[Number(el.getAttribute('data-copy-iron'))];
+            if (item) copyText(item.json, 'JSON آهنین');
+          };
         });
         toast(String(subs.length) + ' ساب ساخته شد', true);
         return loadUsers();

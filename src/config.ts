@@ -746,7 +746,7 @@ export function expandTunnelFronts(routes: Route[], ips: string[], cap = 200): R
 /** Xray / V2RayNG / MahsaNG / NapsternetV compatible outbound JSON. */
 export function buildXrayJson(ctx: BuildContext): string {
   const speed = SPEED_PRESETS[ctx.speedPreset];
-  const { names } = routeNames(ctx);
+  const { names, health } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
   const anti = resolveAntiDetect(ctx.settings);
   const outbounds = ctx.user.routes.map((r, i) => {
@@ -789,11 +789,25 @@ export function buildXrayJson(ctx: BuildContext): string {
       { tag: 'direct', protocol: 'freedom' },
       { tag: 'block', protocol: 'blackhole' },
     ],
+    // Xray's observatory measures every persisted route through its own
+    // outbound. leastPing then exposes all selected routes as one aggregate
+    // IRON profile instead of pinning the JSON to route #1.
+    observatory: {
+      subjectSelector: names,
+      probeURL: health,
+      probeInterval: `${speed.healthInterval}s`,
+      enableConcurrency: true,
+    },
     routing: {
       domainStrategy: 'IPIfNonMatch',
+      balancers: names.length > 0
+        ? [{ tag: 'AMINCK-IRON-AUTO', selector: names, strategy: { type: 'leastPing' } }]
+        : [],
       rules: [
         { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
-        { type: 'field', network: 'tcp,udp', outboundTag: names[0] || 'direct' },
+        names.length > 0
+          ? { type: 'field', network: 'tcp,udp', balancerTag: 'AMINCK-IRON-AUTO' }
+          : { type: 'field', network: 'tcp,udp', outboundTag: 'direct' },
       ],
     },
   };
@@ -815,10 +829,13 @@ export function buildIronPack(ctx: BuildContext, count: number): Array<{
   const clients = ['xray', 'singbox', 'xray', 'singbox', 'xray'];
   const pack: Array<{ index: number; name: string; client: string; json: string }> = [];
   for (let i = 0; i < n; i++) {
-    const sliceRoutes = ctx.user.routes.slice(0, Math.max(1, Math.min(ctx.user.routes.length, i + 1)));
-    const view: User = { ...ctx.user, routes: sliceRoutes, speedPreset: presets[i]! };
+    // Every IRON profile contains every persisted route (up to 200). Xray
+    // aggregates them with leastPing; sing-box aggregates them with urltest.
+    // This remains a standards-compliant client profile rather than pretending
+    // that 200 unrelated links can be embedded inside one VLESS URI.
+    const view: User = { ...ctx.user, routes: [...ctx.user.routes], speedPreset: presets[i]! };
     const sub: BuildContext = { ...ctx, user: view, speedPreset: presets[i]! };
-    const name = `${ctx.settings.brand || BRAND} IRON ${i + 1}`;
+    const name = `${ctx.settings.brand || BRAND} IRON ${i + 1} · ${view.routes.length} ROUTES`;
     const json = clients[i] === 'singbox' ? buildSingBoxJson(sub) : buildXrayJson(sub);
     pack.push({ index: i + 1, name, client: clients[i]!, json });
   }

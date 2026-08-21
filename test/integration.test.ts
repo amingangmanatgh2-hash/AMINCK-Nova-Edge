@@ -145,6 +145,7 @@ describe('subscription users (unlimited semantics)', () => {
     expect(res.headers.get('subscription-userinfo')).toContain('download=');
     expect(res.headers.get('subscription-userinfo')).toContain('total=0');
     expect(res.headers.get('profile-update-interval')).toBe('24h');
+    expect(res.headers.get('content-disposition')).toContain('inline');
     expect(res.headers.get('support-url')).toBeNull();
     const payload = await res.text();
     const decoded = Buffer.from(payload, 'base64').toString('utf8');
@@ -667,9 +668,15 @@ describe('AMINNOVA reliability regressions', () => {
     expect(new Set(built.data.subscriptions.map((x: any) => x.token)).size).toBe(3);
     expect(built.data.users.every((u: any) => u.routes.length === 4)).toBe(true);
     expect(built.data.iron).toHaveLength(2);
+    const stats = await w.api(ownerCookie, '/api/stats', {});
+    expect(stats.data.lastProbeAt).toBeGreaterThan(0);
     for (const sub of built.data.subscriptions) {
       const res = await w.mf.dispatchFetch(sub.subUrl.replace('https://nova.test', w.base));
       expect(res.status).toBe(200);
+      expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
+      const raw = await w.mf.dispatchFetch(sub.rawUrl.replace('https://nova.test', w.base));
+      expect(raw.status).toBe(200);
+      expect(await raw.text()).toContain('vless://');
     }
   });
 

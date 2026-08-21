@@ -319,8 +319,11 @@ export class AMINCKStore {
     this.sessionsCache = sessionsRaw ?? [];
     const ids = indexRaw ?? [];
     if (ids.length > 0) {
-      const entries = await this.state.storage.get<Record<string, User>>(ids.map((id) => K.user(id)));
-      this.usersCache = Object.values(entries)
+      // DurableObjectStorage multi-get returns a Map, not a plain object.
+      // Reading it with Object.values() silently produced an empty user list
+      // after a Durable Object restart, making every persisted /sub token 404.
+      const entries = await this.state.storage.get<User>(ids.map((id) => K.user(id)));
+      this.usersCache = [...entries.values()]
         .map((u) => ({
           ...u,
           limitRequests: Number(u.limitRequests) >= 0 ? Number(u.limitRequests) : 0,
@@ -1348,6 +1351,7 @@ export class AMINCKStore {
       token: user.token,
       paths: user.routes.length,
       subUrl: `https://${host}/sub/${user.token}`,
+      rawUrl: `https://${host}/sub/${user.token}/raw`,
       clashUrl: `https://${host}/sub/${user.token}/clash`,
       singboxUrl: `https://${host}/sub/${user.token}/singbox`,
     }));

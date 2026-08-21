@@ -277,11 +277,11 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-owned-aliases', 'Host Alias متعلق به مالک', 'چرخش Host فقط میان دامنه‌هایی که در Endpointهای همین Worker ثبت شده‌اند.'),
   c('config', 'cfg-multiport', 'انتخاب پورت Zooz/BPB', 'گسترش خروجی روی پورتهای TLS کلودفلر (443/2053/2083/2087/2096/8443).'),
   c('config', 'cfg-god-speed', 'پروفایل سرعت GOD', 'health interval ۳۰، tolerance ۵۰، دو retry سریع، earlyData ۴۰۹۶ و tcp-concurrent.'),
-  c('config', 'cfg-iron-local', 'پک آهنین چندکلاینتی', 'یک تا پنج پروفایل مستقل Xray و sing-box از Endpointهای ثبت‌شده می‌سازد.'),
+  c('config', 'cfg-iron-local', 'پک آهنین تجمیعی چندکلاینتی', 'هرکدام از یک تا پنج پروفایل Xray و sing-box همه مسیرهای ذخیره‌شده را با leastPing یا urltest تجمیع می‌کند.'),
   c('config', 'cfg-hot-update', 'آپدیت یککلیکی', 'POST /api/hot-update مسیرها را بدون قطعی دامنه بازسازی میکند.'),
   c('ui', 'ui-api-only', 'پنل ساده فروش ساب', 'ورود مرورگری + API JSON؛ ساخت مشترک و لینک ساب برای V2Box / V2Ray / MahsaNG / NapsternetV.'),
   c('security', 'sec-api-only-surface', 'سطح حمله کنترلشده', 'Same-Origin روی همهٔ mutating APIها؛ کوکی HttpOnly.'),
-  c('config', 'cfg-iron-json', 'کانفیگ آهنین JSON', 'POST /api/iron-build بین ۱ تا ۵ پروفایل JSON خفن (Xray + sing-box) می‌سازد.'),
+  c('config', 'cfg-iron-json', 'کانفیگ آهنین JSON', 'POST /api/iron-build بین ۱ تا ۵ پروفایل استاندارد Xray و sing-box با حداکثر ۲۰۰ Route می‌سازد.'),
   c('scanner', 'scan-clean-ips', 'مخزن کاندیدهای Anycast', 'GET /api/clean-ips فهرست کاندیدها و هشدار تست از ISP واقعی را برمی‌گرداند.'),
   c('config', 'cfg-aminck-brand-token', 'توکن AMINCK در نام کانفیگ', 'قالب پیشفرض نام شامل AMINCK است تا در همهٔ کلاینت‌ها دیده شود.'),
   c('config', 'cfg-aminck-multi', 'گروه مولتی‌پروکسی AMINCK-MULTI', 'Clash load-balance با consistent-hashing روی همهٔ مسیرها.'),
@@ -324,6 +324,9 @@ export const CAPABILITIES: Capability[] = [
   c('owner', 'own-route-rebind', 'اتصال بکاپ به دامنه جدید', 'Restore همه مسیرهای معتبر را به hostname همین Deploy متصل می‌کند.'),
   c('deploy', 'd-one-secret', 'Deploy با یک Secret', 'Wizard رسمی فقط ADMIN_PASSWORD را می‌پرسد؛ Sessionها Token تصادفی server-side هستند.'),
   c('ui', 'ui-recovery-tab', 'تب بکاپ و بازیابی', 'دانلود Backup و Restore فایل از رابط فارسی بدون CLI انجام می‌شود.'),
+  c('sub', 'sub-cold-start-safe', 'ساب پایدار پس از Cold Start', 'کاربرها از Map واقعی Durable Object Storage بازخوانی می‌شوند تا Token و مسیر بعد از Restart به ۴۰۴ تبدیل نشود.'),
+  c('scanner', 'scan-backend-auto-build', 'Probe اجباری در Backend', 'خود API ساخت اتومات قبل از انتخاب Endpoint تست Edge را اجرا می‌کند و فقط موارد سالم را ترجیح می‌دهد.'),
+  c('ui', 'ui-raw-test-link', 'نمایش و تست VLESS خام', 'کنار هر ساب لینک Raw قابل مشاهده و دکمه کپی مستقل وجود دارد.'),
 ];
 
 export function totalCapabilities(): number {

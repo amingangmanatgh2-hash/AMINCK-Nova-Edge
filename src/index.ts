@@ -139,6 +139,27 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
   const sessionId = (await cookieSession(request, env)) ?? '';
   const rest = path.slice('/api'.length) || '/';
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  // Auto Build must always measure endpoints immediately before choosing them,
+  // including direct API calls (not only clicks coming from our browser UI).
+  // Only measured-healthy endpoints are passed as a preference; if none pass,
+  // the store safely falls back to the deployment's own registered hostname.
+  if (path === '/api/auto-build' && request.method === 'POST' && sessionId) {
+    try {
+      const probeResponse = await handleProbe(request, env);
+      if (probeResponse.ok) {
+        const probe = (await probeResponse.json()) as {
+          results?: Record<string, { ok?: boolean }>;
+          ordered?: Endpoint[];
+        };
+        const healthy = (probe.ordered ?? []).filter((endpoint) => probe.results?.[endpoint.id]?.ok === true);
+        if (healthy.length > 0) body.orderedEndpoints = healthy;
+      }
+    } catch {
+      // Fresh deployments still have their own hostname as a safe fallback.
+    }
+  }
+
   const payload: Record<string, unknown> = { ...body, sessionId, ip: clientIp(request), reqHost: host };
   const doRes = await callDo(env, `/api${rest}`, payload);
   return withHeaders(doRes, {});
@@ -268,7 +289,9 @@ async function handleSub(
   const headers = new Headers();
   headers.set('content-type', contentTypeFor(format));
   const safeName = user.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40) || 'sub';
-  headers.set('content-disposition', `attachment; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
+  // Keep payload visible when the operator opens a test/raw link in a browser;
+  // subscription clients still consume the exact same response body.
+  headers.set('content-disposition', `inline; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
   headers.set(
     'subscription-userinfo',
     `upload=0; download=${user.usageBytes}; total=${user.limitBytes}; expire=${user.expiresAt}`,

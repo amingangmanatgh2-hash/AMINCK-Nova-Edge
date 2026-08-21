@@ -19,8 +19,9 @@
 - خروجی V2Ray Base64، Raw VLESS، Clash Meta و sing-box
 - سازگار با Import استاندارد در V2Box، V2RayNG، MahsaNG، NapsternetV، Clash Meta/Mihomo و sing-box
 - گروه‌های Auto، Fallback، Balance، Multi و گروه‌های Rule برای YouTube، Instagram و TikTok
-- ساخت ۱ تا ۵ پروفایل مستقل «آهنین» Xray/sing-box
-- Probe خودکار پیش از Auto Build و Probe دستی از Cloudflare Edge؛ بدون مصرف سهمیه Cron حساب
+- ساخت ۱ تا ۵ پروفایل مستقل «آهنین» Xray/sing-box؛ هر پروفایل همهٔ مسیرهای انتخاب‌شده (تا ۲۰۰) را با `leastPing`/`urltest` تجمیع می‌کند
+- Probe اجباری Backend پیش از هر Auto Build و Probe دستی از Cloudflare Edge؛ بدون مصرف سهمیه Cron حساب
+- بازیابی صحیح Token، UUID و مسیرها پس از Cold Start یا Restart شدن Durable Object
 - ساخت اتومات با اولویت Endpointهای سالم و کم‌تأخیر
 - مخزن کاندیدهای Cloudflare Anycast با هشدار تست از شبکهٔ واقعی؛ هیچ IP ثابت به‌صورت کور تزریق نمی‌شود
 - Host Alias فقط برای دامنه‌ای که مالک آن هستید و به همین Worker Route شده است

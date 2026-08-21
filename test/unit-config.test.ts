@@ -290,14 +290,39 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(10);
   });
 
-  it('iron pack returns 1–5 JSON profiles', () => {
-    const pack = buildIronPack(ctx(userFixture()), 5);
+  it('iron pack puts every route into each aggregate JSON profile', () => {
+    const user = userFixture();
+    const pack = buildIronPack(ctx(user), 5);
     expect(pack.length).toBe(5);
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(3);
     for (const p of pack) {
       expect(p.json.length).toBeGreaterThan(20);
-      JSON.parse(p.json);
+      const doc = JSON.parse(p.json);
+      if (p.client === 'xray') {
+        expect(doc.outbounds.filter((x: any) => x.protocol === 'vless')).toHaveLength(user.routes.length);
+        expect(doc.routing.balancers[0].strategy.type).toBe('leastPing');
+        expect(doc.routing.balancers[0].selector).toHaveLength(user.routes.length);
+        expect(doc.observatory.subjectSelector).toHaveLength(user.routes.length);
+      } else {
+        expect(doc.outbounds.filter((x: any) => x.type === 'vless')).toHaveLength(user.routes.length);
+        expect(doc.outbounds.find((x: any) => x.type === 'urltest').outbounds).toHaveLength(user.routes.length);
+      }
     }
+  });
+
+  it('builds one Xray IRON aggregate with 200 selectable routes', () => {
+    const user = userFixture({
+      id: 'a'.repeat(24),
+      routes: routesFor('a'.repeat(24), undefined, 200),
+      speedPreset: 'god',
+    });
+    const iron = buildIronPack(ctx(user), 1)[0]!;
+    expect(iron.client).toBe('xray');
+    expect(iron.name).toContain('200 ROUTES');
+    const doc = JSON.parse(iron.json);
+    expect(doc.outbounds.filter((x: any) => x.protocol === 'vless')).toHaveLength(200);
+    expect(doc.routing.balancers[0].selector).toHaveLength(200);
+    expect(doc.routing.rules.at(-1).balancerTag).toBe('AMINCK-IRON-AUTO');
   });
 
   it('expandRoutesMultiPort multiplies ports Zooz/BPB style', () => {
