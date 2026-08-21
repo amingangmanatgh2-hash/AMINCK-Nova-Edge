@@ -20,7 +20,7 @@
 - سازگار با Import استاندارد در V2Box، V2RayNG، MahsaNG، NapsternetV، Clash Meta/Mihomo و sing-box
 - گروه‌های Auto، Fallback، Balance، Multi و گروه‌های Rule برای YouTube، Instagram و TikTok
 - ساخت ۱ تا ۵ پروفایل مستقل «آهنین» Xray/sing-box
-- Probe دستی و Cron هر ۳۰ دقیقه از Cloudflare Edge
+- Probe خودکار پیش از Auto Build و Probe دستی از Cloudflare Edge؛ بدون مصرف سهمیه Cron حساب
 - ساخت اتومات با اولویت Endpointهای سالم و کم‌تأخیر
 - مخزن کاندیدهای Cloudflare Anycast با هشدار تست از شبکهٔ واقعی؛ هیچ IP ثابت به‌صورت کور تزریق نمی‌شود
 - Host Alias فقط برای دامنه‌ای که مالک آن هستید و به همین Worker Route شده است
@@ -46,7 +46,7 @@
 |---|---|
 | `ADMIN_PASSWORD` | رمز ورود مالک با نام کاربری `AMINCK`؛ حداقل ۱۰ کاراکتر |
 
-بعد از اتمام Deploy، URL ورکر را باز کنید، وارد شوید و دکمهٔ **ساخت اتومات ساب** را بزنید. Durable Object، Assets، Cron و Endpoint اولیه خودکار Provision می‌شوند و تنظیم دستی D1/KV لازم نیست. [Deploy Buttonهای Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) از Secretهای تعریف‌شده در `.dev.vars.example` پشتیبانی می‌کنند. اسکریپت `build` پوشه `public/` را پیش از استقرار بازتولید و بررسی می‌کند و `predeploy` نیز برای اجرای مستقیم `npm run deploy` همین کار را تکرار می‌کند.
+بعد از اتمام Deploy، URL ورکر را باز کنید، وارد شوید و دکمهٔ **ساخت اتومات ساب** را بزنید. Durable Object، Assets و Endpoint اولیه خودکار Provision می‌شوند و تنظیم دستی D1/KV یا Cron لازم نیست. [Deploy Buttonهای Cloudflare](https://developers.cloudflare.com/workers/platform/deploy-buttons/) از Secretهای تعریف‌شده در `.dev.vars.example` پشتیبانی می‌کنند. اسکریپت `build` پوشه `public/` را پیش از استقرار بازتولید و بررسی می‌کند و `predeploy` نیز برای اجرای مستقیم `npm run deploy` همین کار را تکرار می‌کند.
 
 > توکن Cloudflare را داخل صفحهٔ یک Worker عمومی Paste نکنید. AMINNOVA عمداً فرم دریافت توکن ندارد.
 
@@ -151,7 +151,7 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 
 ## Probe و «IP تمیز»
 
-Cron هر ۳۰ دقیقه HTTPS را **از محل اجرای Worker** اندازه می‌گیرد. این عدد برای مرتب‌سازی Endpointهای Worker مفید است، ولی وضعیت ISP کاربر در ایران یا کشور دیگر را نشان نمی‌دهد. کاندیدهای Anycast نیز باید روی دستگاه و ISP واقعی تست شوند؛ به همین دلیل Auto Build هیچ IP ثابتی را کورکورانه وارد ساب نمی‌کند.
+دکمهٔ **ساخت اتومات ساب** پیش از ساخت، HTTPS Endpointها را **از محل اجرای Worker** اندازه می‌گیرد؛ Probe دستی نیز در تب پینگ موجود است. این طراحی هیچ Cron حسابی مصرف نمی‌کند و روی Free Plan با پنج Cron اشغال‌شده هم Deploy می‌شود. عدد Edge برای مرتب‌سازی Endpointهای Worker مفید است، ولی وضعیت ISP کاربر در ایران یا کشور دیگر را نشان نمی‌دهد. کاندیدهای Anycast نیز باید روی دستگاه و ISP واقعی تست شوند؛ به همین دلیل Auto Build هیچ IP ثابتی را کورکورانه وارد ساب نمی‌کند.
 
 ## APIهای مهم
 
@@ -187,7 +187,7 @@ npx wrangler deploy --dry-run
 
 ## محدودیت‌های Cloudflare
 
-- محدودیت CPU، Request، Durable Objects و Cron تابع Plan حساب شماست.
+- محدودیت CPU، Request و Durable Objects تابع Plan حساب شماست؛ AMINNOVA به Cron حساب نیاز ندارد.
 - چند مسیر داخل یک Subscription ظرفیت جادویی ایجاد نمی‌کند؛ Groupهای Health Check فقط مسیر سالم را انتخاب می‌کنند.
 - Cloudflare ممکن است اتصال به برخی مقصدها یا IPهای Cloudflare را محدود کند.
 - استفاده باید مطابق قوانین محل شما، قوانین Cloudflare و حقوق دامنه‌های دیگر باشد.

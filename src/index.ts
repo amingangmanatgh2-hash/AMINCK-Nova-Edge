@@ -10,8 +10,8 @@
  *   GET  /sub/:token         subscriptions (v2ray base64 / clash / sing-box / raw)
  *   WS   /e<slug><userid>    VLESS over WebSocket proxy (random path + jitter)
  *
- * Security: Same-Origin checks on mutating requests, HMAC-signed HttpOnly
- * cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
+ * Security: Same-Origin checks on mutating requests, opaque server-stored
+ * 256-bit HttpOnly session cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
  * Permissions-Policy) and server-side permission enforcement in the DO.
  */
 import type { Env } from './store';

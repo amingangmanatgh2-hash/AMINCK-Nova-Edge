@@ -38,11 +38,11 @@
       "new_sqlite_classes": ["AMINCKStore"]
     }
   ],
-  // Re-measure configured endpoints from the Cloudflare edge every 30 minutes.
-  // This is edge latency, not the end user's ISP latency.
-  "triggers": {
-    "crons": ["*/30 * * * *"]
-  },
+  // Keep workers.dev and preview URLs explicit so Wrangler does not emit
+  // first-deploy warnings. Endpoint probing is run by the panel's automatic
+  // builder and the manual Probe action, requiring no account-level Cron slot.
+  "workers_dev": true,
+  "preview_urls": true,
   "observability": {
     "enabled": true
   },

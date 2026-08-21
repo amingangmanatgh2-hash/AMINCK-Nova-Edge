@@ -133,7 +133,7 @@ export const CAPABILITIES: Capability[] = [
   c('scanner', 'scan-max50', 'حداکثر ۵۰ Endpoint', 'پنل اسکن حداکثر ۵۰ Endpoint را مدیریت میکند.'),
   c('scanner', 'scan-sort', 'مرتبسازی سالمها', 'لیست Endpointهای سالم با کمترین تأخیر مرتب میشود.'),
   c('scanner', 'scan-save', 'ذخیرهٔ نتایج', 'نتایج پرچکلیتها (latency/status) در تنظیمات ذخیره میشود.'),
-  c('scanner', 'scan-cron', 'Cron هر ۳۰ دقیقه', 'تست خودکار همهٔ Endpointها با Crons برنامهرون بهصورت خودکار.'),
+  c('scanner', 'scan-auto-before-build', 'Probe خودکار پیش از ساخت', 'ساخت اتومات پیش از تولید ساب Endpointها را از Edge تست می‌کند و به Cron حساب نیاز ندارد.'),
   c('scanner', 'scan-note', 'توضیح صادقانهٔ اندازهگیری', 'در پنل توضیح داده میشود که عدد نشاندادهشده پینگ دستگاه کاربر نیست.'),
   c('scanner', 'scan-probe-now', 'Probe دستی', 'دکمهٔ «Probe اکنون» برای اسکن فوری.'),
   c('scanner', 'scan-add', 'افزودن Endpoint', 'افزودن Endpoint با Host و Port دلخواه (با اعتبارسنجی).'),
@@ -261,7 +261,7 @@ export const CAPABILITIES: Capability[] = [
   // -------------------------------------------------------------- deploy
   c('deploy', 'd-deploy-link', 'لینک Deploy به Cloudflare', 'لینک رسمی Deploy در README و صفحهٔ نصب.'),
   c('deploy', 'd-do-auto', 'Provision خودکار Durable Object', 'بدون هیچ D1/KV دستی؛ با migration خودکار ساخته میشود.'),
-  c('deploy', 'd-cron', 'Cron پیکربندیشده', 'اجرای auto-probe هر ۳۰ دقیقه با Crons.'),
+  c('deploy', 'd-cron-free', 'Deploy بدون سهمیه Cron', 'Auto-probe همراه ساخت ساب اجرا می‌شود تا پر بودن سهمیه Cron حساب مانع Deploy نشود.'),
   c('deploy', 'd-observability', 'Observability', 'فعالسازی در wrangler.jsonc.'),
   c('deploy', 'd-dev-vars', 'یک Secret در Deploy', 'Deploy رسمی فقط ADMIN_PASSWORD را از روی .dev.vars.example درخواست می‌کند.'),
   c('deploy', 'd-bindings-docs', 'مستندات Bindings در package.json', 'شرح Bindingها در توضیحات package.'),

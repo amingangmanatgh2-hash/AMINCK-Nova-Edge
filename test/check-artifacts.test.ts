@@ -45,6 +45,9 @@ describe('artifact checks (runtime smoke steps)', () => {
     const wrangler = readFileSync('wrangler.jsonc', 'utf8');
     expect(wrangler).toMatch(/"required"\s*:\s*\["ADMIN_PASSWORD"\]/);
     expect(wrangler).not.toContain('SESSION_SECRET');
+    expect(wrangler).not.toMatch(/"crons"\s*:/);
+    expect(wrangler).toMatch(/"workers_dev"\s*:\s*true/);
+    expect(wrangler).toMatch(/"preview_urls"\s*:\s*true/);
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
     expect(Object.keys(pkg.cloudflare.bindings)).toEqual(['ADMIN_PASSWORD']);
     expect(pkg.scripts.build).toContain('build:public');
