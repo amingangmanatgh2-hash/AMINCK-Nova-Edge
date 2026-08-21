@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { decodeWsEarlyData } from '../src/index';
+import { decodeWsEarlyData, parseAiProfileAdvice } from '../src/index';
 import { AMINCKStore, defaultSettings } from '../src/store';
+import { defaultRuntimeHooks } from '../src/probe';
 import type { Admin, User } from '../src/types';
 import { VlessSession, type TcpSocket } from '../src/proxy';
 import { ATYP_DOMAIN, CMD_TCP, type VlessTarget } from '../src/protocol';
@@ -13,6 +14,35 @@ describe('WebSocket early data', () => {
     expect(decodeWsEarlyData(encoded, 2)).toBeNull();
     expect(decodeWsEarlyData('not,a,protocol-list', 100)).toBeNull();
     expect(decodeWsEarlyData('***', 100)).toBeNull();
+  });
+});
+
+describe('optional Workers AI advice validation', () => {
+  it('accepts only the fixed profile enums from model output', () => {
+    expect(parseAiProfileAdvice({ response: '```json\n{"speedPreset":"balanced","profileMode":"auto"}\n```' }))
+      .toEqual({ speedPreset: 'balanced', profileMode: 'auto' });
+    expect(parseAiProfileAdvice({ response: '{"speedPreset":"fast","profileMode":"auto"}' })).toBeNull();
+    expect(parseAiProfileAdvice({ response: '{"speedPreset":"god","profileMode":"unsafe"}' })).toBeNull();
+  });
+});
+
+describe('endpoint ownership probe', () => {
+  it('accepts only a healthy AMINNOVA /healthz marker', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => new Response(JSON.stringify({ ok: true, app: 'AMINNOVA' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+      expect((await defaultRuntimeHooks.tcpTlsConnect('owned.example', 443, 1000)).ok).toBe(true);
+
+      globalThis.fetch = (async () => new Response('<html>unrelated site</html>', { status: 200 })) as typeof fetch;
+      const unrelated = await defaultRuntimeHooks.tcpTlsConnect('third-party.example', 443, 1000);
+      expect(unrelated.ok).toBe(false);
+      expect(unrelated.error).toBe('not-aminnova-worker');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

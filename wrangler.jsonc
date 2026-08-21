@@ -24,6 +24,12 @@
   "secrets": {
     "required": ["ADMIN_PASSWORD"]
   },
+  // Optional, operator-triggered profile advice. Auto Build never depends on
+  // inference: if quota/model access is unavailable it keeps deterministic
+  // probe-based defaults and completes normally.
+  "ai": {
+    "binding": "AI"
+  },
   "durable_objects": {
     "bindings": [
       {

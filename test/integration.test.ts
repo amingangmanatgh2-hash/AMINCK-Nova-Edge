@@ -655,18 +655,30 @@ describe('AMINNOVA reliability regressions', () => {
   });
 
   it('creates a selectable batch of independent subscriptions', async () => {
+    const listed = await w.api(ownerCookie, '/api/endpoints', { action: 'view' });
+    const selectedId = listed.data.endpoints.find((endpoint: any) => endpoint.host === 'nova.test').id;
     const built = await w.api(ownerCookie, '/api/auto-build', {
       name: 'batch-vip',
       subscriptionCount: 3,
       paths: 4,
       ironCount: 2,
       speedPreset: 'god',
+      endpointIds: [selectedId],
+      useCleanCatalog: true,
+      useCloudflareAi: true,
+      aiApplied: true,
+      aiRecommendation: 'forged',
     });
     expect(built.status).toBe(200);
     expect(built.data.subscriptionCount).toBe(3);
+    expect(built.data.selectedEndpoints).toEqual([selectedId]);
     expect(built.data.subscriptions).toHaveLength(3);
     expect(new Set(built.data.subscriptions.map((x: any) => x.token)).size).toBe(3);
     expect(built.data.users.every((u: any) => u.routes.length === 4)).toBe(true);
+    expect(built.data.cleanIpsUsed.length).toBeGreaterThan(10);
+    expect(built.data.aiAssistance).toEqual({ requested: true, applied: false, recommendation: '' });
+    expect(built.data.users.every((u: any) => u.routes.some((r: any) => r.frontIp))).toBe(true);
+    expect(built.data.users.flatMap((u: any) => u.routes).filter((r: any) => r.frontIp).every((r: any) => r.sni === 'nova.test')).toBe(true);
     expect(built.data.iron).toHaveLength(2);
     const stats = await w.api(ownerCookie, '/api/stats', {});
     expect(stats.data.lastProbeAt).toBeGreaterThan(0);
@@ -678,6 +690,16 @@ describe('AMINNOVA reliability regressions', () => {
       expect(raw.status).toBe(200);
       expect(await raw.text()).toContain('vless://');
     }
+  });
+
+  it('rejects malformed or private clean-IP candidates', async () => {
+    const malformed = await w.api(ownerCookie, '/api/auto-build', { name: 'bad-ip', paths: 3, cleanIps: '999.1.1.1' });
+    expect(malformed.status).toBe(400);
+    expect(malformed.data.error).toContain('IP');
+    const privateIp = await w.api(ownerCookie, '/api/auto-build', { name: 'private-ip', paths: 3, cleanIps: '127.0.0.1' });
+    expect(privateIp.status).toBe(400);
+    const nonCloudflare = await w.api(ownerCookie, '/api/auto-build', { name: 'wrong-network', paths: 3, cleanIps: '8.8.8.8' });
+    expect(nonCloudflare.status).toBe(400);
   });
 
   it('rejects malformed restore files without replacing current data', async () => {

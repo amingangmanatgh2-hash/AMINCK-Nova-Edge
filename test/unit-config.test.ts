@@ -8,6 +8,7 @@ import {
   CLEAN_IP_CATALOG,
   expandRoutesMultiPort,
   expandTunnelFronts,
+  isCloudflareIpv4Candidate,
   planRoutes,
   renderConfigName,
   validateNameTemplate,
@@ -287,7 +288,33 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(out.length).toBeGreaterThan(user.routes.length);
     expect(out.some((r) => r.frontIp === '1.2.3.4')).toBe(true);
     expect(out.every((r) => (r.sni || r.host).includes('example.workers.dev') || !r.frontIp)).toBe(true);
+
+    const route = out.find((r) => r.frontIp === '1.2.3.4')!;
+    const fronted = { ...user, routes: [route] };
+    const formats = buildFormats(ctx(fronted), ['raw', 'clash', 'singbox']);
+    expect(formats[0]!.payload).toContain('@1.2.3.4:');
+    expect(formats[0]!.payload).toContain('sni=edge-1.example.workers.dev');
+    expect(formats[0]!.payload).toContain('host=edge-1.example.workers.dev');
+    expect(formats[1]!.payload).toContain('server: "1.2.3.4"');
+    expect(formats[1]!.payload).toContain('servername: "edge-1.example.workers.dev"');
+    const singbox = JSON.parse(formats[2]!.payload);
+    const singboxRoute = singbox.outbounds.find((item: any) => item.type === 'vless');
+    expect(singboxRoute.server).toBe('1.2.3.4');
+    expect(singboxRoute.tls.server_name).toBe('edge-1.example.workers.dev');
+    expect(singboxRoute.transport.headers.Host).toBe('edge-1.example.workers.dev');
+
+    const iron = buildIronPack(ctx(fronted), 2);
+    const xray = JSON.parse(iron.find((profile) => profile.client === 'xray')!.json);
+    const xrayRoute = xray.outbounds.find((item: any) => item.protocol === 'vless');
+    expect(xrayRoute.settings.vnext[0].address).toBe('1.2.3.4');
+    expect(xrayRoute.streamSettings.tlsSettings.serverName).toBe('edge-1.example.workers.dev');
+    const ironSingBox = JSON.parse(iron.find((profile) => profile.client === 'singbox')!.json);
+    const ironRoute = ironSingBox.outbounds.find((item: any) => item.type === 'vless');
+    expect(ironRoute.server).toBe('1.2.3.4');
+    expect(ironRoute.tls.server_name).toBe('edge-1.example.workers.dev');
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(10);
+    expect(CLEAN_IP_CATALOG.every((item) => isCloudflareIpv4Candidate(item.ip))).toBe(true);
+    expect(isCloudflareIpv4Candidate('8.8.8.8')).toBe(false);
   });
 
   it('iron pack puts every route into each aggregate JSON profile', () => {

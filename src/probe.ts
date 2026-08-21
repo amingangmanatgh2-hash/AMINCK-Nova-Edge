@@ -145,13 +145,20 @@ export const defaultRuntimeHooks: RuntimeHooks = {
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     const authority = port === 443 ? host : `${host}:${port}`;
     try {
-      await fetch(`https://${authority}/healthz`, {
+      const response = await fetch(`https://${authority}/healthz`, {
         method: 'GET',
         redirect: 'manual',
         headers: { accept: 'application/json', 'cache-control': 'no-cache' },
         signal: ctrl.signal,
         cf: { cacheTtl: 0, cacheEverything: false },
       });
+      if (!response.ok) {
+        return { ok: false, latencyMs: performance.now() - t0, error: `http-${response.status}` };
+      }
+      const marker = await response.json().catch(() => null) as { ok?: boolean; app?: string } | null;
+      if (marker?.ok !== true || marker.app !== 'AMINNOVA') {
+        return { ok: false, latencyMs: performance.now() - t0, error: 'not-aminnova-worker' };
+      }
       return { ok: true, latencyMs: performance.now() - t0 };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

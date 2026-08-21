@@ -313,11 +313,11 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-ws-alpn', 'ALPN سازگار WebSocket', 'خروجی VLESS/Clash/sing-box از http/1.1 سازگار با WebSocket Upgrade استفاده می‌کند.'),
   c('config', 'cfg-ws-ua', 'User-Agent استاندارد روی WS', 'هدر User-Agent سازگار برای کلاینت‌هایی که ws headers را پشتیبانی می‌کنند.'),
   c('config', 'cfg-fragment-optin', 'Fragment Hint اختیاری', 'به‌دلیل تفاوت کلاینت‌ها پیش‌فرض خاموش است و مالک می‌تواند بازه ۵۰–۱۲۰ را فعال کند.'),
-  c('config', 'cfg-clean-front', 'فرانت Anycast اختیاری', 'expandTunnelFronts فقط برای انتخاب دستی کاندید تست‌شده است و SNI همان Worker می‌ماند.'),
+  c('config', 'cfg-clean-front', 'فرانت Anycast اختیاری', 'Auto Build می‌تواند direct و کاندید Anycast را ترکیب کند؛ آدرس اتصال عوض می‌شود ولی SNI/Host همان Worker واقعی می‌ماند.'),
   c('config', 'cfg-aminck-tunnel', 'گروه AMINCK-TUNNEL', 'گروه fallback اختصاصی تانل در Clash.'),
   c('config', 'cfg-in-socks', 'اینباند SOCKS اختصاصی', 'Clash socks-port 10808 و sing-box tag aminck-in.'),
   c('config', 'cfg-in-http', 'اینباند HTTP اختصاصی', 'Clash port 10809 کنار mixed-port.'),
-  c('scanner', 'scan-clean-18', 'هجده کاندید Anycast', 'مخزن CLEAN_IP_CATALOG حداقل ۱۸ کاندید دارد و هیچ مورد را بدون تست خودکار تزریق نمی‌کند.'),
+  c('scanner', 'scan-clean-18', 'هجده کاندید Anycast', 'مخزن حداقل ۱۸ کاندید دارد؛ فقط با گزینه کاربر اضافه می‌شوند و انتخاب واقعی به تست کلاینت سپرده می‌شود.'),
   c('sub', 'sub-batch-10', 'ساخت دسته‌ای تا ۱۰ ساب', 'Auto Build در یک درخواست ۱، ۲، ۳، ۵ یا ۱۰ مشترک مستقل با Token و UUID جدا می‌سازد.'),
   c('ui', 'ui-batch-picker', 'انتخاب تعداد ساب', 'داشبورد تعداد ساب مستقل را جدا از تعداد کانفیگ داخل هر ساب می‌گیرد.'),
   c('owner', 'own-portable-restore', 'Restore قابل حمل', 'مالک بکاپ JSON را روی Deploy جدید بازیابی می‌کند و Token و UUID مشترک‌ها حفظ می‌شود.'),
@@ -327,6 +327,11 @@ export const CAPABILITIES: Capability[] = [
   c('sub', 'sub-cold-start-safe', 'ساب پایدار پس از Cold Start', 'کاربرها از Map واقعی Durable Object Storage بازخوانی می‌شوند تا Token و مسیر بعد از Restart به ۴۰۴ تبدیل نشود.'),
   c('scanner', 'scan-backend-auto-build', 'Probe اجباری در Backend', 'خود API ساخت اتومات قبل از انتخاب Endpoint تست Edge را اجرا می‌کند و فقط موارد سالم را ترجیح می‌دهد.'),
   c('ui', 'ui-raw-test-link', 'نمایش و تست VLESS خام', 'کنار هر ساب لینک Raw قابل مشاهده و دکمه کپی مستقل وجود دارد.'),
+  c('config', 'build-endpoint-select', 'انتخاب دامنه‌های واقعی', 'Auto Build انتخاب چند Endpoint یا انتخاب همه را می‌پذیرد و فقط همان گزینه‌ها را Probe می‌کند.'),
+  c('config', 'build-route-count-free', 'تعداد آزاد ۱ تا ۲۰۰', 'تعداد کانفیگ به‌جای فهرست ثابت با ورودی عددی معتبر انتخاب می‌شود.'),
+  c('scanner', 'scan-owned-marker', 'تأیید مالکیت مسیر Worker', 'Probe فقط پاسخ سالم /healthz با Marker خود AMINNOVA را معتبر می‌داند و دامنه نامرتبط را وارد خروجی نمی‌کند.'),
+  c('scanner', 'scan-browser-ws', 'تست WebSocket از ISP مرورگر', 'بعد از ساخت، پنل یک Upgrade واقعی WSS را از شبکه همان کاربر اجرا و نتیجه یا Timeout را نمایش می‌دهد.'),
+  c('config', 'cfg-workers-ai-advice', 'راهنمای اختیاری Workers AI', 'با انتخاب کاربر، binding رسمی Cloudflare فقط از اعداد Probe یک Profile معتبر پیشنهاد می‌دهد؛ Timeout یا سهمیه هرگز ساخت را متوقف نمی‌کند.'),
 ];
 
 export function totalCapabilities(): number {

@@ -54,6 +54,8 @@ import {
   buildIronPack,
   buildRoutes,
   expandRoutesMultiPort,
+  expandTunnelFronts,
+  isCloudflareIpv4Candidate,
   planRoutes,
   resolveAntiDetect,
   validateNameTemplate,
@@ -62,6 +64,8 @@ import {
 export interface Env {
   ADMIN_PASSWORD?: string;
   AMINCK_STORE: DurableObjectNamespace;
+  /** Optional Workers AI binding used only when the operator explicitly enables it. */
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
   /** Workers Static Assets binding (present when wrangler assets config is active). */
   ASSETS?: Fetcher;
 }
@@ -1292,21 +1296,38 @@ export class AMINCKStore {
 
     const orderedRaw = Array.isArray(body.orderedEndpoints) ? (body.orderedEndpoints as unknown[]) : [];
     const known = new Set(this.settings!.endpoints.map((e) => e.id));
+    const endpointSelectionProvided = Array.isArray(body.endpointIds);
+    const requestedEndpointIds = new Set(
+      (endpointSelectionProvided ? body.endpointIds as unknown[] : [])
+        .map(String)
+        .filter((id) => known.has(id)),
+    );
+    const endpointAllowed = (endpoint: Endpoint): boolean =>
+      !endpointSelectionProvided || requestedEndpointIds.has(endpoint.id);
     let ordered: Endpoint[] = orderedRaw
       .filter((e): e is Endpoint => !!e && typeof (e as Endpoint).id === 'string' && known.has((e as Endpoint).id))
       .map((e) => this.settings!.endpoints.find((x) => x.id === e.id)!)
-      .filter((e) => !!e && Number(e.port) > 0)
+      .filter((e) => !!e && endpointAllowed(e) && Number(e.port) > 0)
       .slice(0, MAX_ENDPOINTS);
     if (ordered.length === 0) {
       const sorted = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults)
-        .filter((e) => Number(e.port) > 0);
+        .filter((e) => endpointAllowed(e) && Number(e.port) > 0);
       const healthy = sorted.filter((e) => this.settings!.probeResults[e.id]?.ok);
-      // Prefer only measured-healthy routes. Fall back to known routes before
-      // the first probe so a fresh deployment remains immediately usable.
-      ordered = healthy.length > 0 ? healthy : sorted;
+      // Custom domains are usable after /healthz proves they route back to
+      // AMINNOVA. The hostname of this API request and workers.dev are safe
+      // fallbacks because the request itself reached this deployment; unrelated
+      // third-party domains are never emitted as fake SNI/Host values.
+      const requestHost = String(body.reqHost ?? '').toLowerCase();
+      const ownWorkerHosts = sorted.filter((e) => e.host.endsWith('.workers.dev') || e.host === requestHost);
+      ordered = healthy.length > 0 ? healthy : ownWorkerHosts;
     }
     if (ordered.length === 0) {
-      return json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400);
+      return json({
+        error: 'no-endpoints',
+        message: endpointSelectionProvided
+          ? 'حداقل یک دامنه معتبر و متصل به همین Worker را انتخاب کنید'
+          : 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده',
+      }, 400);
     }
 
     const baseName = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
@@ -1322,13 +1343,37 @@ export class AMINCKStore {
     const profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
+    const cleanIpInputs = (Array.isArray(body.cleanIps) ? body.cleanIps : String(body.cleanIps ?? '').split(/[\s,;]+/))
+      .map(String)
+      .map((ip) => ip.trim())
+      .filter(Boolean);
+    const invalidCleanIps = cleanIpInputs.filter((ip) => !isCloudflareIpv4Candidate(ip));
+    if (invalidCleanIps.length > 0) {
+      return json({ error: `IPv4 باید معتبر و داخل بازه رسمی Cloudflare باشد: ${invalidCleanIps.slice(0, 3).join(', ')}` }, 400);
+    }
+    const manualIps = Array.from(new Set(cleanIpInputs)).slice(0, 50);
+    const catalogIps = body.useCleanCatalog === true
+      ? CLEAN_IP_CATALOG.map((candidate) => candidate.ip)
+      : [];
+    // These are Cloudflare Anycast candidates, never a universal "clean IP"
+    // promise. The client-side url-test/leastPing decides what works on the
+    // user's actual ISP while SNI and Host remain the operator's Worker.
+    const cleanIps = [...new Set([...manualIps, ...catalogIps])].slice(0, 50);
     const users: User[] = [];
     for (let i = 0; i < subscriptionCount; i++) {
       const suffix = subscriptionCount > 1 ? `-${String(i + 1).padStart(2, '0')}` : '';
       const user = this.newUser(`${baseName}${suffix}`.slice(0, 80), limits, body, 1);
       user.speedPreset = speedPreset;
       user.profileMode = profileMode;
-      user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
+      const baseRouteCount = cleanIps.length > 0
+        ? Math.max(1, Math.ceil(paths / (cleanIps.length + 1)))
+        : paths;
+      const directRoutes = buildRoutes(user.id, planRoutes(ordered, baseRouteCount), this.settings!);
+      user.routes = (cleanIps.length > 0
+        ? expandTunnelFronts(directRoutes, cleanIps, paths)
+        : directRoutes)
+        .slice(0, paths)
+        .map((route, index) => ({ ...route, index: index + 1 }));
       users.push(user);
     }
     this.usersCache.push(...users);
@@ -1371,6 +1416,13 @@ export class AMINCKStore {
       configs: built,
       iron,
       selectedEndpoints: ordered.map((e) => e.id),
+      cleanIpsUsed: cleanIps,
+      directAndFrontedRoutes: cleanIps.length > 0,
+      aiAssistance: {
+        requested: body.useCloudflareAi === true,
+        applied: body.aiApplied === true,
+        recommendation: body.aiApplied === true ? String(body.aiRecommendation ?? '') : '',
+      },
       truncated: paths < requested,
       subUrl: subscriptions[0]!.subUrl,
     });

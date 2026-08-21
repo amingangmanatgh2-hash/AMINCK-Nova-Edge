@@ -285,6 +285,25 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
   function can(me, p) { return me && me.permissions && me.permissions.indexOf(p) >= 0; }
   function subLink(token, fmt) { return location.origin + '/sub/' + token + (fmt ? '/' + fmt : ''); }
+  function testWsRoute(user) {
+    return new Promise(function (resolve) {
+      if (!user || !user.routes || !user.routes[0]) { resolve({ ok: false, error: 'مسیر ساخته نشد' }); return; }
+      var started = Date.now();
+      var scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      var socket;
+      var settled = false;
+      function finish(result) { if (settled) return; settled = true; clearTimeout(timer); resolve(result); }
+      var timer = setTimeout(function () {
+        try { if (socket) socket.close(); } catch (e) {}
+        finish({ ok: false, error: 'Timeout از شبکه مرورگر' });
+      }, 8000);
+      try {
+        socket = new WebSocket(scheme + location.host + user.routes[0].path);
+        socket.onopen = function () { finish({ ok: true, latencyMs: Date.now() - started }); socket.close(); };
+        socket.onerror = function () { finish({ ok: false, error: 'WebSocket روی این دامنه/ISP باز نشد' }); };
+      } catch (e) { finish({ ok: false, error: String(e.message || e) }); }
+    });
+  }
   function numOrZero(id) {
     var el = $('#' + id);
     if (!el) return 0;
@@ -301,13 +320,6 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         if (t) t.value = '0';
       };
     });
-  }
-  function pathOptions(sel) {
-    var h = '';
-    [1, 2, 3, 4, 5, 8, 10, 20, 50, 100, 200].forEach(function (n) {
-      h += '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + ' کانفیگ ساب</option>';
-    });
-    return h;
   }
   function ironOptions(sel) {
     var h = '';
@@ -425,12 +437,28 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
     html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
     html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
+    html += '<div class="card"><label>دامنه‌های متصل به همین Worker</label><p class="muted">فقط workers.dev یا Custom Domain متعلق به خودت و Route‌شده به همین Worker. دامنه شخص ثالث با TLS کار نمی‌کند.</p>';
+    if (STATE.endpoints.length === 0) html += '<span class="muted">Endpoint ثبت نشده؛ دامنه فعلی خودکار اضافه می‌شود.</span>';
+    STATE.endpoints.forEach(function (endpoint) {
+      var result = STATE.probe[endpoint.id];
+      html += '<label class="check"><input type="checkbox" data-build-endpoint="' + esc(endpoint.id) + '" checked> ' + esc(endpoint.host + ':' + endpoint.port) + ' <span class="badge">' + (result && result.ok ? ('سالم ' + Math.round(result.latencyMs || 0) + 'ms') : 'نیازمند تست') + '</span></label>';
+    });
+    html += '<button class="btn" id="domains-all" type="button">انتخاب همه</button></div>';
+    html += '<div class="card"><label class="check"><input id="clean-auto" type="checkbox" checked> افزودن کاندیدهای Cloudflare Anycast برای تست واقعی داخل کلاینت</label>';
+    html += '<p class="muted">این IPها تضمین «تمیز» نیستند؛ direct + Anycast با SNI واقعی Worker ساخته می‌شود و url-test/leastPing روی ISP خودت بهترین را انتخاب می‌کند.</p>';
+    html += '<label>IPv4 دستی از بازه رسمی Cloudflare (اختیاری، با فاصله یا ویرگول)</label><textarea id="clean-manual" rows="2" placeholder="مثال: 162.159.36.1"></textarea></div>';
+    html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> کمک اختیاری Cloudflare Workers AI برای انتخاب Profile</label>';
+    html += '<p class="muted">AI فقط از عددهای Probe بین Profileهای معتبر انتخاب می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
     html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
-    html += '<div><label>تعداد کانفیگ داخل هر ساب</label><select id="paths" style="width:100%">' + pathOptions(5) + '</select></div></div>';
-    html += '<label>تعداد کانفیگ آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(3) + '</select> ';
+    html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰)</label><input id="paths" type="number" min="1" max="200" value="20" style="width:100%"></div></div>';
+    html += '<label>تعداد کانفیگ آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(1) + '</select> ';
     html += '<button class="btn primary" id="auto">ساخت اتومات ساب</button><div id="mk-out"></div></div>';
     shell(html);
     bindInf();
+    var domainsAll = $('#domains-all');
+    if (domainsAll) domainsAll.onclick = function () {
+      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = true; });
+    };
     $('#auto').onclick = function () {
       var name = $('#n').value || ('AMINCK-' + Date.now());
       var button = $('#auto');
@@ -443,6 +471,10 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         speedPreset: 'god',
         profileMode: 'auto',
         configNameTemplate: $('#tpl').value,
+        endpointIds: Array.prototype.slice.call(document.querySelectorAll('[data-build-endpoint]:checked')).map(function (input) { return input.getAttribute('data-build-endpoint'); }),
+        useCleanCatalog: !!($('#clean-auto') && $('#clean-auto').checked),
+        cleanIps: $('#clean-manual') ? $('#clean-manual').value : '',
+        useCloudflareAi: !!($('#cf-ai') && $('#cf-ai').checked),
         limitBytes: numOrZero('lim-b'),
         limitSeconds: numOrZero('lim-s'),
         maxConnections: numOrZero('lim-c'),
@@ -450,7 +482,11 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       };
       api('POST', '/api/auto-build', payload).then(function (d) {
         var subs = d.subscriptions || [{ name: d.user.name, token: d.user.token, subUrl: d.subUrl }];
-        var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد</div>';
+        var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد · ' + esc(String((d.selectedEndpoints || []).length)) + ' دامنه · ' + esc(String((d.cleanIpsUsed || []).length)) + ' کاندید Anycast</div>';
+        if (d.aiAssistance && d.aiAssistance.requested) {
+          out += '<div class="alert">Workers AI: ' + (d.aiAssistance.applied ? ('پیشنهاد اعمال شد (' + esc(d.aiAssistance.recommendation) + ')') : 'در دسترس نبود؛ موتور Probe تعیین‌پذیر استفاده شد') + '</div>';
+        }
+        out += '<div class="alert" id="ws-live-test">در حال تست WebSocket از اینترنت همین مرورگر…</div>';
         subs.forEach(function (sub, i) {
           var link = sub.subUrl || subLink(sub.token, '');
           out += '<div class="sub-result"><b>' + esc(sub.name) + '</b><div class="uri">' + esc(link) + '</div>';
@@ -475,6 +511,14 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
             var item = (d.iron || [])[Number(el.getAttribute('data-copy-iron'))];
             if (item) copyText(item.json, 'JSON آهنین');
           };
+        });
+        testWsRoute((d.users || [d.user])[0]).then(function (result) {
+          var box = $('#ws-live-test');
+          if (!box) return;
+          box.textContent = result.ok
+            ? ('WebSocket از شبکه فعلی باز شد: ' + result.latencyMs + 'ms')
+            : ('هشدار: ' + result.error + '؛ Custom Domain خودت یا کاندید Anycast را امتحان کن.');
+          box.style.borderColor = result.ok ? 'var(--ok)' : 'var(--err)';
         });
         toast(String(subs.length) + ' ساب ساخته شد', true);
         return loadUsers();
@@ -508,7 +552,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var h = '<h2>ویرایش ' + esc(u.name) + '</h2>';
     h += '<label>نام</label><input id="en" value="' + esc(u.name) + '" style="width:100%">';
     h += '<label>قالب نام</label><input id="et" value="' + esc(u.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
-    h += '<label>تعداد مسیر ساب</label><select id="ep">' + pathOptions(u.routes ? u.routes.length : 3) + '</select>';
+    h += '<label>تعداد مسیر ساب (۱ تا ۲۰۰)</label><input id="ep" type="number" min="1" max="200" value="' + esc(u.routes ? u.routes.length : 3) + '">';
     h += limRow('حجم', 'eb') + limRow('ثانیه', 'es') + limRow('اتصال', 'ec') + limRow('سقف درخواست', 'er');
     h += '<button class="btn primary" id="esave">ذخیره ویرایش</button>';
     box.innerHTML = h;
@@ -561,7 +605,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       html += '<tr><td class="mono">' + esc(e.host) + '</td><td>' + esc(String(r.ok ? (r.latencyMs + ' ms') : (r.error || '—'))) + '</td></tr>';
     });
     html += '</tbody></table><p class="muted">این عدد HTTPS از Edge کلودفلر است، نه Ping اینترنت کاربر. نتیجه ISP کاربر می‌تواند متفاوت باشد.</p></div>';
-    html += '<div class="card"><h2>مخزن کاندیدهای Anycast</h2><p class="muted">IP تمیز ثابت وجود ندارد؛ این فهرست خودکار داخل ساب تزریق نمی‌شود. از شبکه واقعی کاربر تست کنید.</p><div class="row">';
+    html += '<div class="card"><h2>مخزن کاندیدهای Anycast</h2><p class="muted">IP تمیز ثابت وجود ندارد. با فعال بودن گزینه Anycast در ساخت اتومات، این کاندیدها کنار مسیر مستقیم وارد می‌شوند تا خود کلاینت از شبکه واقعی تست کند.</p><div class="row">';
     (STATE.clean || []).slice(0, 18).forEach(function (c) { html += '<span class="badge mono">' + esc(c.ip) + '</span>'; });
     html += '</div></div>';
     shell(html);

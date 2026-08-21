@@ -701,10 +701,29 @@ export function buildOne(ctx: BuildContext, format: ConfigFormat): BuiltConfig {
   return buildFormats(ctx, [format])[0]!;
 }
 
+const CLOUDFLARE_IPV4_RANGES: Array<[number, number]> = [
+  [0xadf53000, 20], [0x6715f400, 22], [0x6716c800, 22], [0x671f0400, 22],
+  [0x8d654000, 18], [0x6ca2c000, 18], [0xbe5df000, 20], [0xbc726000, 20],
+  [0xc5eaf000, 22], [0xc6298000, 17], [0xa29e0000, 15], [0x68100000, 13],
+  [0x68180000, 14], [0xac400000, 13], [0x83004800, 22],
+];
+
+/** True only for IPv4 literals in Cloudflare's published Anycast ranges. */
+export function isCloudflareIpv4Candidate(ip: string): boolean {
+  const parts = ip.split('.');
+  if (parts.length !== 4 || !parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) return false;
+  const value = parts.reduce((acc, part) => ((acc << 8) | Number(part)) >>> 0, 0);
+  return CLOUDFLARE_IPV4_RANGES.some(([prefix, bits]) => {
+    const mask = (0xffffffff << (32 - bits)) >>> 0;
+    return (value & mask) >>> 0 === (prefix & mask) >>> 0;
+  });
+}
+
 /**
- * Cloudflare anycast front candidates. They are never auto-injected: reachability
- * is ISP/location-specific and a static list cannot honestly be called clean.
- * Operators should test candidates from the actual client network first.
+ * Cloudflare Anycast front candidates. Auto Build adds them only when the
+ * operator enables that option, always alongside direct routes. Reachability is
+ * ISP/location-specific, so url-test/leastPing on the actual client chooses the
+ * usable candidate; this list is not a universal "clean IP" claim.
  */
 export const CLEAN_IP_CATALOG: Array<{ ip: string; label: string; region: string }> = [
   { ip: '162.159.36.1', label: 'CF anycast A', region: 'anycast' },

@@ -90,6 +90,28 @@ export default {
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+type AiProfileAdvice = {
+  speedPreset: 'stable' | 'balanced' | 'turbo' | 'god';
+  profileMode: 'auto' | 'fallback' | 'balance';
+};
+
+export function parseAiProfileAdvice(value: unknown): AiProfileAdvice | null {
+  const response = value && typeof value === 'object'
+    ? String((value as { response?: unknown; output_text?: unknown }).response
+      ?? (value as { output_text?: unknown }).output_text ?? '')
+    : String(value ?? '');
+  const match = response.match(/\{[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]) as Partial<AiProfileAdvice>;
+    if (!['stable', 'balanced', 'turbo', 'god'].includes(String(parsed.speedPreset))) return null;
+    if (!['auto', 'fallback', 'balance'].includes(String(parsed.profileMode))) return null;
+    return parsed as AiProfileAdvice;
+  } catch {
+    return null;
+  }
+}
+
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host: string): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -145,18 +167,62 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
   // Only measured-healthy endpoints are passed as a preference; if none pass,
   // the store safely falls back to the deployment's own registered hostname.
   if (path === '/api/auto-build' && request.method === 'POST' && sessionId) {
+    delete body.aiApplied;
+    delete body.aiRecommendation;
+    let healthyForAdvice: Array<{ latencyMs: number }> = [];
+    let mayUseAi = false;
     try {
       const probeResponse = await handleProbe(request, env);
       if (probeResponse.ok) {
+        // handleProbe has validated both the session and endpoints:probe
+        // permission, preventing forged cookies from consuming AI quota.
+        mayUseAi = true;
         const probe = (await probeResponse.json()) as {
-          results?: Record<string, { ok?: boolean }>;
+          results?: Record<string, { ok?: boolean; latencyMs?: number }>;
           ordered?: Endpoint[];
         };
-        const healthy = (probe.ordered ?? []).filter((endpoint) => probe.results?.[endpoint.id]?.ok === true);
+        const selectedIds = new Set((Array.isArray(body.endpointIds) ? body.endpointIds : []).map(String));
+        const healthy = (probe.ordered ?? []).filter((endpoint) =>
+          probe.results?.[endpoint.id]?.ok === true && (selectedIds.size === 0 || selectedIds.has(endpoint.id)),
+        );
+        healthyForAdvice = healthy.map((endpoint) => ({
+          latencyMs: Math.max(0, Math.round(Number(probe.results?.[endpoint.id]?.latencyMs ?? 0))),
+        }));
         if (healthy.length > 0) body.orderedEndpoints = healthy;
       }
     } catch {
       // Fresh deployments still have their own hostname as a safe fallback.
+    }
+
+    if (body.useCloudflareAi === true && mayUseAi && env.AI) {
+      try {
+        const prompt = [
+          'You select conservative AMINNOVA client profile settings from measured data.',
+          'Return only JSON with speedPreset (stable|balanced|turbo|god) and profileMode (auto|fallback|balance).',
+          `routeCount=${Math.max(1, Math.min(200, Number(body.paths ?? 20) || 20))}`,
+          `healthyEndpointLatenciesMs=${healthyForAdvice.map((item) => item.latencyMs).join(',') || 'none'}`,
+          'Prefer fallback/stable when measurements are sparse or slow; otherwise prefer auto/balanced or turbo. Never claim guaranteed connectivity.',
+        ].join('\n');
+        const inference = env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 80,
+          temperature: 0,
+        });
+        const result = await Promise.race([
+          inference,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 4000)),
+        ]);
+        const advice = parseAiProfileAdvice(result);
+        if (advice) {
+          body.speedPreset = advice.speedPreset;
+          body.profileMode = advice.profileMode;
+          body.aiApplied = true;
+          body.aiRecommendation = `${advice.speedPreset}/${advice.profileMode}`;
+        }
+      } catch {
+        // AI is optional and can be quota/model restricted. Deterministic probe
+        // defaults remain authoritative and Auto Build must still succeed.
+      }
     }
   }
 
