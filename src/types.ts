@@ -32,15 +32,17 @@ export interface PowerSpec {
 
 export const POWER_LEVELS: Record<PowerLevel, PowerSpec> = {
   limited: { label: 'Limited', maxPaths: 5 },
-  normal: { label: 'Normal', maxPaths: 30 },
-  strong: { label: 'Strong', maxPaths: 80 },
-  ultra: { label: 'Ultra', maxPaths: 200 },
+  normal: { label: 'Normal', maxPaths: 100 },
+  strong: { label: 'Strong', maxPaths: 500 },
+  ultra: { label: 'Ultra', maxPaths: 2000 },
 };
 
 /** Maximum number of endpoints the scanner/settings accept. */
 export const MAX_ENDPOINTS = 50;
-/** Maximum simultaneously emitted routes in one client-safe rolling window. */
-export const MAX_PATHS = 200;
+/** Hard owner ceiling for routes emitted inside one subscription. */
+export const MAX_PATHS = 2000;
+/** Recommended mobile-safe ceiling; larger profiles are explicitly opt-in. */
+export const RECOMMENDED_MOBILE_PATHS = 200;
 /** Maximum subscriptions created by one automatic batch request. */
 export const MAX_BATCH_SUBSCRIPTIONS = 10;
 /** Minimum accepted admin password length. */
@@ -129,6 +131,8 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
 
 /** Mechanism a subscription prefers when grouping multiple routes. */
 export type ProfileMode = 'auto' | 'fallback' | 'balance';
+/** Client-output intent. Gaming only changes routing/selection metadata; it cannot change physical distance. */
+export type UsageMode = 'normal' | 'gaming';
 
 export type Fingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random';
 
@@ -289,6 +293,12 @@ export interface User {
   active: boolean;
   speedPreset: SpeedPreset;
   profileMode: ProfileMode;
+  /** Normal or gaming-oriented client routing output. */
+  usageMode?: UsageMode;
+  /** Validated ids from GAME_CATALOG; only meaningful in gaming mode. */
+  gameIds?: string[];
+  /** Label the whole subscription as IRON and use aggregate-safe groups. */
+  ironMode?: boolean;
   fingerprint?: Fingerprint | null;
   /** Per-user config name template; falls back to settings.configNameTemplate. */
   configNameTemplate?: string | null;

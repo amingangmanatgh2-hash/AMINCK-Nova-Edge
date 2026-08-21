@@ -108,6 +108,24 @@ describe('config builder — 200 routes', () => {
   });
 });
 
+describe('config builder — Giant 2000-route ceiling', () => {
+  it('plans, stores and emits 2000 unique owner routes', () => {
+    const settings = settingsFixture();
+    const plan = planRoutes(settings.endpoints, 2500);
+    expect(plan).toHaveLength(2000);
+    const routes = buildRoutes('a'.repeat(24), plan, settings);
+    expect(routes).toHaveLength(2000);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(2000);
+    expect(routes.at(-1)?.index).toBe(2000);
+
+    const user = userFixture({ id: 'a'.repeat(24), routes, ironMode: true });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!;
+    expect(raw.paths).toBe(2000);
+    expect(raw.payload.split('\n')).toHaveLength(2000);
+    expect(raw.payload).toContain('IRON');
+  });
+});
+
 describe('config builder — output formats', () => {
   it('emits vless URI with the expected parameters (workers.dev default port 443)', () => {
     const user = userFixture();
@@ -179,6 +197,42 @@ describe('config builder — output formats', () => {
     expect(clash).toContain('client-fingerprint: chrome');
     expect(clash).toContain('udp: true');
     expect(clash).not.toContain('max-early-data:');
+  });
+
+  it('emits selected Gaming domains in Clash, sing-box and Xray Iron output', () => {
+    const user = userFixture({
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java', 'not-a-game'],
+      ironMode: true,
+    });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).toContain('name: AMINCK-GAMING');
+    expect(clash).toContain('DOMAIN-SUFFIX,callofduty.com,AMINCK-GAMING');
+    expect(clash).toContain('DOMAIN-SUFFIX,minecraft.net,AMINCK-GAMING');
+    expect(clash).not.toContain('not-a-game');
+    expect(clash).toContain('GAMING · IRON');
+
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    const gamingRule = singbox.route.rules.find((rule: { domain_suffix?: string[] }) =>
+      rule.domain_suffix?.includes('callofduty.com'));
+    expect(gamingRule).toEqual(expect.objectContaining({ outbound: 'NOVA-AUTO' }));
+    expect(gamingRule.domain_suffix).toContain('minecraft.net');
+
+    const xray = JSON.parse(buildIronPack(ctx(user), 1)[0]!.json);
+    const xrayRule = xray.routing.rules.find((rule: { domain?: string[] }) =>
+      rule.domain?.includes('domain:callofduty.com'));
+    expect(xrayRule).toEqual(expect.objectContaining({ balancerTag: 'AMINCK-IRON-AUTO' }));
+    expect(xrayRule.domain).toContain('domain:minecraft.net');
+  });
+
+  it('keeps Normal mode free of Gaming-only routing rules', () => {
+    const user = userFixture({ usageMode: 'normal', gameIds: ['cod-mobile'] });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('AMINCK-GAMING');
+    expect(clash).not.toContain('DOMAIN-SUFFIX,callofduty.com');
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules.some((rule: { domain_suffix?: string[] }) =>
+      rule.domain_suffix?.includes('callofduty.com'))).toBe(false);
   });
 
   it('god preset enables tcp-concurrent, stable does not', () => {

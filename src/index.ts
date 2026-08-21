@@ -17,6 +17,7 @@
 import type { Env } from './store';
 import { AMINCKStore } from './store';
 import type { ConfigFormat, Endpoint, PanelSettings, User } from './types';
+import { MAX_PATHS } from './types';
 import { classifyTarget, VlessSession } from './proxy';
 import type { SessionHooks, TcpSocket } from './proxy';
 import type { VlessTarget } from './protocol';
@@ -34,8 +35,10 @@ import {
 
 export { AMINCKStore };
 
-const AMINNOVA_RELEASE = '2026.08.21-rescue-mobile.2';
+const AMINNOVA_RELEASE = '2026.08.21-giant-gaming.3';
+const AMINNOVA_VERSION = '1.2.0';
 const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
+let UPDATE_CACHE: { expiresAt: number; value: Record<string, unknown> } | null = null;
 
 const PANEL_ASSETS = new Set([
   '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
@@ -50,7 +53,7 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', release: AMINNOVA_RELEASE, ts: Date.now() }), {
+        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', version: AMINNOVA_VERSION, release: AMINNOVA_RELEASE, ts: Date.now() }), {
           headers: { 'content-type': 'application/json', 'x-aminck-release': AMINNOVA_RELEASE },
         }),
         { cors: true },
@@ -178,6 +181,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
     return withHeaders(json(launchInfo()), {});
   }
 
+  if (path === '/api/update-check' && request.method === 'GET') {
+    return withHeaders(json(await checkForSourceUpdate()), {});
+  }
+
   if (path === '/api/logout' && request.method === 'POST') {
     const sessionId = await cookieSession(request, env);
     if (sessionId) await callDo(env, '/int/session-delete', { sessionId });
@@ -233,7 +240,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
         const prompt = [
           'You select conservative AMINNOVA client profile settings from measured data.',
           'Return only JSON with speedPreset (stable|balanced|turbo|god) and profileMode (auto|fallback|balance).',
-          `routeCount=${Math.max(1, Math.min(200, Number(body.paths ?? 20) || 20))}`,
+          `routeCount=${Math.max(1, Math.min(MAX_PATHS, Number(body.paths ?? 20) || 20))}`,
           `healthyEndpointLatenciesMs=${healthyForAdvice.map((item) => item.latencyMs).join(',') || 'none'}`,
           'Prefer fallback/stable when measurements are sparse or slow; otherwise prefer auto/balanced or turbo. Never claim guaranteed connectivity.',
         ].join('\n');
@@ -425,6 +432,7 @@ async function handleSub(
   }
   headers.set('etag', `W/"aminnova-${data.user.id}-${settings.configGeneration}-${rotation?.epoch ?? 0}-${format}"`);
   headers.set('x-aminck-release', AMINNOVA_RELEASE);
+  headers.set('x-aminck-version', AMINNOVA_VERSION);
   headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
   headers.set('pragma', 'no-cache');
   return withHeaders(new Response(payload, { status: 200, headers }), {});
@@ -787,9 +795,62 @@ function launchInfo(): Record<string, unknown> {
     deployUrl: CF_DEPLOY_URL,
     dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
     workerName: 'aminnova',
+    version: AMINNOVA_VERSION,
     release: AMINNOVA_RELEASE,
     hint: 'Deploy رسمی را باز کنید؛ توکن کلودفلر هرگز داخل پنل وارد یا ارسال نمی‌شود.',
   };
+}
+
+async function checkForSourceUpdate(): Promise<Record<string, unknown>> {
+  if (UPDATE_CACHE && UPDATE_CACHE.expiresAt > Date.now()) return UPDATE_CACHE.value;
+  const source = 'https://raw.githubusercontent.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/arena/01a01b70-aminck-nova-edge/package.json';
+  try {
+    const response = await fetch(source, {
+      headers: { accept: 'application/json', 'user-agent': 'AMINNOVA-Update-Check' },
+      signal: AbortSignal.timeout(5000),
+      cf: { cacheTtl: 300, cacheEverything: true },
+    });
+    if (!response.ok) throw new Error(`github-${response.status}`);
+    const remote = await response.json() as { version?: unknown };
+    const latestVersion = /^\d+\.\d+\.\d+$/.test(String(remote.version)) ? String(remote.version) : AMINNOVA_VERSION;
+    const value = {
+      ok: true,
+      currentVersion: AMINNOVA_VERSION,
+      latestVersion,
+      updateAvailable: compareVersions(latestVersion, AMINNOVA_VERSION) > 0,
+      release: AMINNOVA_RELEASE,
+      source,
+      deployUrl: CF_DEPLOY_URL,
+      checkedAt: Date.now(),
+      autoUpdate: false,
+      message: 'بررسی نسخه خودکار است؛ نصب کد جدید فقط از Deploy امن Cloudflare/Git Integration انجام می‌شود و پنل توکن Cloudflare دریافت نمی‌کند.',
+    };
+    UPDATE_CACHE = { expiresAt: Date.now() + 5 * 60_000, value };
+    return value;
+  } catch (error) {
+    return {
+      ok: false,
+      currentVersion: AMINNOVA_VERSION,
+      latestVersion: null,
+      updateAvailable: false,
+      release: AMINNOVA_RELEASE,
+      source,
+      deployUrl: CF_DEPLOY_URL,
+      checkedAt: Date.now(),
+      autoUpdate: false,
+      message: `GitHub فعلاً قابل بررسی نیست: ${error instanceof Error ? error.message : 'network-error'}`,
+    };
+  }
+}
+
+export function compareVersions(a: string, b: string): number {
+  const av = a.split('.').map(Number);
+  const bv = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (av[i] ?? 0) - (bv[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 function json(data: unknown, status = 200): Response {

@@ -26,8 +26,10 @@ import {
   DEFAULT_ANTI_DETECT,
   DEFAULT_HOST_ALIASES,
   FINGERPRINTS,
+  MAX_PATHS,
   SPEED_PRESETS,
 } from './types';
+import { gameDomainsFor } from './games';
 import { base64Encode, clamp } from './utils';
 
 export const APP_NAME = 'AMINNOVA';
@@ -193,7 +195,7 @@ export interface RoutePlan {
 /** Distribute `paths` routes across the given endpoints (round-robin). */
 export function planRoutes(endpoints: Endpoint[], paths: number): RoutePlan[] {
   const list: RoutePlan[] = [];
-  const n = clamp(paths, 1, 200);
+  const n = clamp(paths, 1, MAX_PATHS);
   if (endpoints.length === 0) return list;
   for (let i = 0; i < n; i++) {
     const ep = endpoints[i % endpoints.length]!;
@@ -204,7 +206,7 @@ export function planRoutes(endpoints: Endpoint[], paths: number): RoutePlan[] {
 
 /**
  * Zooz/BPB-style multi-port plan: expand each logical path across selected
- * TLS ports (capped so total routes never exceed 200).
+ * TLS ports (capped so total routes never exceed MAX_PATHS).
  */
 export function planRoutesMultiPort(
   endpoints: Endpoint[],
@@ -223,7 +225,7 @@ export function planRoutesMultiPort(
   let idx = 0;
   for (const plan of base) {
     for (const port of portList) {
-      if (out.length >= 200) return out;
+      if (out.length >= MAX_PATHS) return out;
       idx += 1;
       out.push({ endpoint: plan.endpoint, index: idx, port });
     }
@@ -233,7 +235,7 @@ export function planRoutesMultiPort(
 
 /**
  * Expand stored routes across selected TLS ports for subscription output
- * (Zooz/BPB style). Cap at 200 emitted proxies. Does NOT mutate storage.
+ * (Zooz/BPB style). Cap at MAX_PATHS emitted proxies. Does NOT mutate storage.
  */
 export function expandRoutesMultiPort(routes: Route[], ports: number[]): Route[] {
   const valid = (ports.length > 0 ? ports : [443]).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p));
@@ -245,7 +247,7 @@ export function expandRoutesMultiPort(routes: Route[], ports: number[]): Route[]
   let idx = 0;
   for (const r of routes) {
     for (const port of portList) {
-      if (out.length >= 200) return out;
+      if (out.length >= MAX_PATHS) return out;
       idx += 1;
       out.push({ ...r, port, index: idx });
     }
@@ -261,11 +263,20 @@ export function buildRoutes(
 ): Route[] {
   const anti = resolveAntiDetect(settings);
   const fakes = hostAliasList(settings);
+  const usedPaths = new Set<string>();
   let seq = 0;
   return plan.map((p) => {
     seq += 1;
     const port = p.port && p.port > 0 ? p.port : p.endpoint.port > 0 ? p.endpoint.port : 443;
-    const path = makeRandomRoutePath(userId, anti, seq);
+    let path = '';
+    let attempt = 0;
+    do {
+      path = attempt < 8
+        ? makeRandomRoutePath(userId, anti, seq + attempt)
+        : makeRoutePath(userId, `${seq.toString(36)}${attempt.toString(36)}`.padStart(12, '0').slice(-12));
+      attempt += 1;
+    } while (usedPaths.has(path));
+    usedPaths.add(path);
     const wsHost = anti.hostCamouflage && fakes.length > 0 ? fakes[(seq - 1) % fakes.length]! : p.endpoint.host;
     const padding = anti.pathPadding ? randomPadding(randomInt(8, 20)) : undefined;
     return {
@@ -415,19 +426,29 @@ function wsTransportTuning(route: Route, _index: number, speed: SpeedSpec, anti:
   return { earlyData, path };
 }
 
+function selectedGameDomains(ctx: BuildContext): string[] {
+  return ctx.user.usageMode === 'gaming' ? gameDomainsFor(ctx.user.gameIds ?? []) : [];
+}
+
 function routeNames(ctx: BuildContext): RouteNames {
   const brand = ctx.settings.brand || BRAND;
   const names = ctx.user.routes.map((r) => {
+    const endpoint = ctx.settings.endpoints.find((item) => item.id === r.endpointId);
+    // The label is operator-provided metadata for a real registered deployment
+    // (for example "Frankfurt primary"). AMINNOVA never infers or invents a
+    // country from a Cloudflare Anycast address.
+    const endpointLabel = endpoint?.label?.trim() || `${r.host}:${r.port}`;
     const name = renderConfigName(ctx.nameTemplate, {
       brand,
       app: APP_NAME,
       user: ctx.user.name,
       profile: ctx.profileMode,
       index: r.index,
-      endpoint: `${r.host}:${r.port}`,
+      endpoint: endpointLabel,
       port: r.port,
     });
-    return !r.frontIp ? `${name} · DIRECT SAFE` : name;
+    const mode = `${ctx.user.usageMode === 'gaming' ? ' · GAMING' : ''}${ctx.user.ironMode ? ' · IRON' : ''}`;
+    return !r.frontIp ? `${name}${mode} · DIRECT SAFE` : `${name}${mode}`;
   });
   return { names, health: healthOrDefault(ctx.settings, ctx.user.routes[0]) };
 }
@@ -462,6 +483,7 @@ export function buildClashYaml(ctx: BuildContext): string {
   const { names, health } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
   const anti = resolveAntiDetect(ctx.settings);
+  const gameDomains = selectedGameDomains(ctx);
   const lines: string[] = [];
   lines.push(
     'mixed-port: 7890',
@@ -563,8 +585,22 @@ export function buildClashYaml(ctx: BuildContext): string {
     `    url: ${yamlStr(health)}`,
     `    interval: ${speed.healthInterval}`,
     `    proxies: ${yamlList(['NOVA-AUTO', 'NOVA-FALLBACK', ...names])}`,
-    '',
-    'rules:',
+  );
+  if (gameDomains.length > 0) {
+    lines.push(
+      '  - name: AMINCK-GAMING',
+      '    type: url-test',
+      `    url: ${yamlStr(health)}`,
+      // A lower check interval only helps select among available routes; it
+      // cannot reduce the physical RTT between the player and game server.
+      `    interval: ${Math.max(20, Math.min(45, speed.healthInterval))}`,
+      `    tolerance: ${Math.min(80, speed.tolerance)}`,
+      `    proxies: ${yamlList(names)}`,
+    );
+  }
+  lines.push('', 'rules:');
+  for (const domain of gameDomains) lines.push(`  - DOMAIN-SUFFIX,${domain},AMINCK-GAMING`);
+  lines.push(
     '  - DOMAIN-SUFFIX,youtube.com,AMINCK-YOUTUBE',
     '  - DOMAIN-SUFFIX,googlevideo.com,AMINCK-YOUTUBE',
     '  - DOMAIN-SUFFIX,instagram.com,AMINCK-INSTA',
@@ -586,6 +622,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
   const { names } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
   const anti = resolveAntiDetect(ctx.settings);
+  const gameDomains = selectedGameDomains(ctx);
   const outbounds: Record<string, unknown>[] = ctx.user.routes.map((r, i) => {
     const wsHost = r.wsHost || r.host;
     const tuning = wsTransportTuning(r, i, speed, anti);
@@ -683,6 +720,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
         { ip_cidr: PRIVATE_V4_CIDRS, outbound: 'direct' },
         { ip_cidr: PRIVATE_V6_CIDRS, outbound: 'direct' },
         { domain_suffix: ['local', 'lan', 'localhost'], outbound: 'direct' },
+        ...(gameDomains.length > 0 ? [{ domain_suffix: gameDomains, outbound: 'NOVA-AUTO' }] : []),
       ],
     },
   };
@@ -784,7 +822,7 @@ export const CLEAN_IP_CATALOG: Array<{ ip: string; label: string; region: string
 ];
 
 /** Front a copy of each route through clean IPs (SNI stays Worker host). */
-export function expandTunnelFronts(routes: Route[], ips: string[], cap = 200): Route[] {
+export function expandTunnelFronts(routes: Route[], ips: string[], cap = MAX_PATHS): Route[] {
   const clean = ips.map((x) => x.trim()).filter((x) => /^\d+\.\d+\.\d+\.\d+$/.test(x));
   if (clean.length === 0) return routes;
   const out: Route[] = [...routes];
@@ -843,6 +881,7 @@ export function buildXrayJson(ctx: BuildContext): string {
   const { names, health } = routeNames(ctx);
   const fp = fingerprintName(ctx.fingerprint);
   const anti = resolveAntiDetect(ctx.settings);
+  const gameDomains = selectedGameDomains(ctx);
   const outbounds = ctx.user.routes.map((r, i) => {
     const wsHost = r.wsHost || r.host;
     const tuning = wsTransportTuning(r, i, speed, anti);
@@ -899,6 +938,9 @@ export function buildXrayJson(ctx: BuildContext): string {
         : [],
       rules: [
         { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+        ...(gameDomains.length > 0 && names.length > 0
+          ? [{ type: 'field', domain: gameDomains.map((domain) => `domain:${domain}`), balancerTag: 'AMINCK-IRON-AUTO' }]
+          : []),
         names.length > 0
           ? { type: 'field', network: 'tcp,udp', balancerTag: 'AMINCK-IRON-AUTO' }
           : { type: 'field', network: 'tcp,udp', outboundTag: 'direct' },
@@ -923,10 +965,10 @@ export function buildIronPack(ctx: BuildContext, count: number): Array<{
   const clients = ['xray', 'singbox', 'xray', 'singbox', 'xray'];
   const pack: Array<{ index: number; name: string; client: string; json: string }> = [];
   for (let i = 0; i < n; i++) {
-    // Every IRON profile contains every persisted route (up to 200). Xray
+    // Every IRON profile contains every persisted route (up to MAX_PATHS). Xray
     // aggregates them with leastPing; sing-box aggregates them with urltest.
     // This remains a standards-compliant client profile rather than pretending
-    // that 200 unrelated links can be embedded inside one VLESS URI.
+    // that many unrelated links can be embedded inside one VLESS URI.
     const view: User = { ...ctx.user, routes: [...ctx.user.routes], speedPreset: presets[i]! };
     const sub: BuildContext = { ...ctx, user: view, speedPreset: presets[i]! };
     const name = `${ctx.settings.brand || BRAND} IRON ${i + 1} · ${view.routes.length} ROUTES`;

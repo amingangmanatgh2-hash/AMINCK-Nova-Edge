@@ -1,4 +1,4 @@
-# Security Policy — EDGE PANEL
+# Security Policy — AMINNOVA
 
 ## Supported versions
 
@@ -23,8 +23,10 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   wizard requests it as an encrypted Worker secret; local development uses the
   git-ignored `.dev.vars` file.
 - No Cloudflare API token is ever requested, stored, rendered, or proxied by
-  the panel. Deploys happen via the official Deploy button or Wrangler in CI
-  (encrypted GitHub secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`).
+  the panel. The public update checker reads only the repository `package.json`,
+  caches successful results for five minutes, and links to the official Deploy
+  button. Deploys happen via that button or Wrangler in CI (encrypted GitHub
+  secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`).
 - Login fails closed with `503 setup-required` when `ADMIN_PASSWORD` has not
   been configured.
 
@@ -45,9 +47,10 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 - Every API operation checks permissions in the backend (the Durable Object):
   `users:view|create|edit|delete`, `configs:build`, `settings:manage`,
   `endpoints:probe`, `backup:export`, `admins:manage`, `audit:view`.
-- Power levels (`Limited 5 / Normal 30 / Strong 80 / Ultra 200`) are enforced
+- Power levels (`Limited 5 / Normal 100 / Strong 500 / Ultra 2000`) are enforced
   in the backend on every config build — a Limited admin cannot exceed 5 paths
-  even with hand-crafted API requests.
+  even with hand-crafted API requests. Giant profiles above 200 are explicit
+  opt-in because large client files can exhaust mobile memory or health checks.
 - The owner is seeded automatically and **cannot** be deleted, disabled,
   demoted, or have their password changed through the admin API.
 - Hash/salt/iterations are never returned by the admin-list API. Only an
@@ -77,6 +80,11 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 - Per-subscriber live connection caps are enforced at connect time.
 - Third-party SNI/Host impersonation is not generated. Optional Host aliases
   must also be configured Endpoint hostnames for this deployment.
+- Gaming selections are allow-listed catalogue ids. Only official publisher
+  hostname suffixes compiled into the release are emitted; untrusted API values
+  cannot inject Clash/sing-box/Xray rules. Arbitrary game UDP remains blocked.
+- Endpoint location labels are operator-provided display metadata for real
+  deployments. The Worker never derives a country claim from an Anycast IP.
 
 ### Web
 
@@ -114,7 +122,10 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 
 - The scanner reports HTTPS response-header latency measured from the
   Cloudflare edge — it is **not** the user device's ping, and the UI says so.
-- No speed/uptime guarantees are claimed anywhere in code or UI.
+- Gaming rules can select among deployed routes but cannot shorten physical
+  distance to a game server. No sub-90 ms ping, foreign geolocation, universal
+  DPI bypass, all-service access, speed, uptime, or uninterrupted-session
+  guarantee is claimed.
 
 ## Dependency policy
 

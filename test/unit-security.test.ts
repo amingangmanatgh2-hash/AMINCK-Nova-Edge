@@ -195,11 +195,11 @@ describe('limits & power (zero means unlimited)', () => {
 
   it('power levels cap paths (backend constants)', () => {
     expect(POWER_LEVELS.limited.maxPaths).toBe(5);
-    expect(POWER_LEVELS.normal.maxPaths).toBe(30);
-    expect(POWER_LEVELS.strong.maxPaths).toBe(80);
-    expect(POWER_LEVELS.ultra.maxPaths).toBe(200);
+    expect(POWER_LEVELS.normal.maxPaths).toBe(100);
+    expect(POWER_LEVELS.strong.maxPaths).toBe(500);
+    expect(POWER_LEVELS.ultra.maxPaths).toBe(2000);
     expect(maxPathsFor('limited')).toBe(5);
-    expect(maxPathsFor('ultra')).toBe(200);
+    expect(maxPathsFor('ultra')).toBe(2000);
   });
 });
 

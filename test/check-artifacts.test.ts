@@ -53,6 +53,11 @@ describe('artifact checks (runtime smoke steps)', () => {
     expect(UI_SW_JS).toContain("'/connect'");
     expect(UI_SW_JS).toContain('SHELL.indexOf(url.pathname) < 0');
     expect(UI_SHELL_HTML).toContain('rel="manifest"');
+    expect(UI_APP_JS).toContain('usage-gaming');
+    expect(UI_APP_JS).toContain('games-all');
+    expect(UI_APP_JS).toContain('iron-sub');
+    expect(UI_APP_JS).toContain('/api/update-check');
+    expect(UI_APP_JS).toContain('max="2000"');
     // the committed assets are also valid JS
     execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
     execFileSync(process.execPath, ['--check', 'public/sw.js'], { stdio: 'pipe', cwd: process.cwd() });
@@ -84,7 +89,7 @@ describe('artifact checks (runtime smoke steps)', () => {
 
   it('capability manifest satisfies the contract', async () => {
     const { CAPABILITIES, ownerCapabilitiesCount } = await import('../src/capabilities');
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(350);
+    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(500);
     expect(ownerCapabilitiesCount()).toBeGreaterThanOrEqual(50);
   });
 });

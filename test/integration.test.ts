@@ -23,7 +23,8 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
-    expect(data.release).toBe('2026.08.21-rescue-mobile.2');
+    expect(data.version).toBe('1.2.0');
+    expect(data.release).toBe('2026.08.21-giant-gaming.3');
     expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
@@ -31,6 +32,18 @@ describe('health & headers', () => {
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('permissions-policy')).toContain('camera=()');
+  });
+
+  it('exposes a safe public source-update check without deployment credentials', async () => {
+    const res = await w.mf.dispatchFetch(`${w.base}/api/update-check`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.currentVersion).toBe('1.2.0');
+    expect(data.release).toBe('2026.08.21-giant-gaming.3');
+    expect(data.autoUpdate).toBe(false);
+    expect(data.source).toContain('raw.githubusercontent.com');
+    expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
+    expect(JSON.stringify(data).toLowerCase()).not.toContain('api_token');
   });
 
   it('serves the panel shell and assets', async () => {
@@ -264,21 +277,24 @@ describe('subscription users (unlimited semantics)', () => {
 });
 
 describe('power-level enforcement (backend, not UI)', () => {
-  it('owner (ultra) can build 200 paths', async () => {
+  it('owner (ultra) can build and emit the 2000-route ceiling', async () => {
     const r = await w.api(ownerCookie, '/api/user-create', {
-      name: 'کاربر ۲۰۰ مسیر',
-      paths: 200,
+      name: 'کاربر ۲۰۰۰ مسیر',
+      paths: 2000,
+      ironMode: true,
     });
     expect(r.status).toBe(200);
-    expect(r.data.user.routes.length).toBe(200);
+    expect(r.data.user.routes.length).toBe(2000);
+    expect(new Set(r.data.user.routes.map((route: any) => route.path)).size).toBe(2000);
 
     const cfg = await w.api(ownerCookie, '/api/config-build', {
       id: r.data.user.id,
-      paths: 200,
-      formats: ['clash'],
+      paths: 2000,
+      formats: ['raw'],
     });
     expect(cfg.status).toBe(200);
-    expect(cfg.data.configs[0].paths).toBe(200);
+    expect(cfg.data.configs[0].paths).toBe(2000);
+    expect(cfg.data.configs[0].payload.split('\n')).toHaveLength(2000);
     expect(cfg.data.truncated).toBe(false);
   });
 
@@ -502,10 +518,12 @@ describe('endpoints', () => {
   it('adds and removes endpoints with validation', async () => {
     const add = await w.api(ownerCookie, '/api/endpoints', {
       action: 'add',
+      label: '  Frankfurt   Primary  ',
       host: 'edge-extra.example.com',
       port: 443,
     });
     expect(add.status).toBe(200);
+    expect(add.data.endpoints.find((e: any) => e.host === 'edge-extra.example.com').label).toBe('Frankfurt Primary');
     const dup = await w.api(ownerCookie, '/api/endpoints', {
       action: 'add',
       host: 'edge-extra.example.com',
@@ -526,12 +544,66 @@ describe('endpoints', () => {
 });
 
 describe('capabilities API', () => {
-  it('reports ≥350 capabilities and ≥50 owner/admin ones', async () => {
+  it('reports ≥500 implemented capabilities/catalogue controls and ≥50 owner/admin ones', async () => {
     const r = await w.api(ownerCookie, '/api/capabilities', {});
     expect(r.status).toBe(200);
-    expect(r.data.total).toBeGreaterThanOrEqual(350);
+    expect(r.data.total).toBeGreaterThanOrEqual(500);
     expect(r.data.ownerCount).toBeGreaterThanOrEqual(50);
     expect(r.data.capabilities.length).toBe(r.data.total);
+  });
+});
+
+describe('Gaming and whole-subscription Iron APIs', () => {
+  it('serves safe catalogue metadata with Call of Duty and Minecraft', async () => {
+    const r = await w.api(ownerCookie, '/api/game-catalog', {});
+    expect(r.status).toBe(200);
+    expect(r.data.total).toBeGreaterThanOrEqual(170);
+    expect(r.data.games).toHaveLength(r.data.total);
+    expect(r.data.games.some((game: any) => /Call of Duty/i.test(game.title))).toBe(true);
+    expect(r.data.games.some((game: any) => /Minecraft/i.test(game.title))).toBe(true);
+    expect(r.data.games.every((game: any) => game.domains === undefined)).toBe(true);
+  });
+
+  it('rejects Gaming mode when no valid game is selected', async () => {
+    const r = await w.api(ownerCookie, '/api/user-create', {
+      name: 'empty-gaming-user',
+      paths: 2,
+      usageMode: 'gaming',
+      gameIds: ['not-in-catalogue'],
+    });
+    expect(r.status).toBe(400);
+    expect(r.data.error).toBe('bad-games');
+  });
+
+  it('persists validated Gaming choices and labels the whole subscription IRON', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'gaming-iron-user',
+      paths: 4,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java', 'invalid-game', 'cod-mobile'],
+      ironMode: true,
+    });
+    expect(created.status).toBe(200);
+    expect(created.data.user.usageMode).toBe('gaming');
+    expect(created.data.user.gameIds).toEqual(['cod-mobile', 'minecraft-java']);
+    expect(created.data.user.ironMode).toBe(true);
+
+    const raw = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/raw`);
+    expect(raw.status).toBe(200);
+    const rawText = await raw.text();
+    expect(rawText.split('\n')).toHaveLength(4);
+    expect(rawText).toContain('GAMING');
+    expect(rawText).toContain('IRON');
+
+    const clash = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/clash`);
+    const clashText = await clash.text();
+    expect(clashText).toContain('DOMAIN-SUFFIX,callofduty.com,AMINCK-GAMING');
+    expect(clashText).toContain('DOMAIN-SUFFIX,minecraft.net,AMINCK-GAMING');
+
+    const singbox = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/singbox`);
+    const singboxJson = JSON.parse(await singbox.text());
+    expect(singboxJson.route.rules.some((rule: any) =>
+      rule.outbound === 'NOVA-AUTO' && rule.domain_suffix?.includes('minecraft.net'))).toBe(true);
   });
 });
 
@@ -772,7 +844,8 @@ describe('AMINNOVA reliability regressions', () => {
       expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
       expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
       expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
-      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-rescue-mobile.2');
+      expect(res.headers.get('x-aminck-version')).toBe('1.2.0');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-giant-gaming.3');
       expect(res.headers.get('cache-control')).toContain('no-store');
       expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
@@ -804,6 +877,9 @@ describe('AMINNOVA reliability regressions', () => {
     const created = await w.api(ownerCookie, '/api/user-create', {
       name: 'portable-recovery-user',
       paths: 3,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java'],
+      ironMode: true,
       dynamicPool: true,
       rotationMinutes: 1,
       useCleanCatalog: true,
@@ -823,6 +899,9 @@ describe('AMINNOVA reliability regressions', () => {
     const list = await w.api(ownerCookie, '/api/users', { q: 'portable-recovery-user' });
     expect(list.data.users[0].token).toBe(original.token);
     expect(list.data.users[0].uuid).toBe(original.uuid);
+    expect(list.data.users[0].usageMode).toBe('gaming');
+    expect(list.data.users[0].gameIds).toEqual(['cod-mobile', 'minecraft-java']);
+    expect(list.data.users[0].ironMode).toBe(true);
     expect(list.data.users[0].dynamicPool).toBe(true);
     expect(list.data.users[0].rotationMinutes).toBe(1);
     expect(list.data.users[0].poolCleanIps.length).toBeGreaterThan(10);

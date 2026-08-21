@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeWsEarlyData, parseAiProfileAdvice } from '../src/index';
+import { compareVersions, decodeWsEarlyData, parseAiProfileAdvice } from '../src/index';
 import { AMINCKStore, defaultSettings } from '../src/store';
 import { defaultRuntimeHooks } from '../src/probe';
 import type { Admin, User } from '../src/types';
@@ -14,6 +14,15 @@ describe('WebSocket early data', () => {
     expect(decodeWsEarlyData(encoded, 2)).toBeNull();
     expect(decodeWsEarlyData('not,a,protocol-list', 100)).toBeNull();
     expect(decodeWsEarlyData('***', 100)).toBeNull();
+  });
+});
+
+describe('source update version comparison', () => {
+  it('compares validated semantic versions without lexicographic mistakes', () => {
+    expect(compareVersions('1.2.0', '1.1.9')).toBeGreaterThan(0);
+    expect(compareVersions('1.10.0', '1.2.9')).toBeGreaterThan(0);
+    expect(compareVersions('1.2.0', '1.2.0')).toBe(0);
+    expect(compareVersions('1.1.9', '1.2.0')).toBeLessThan(0);
   });
 });
 

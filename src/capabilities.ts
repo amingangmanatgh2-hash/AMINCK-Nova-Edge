@@ -6,6 +6,7 @@
  * Nothing is aspirational or advertising. The UI shows the total count and
  * lets admins filter/read the list.
  */
+import { GAME_CATALOG } from './games';
 
 export type CapabilityCategory =
   | 'protocol'
@@ -82,8 +83,8 @@ export const CAPABILITIES: Capability[] = [
   c('traffic', 'tr-traffic-stats', 'آمار کلی مصرف', 'مصرف کل ترافیک در داشبورد.'),
   c('traffic', 'tr-active-users', 'شمارش کاربران فعال', 'آمار کاربران فعال/غیرفعال در داشبورد.'),
   // ---------------------------------------------------------------- config
-  c('config', 'cfg-2xx', 'بازسازی تا ۲۰۰ مسیر', 'هر اشتراک میتواند ۱ تا ۲۰۰ مسیر داشته باشد.'),
-  c('config', 'cfg-2-path', 'انتخاب تعداد مسیر', 'تعداد مسیر قابل انتخاب از ۱ تا ۲۰۰ در سازندهٔ کانفیگ و ساخت اتومات.'),
+  c('config', 'cfg-2xx', 'بازسازی تا ۲۰۰۰ مسیر', 'هر اشتراک بر اساس سطح قدرت می‌تواند ۱ تا ۲۰۰۰ مسیر داشته باشد.'),
+  c('config', 'cfg-2-path', 'انتخاب تعداد مسیر', 'تعداد مسیر قابل انتخاب از ۱ تا سقف قدرت ۵، ۱۰۰، ۵۰۰ یا ۲۰۰۰ در سازنده و ساخت اتومات است.'),
   c('config', 'cfg-endpoints', 'تنوع کنترلشدهٔ Endpoint', 'فقط از Endpointهای تعریفشده در تنظیمات (حداکثر ۵۰) برای مسیرها استفاده میشود.'),
   c('config', 'cfg-ports', 'پورتهای TLS مجاز کلودفلر', 'انتخاب پورت از فهرست پورتهای TLS کلودفلر (پیشفرض ۴۴۳ برای workers.dev).'),
   c('config', 'cfg-fp', 'Fingerprint مرورگرها', 'پشتیبانی از Chrome، Firefox، Safari، Edge و Random در کانفیگهای خروجی.'),
@@ -199,7 +200,7 @@ export const CAPABILITIES: Capability[] = [
   c('owner', 'power-limited', 'سطح قدرت Limited', 'حداکثر ۵ مسیر برای هر کانفیگ — همیشه در Backend اعمال میشود.'),
   c('owner', 'power-normal', 'سطح قدرت Normal', 'حداکثر ۳۰ مسیر در Backend.'),
   c('owner', 'power-strong', 'سطح قدرت Strong', 'حداکثر ۸۰ مسیر در Backend.'),
-  c('owner', 'power-ultra', 'سطح قدرت Ultra', 'حداکثر ۲۰۰ مسیر در Backend.'),
+  c('owner', 'power-ultra', 'سطح قدرت Ultra', 'حداکثر ۲۰۰۰ مسیر در Backend با هشدار Giant بالاتر از ۲۰۰.'),
   c('owner', 'power-backend', 'قدرت فقط در Backend', 'حتی با درخواست مستقیم API هم محدودیت قدرت اعمال میشود (تستشده).'),
   c('owner', 'power-ui-hint', 'نمایش قدرت در UI', 'قدرت ادمین در پاسخ /api/me و لندینگ API نمایش داده میشود.'),
   c('owner', 'perm-btn-hide', 'مخفی کردن دکمههای بدون مجوز', 'دکمهٔ Hot-Update فقط با settings:manage روی لندینگ دیده میشود.'),
@@ -281,7 +282,7 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-hot-update', 'آپدیت یککلیکی', 'POST /api/hot-update مسیرها را بدون قطعی دامنه بازسازی میکند.'),
   c('ui', 'ui-api-only', 'پنل ساده فروش ساب', 'ورود مرورگری + API JSON؛ ساخت مشترک و لینک ساب برای V2Box / V2Ray / MahsaNG / NapsternetV.'),
   c('security', 'sec-api-only-surface', 'سطح حمله کنترلشده', 'Same-Origin روی همهٔ mutating APIها؛ کوکی HttpOnly.'),
-  c('config', 'cfg-iron-json', 'کانفیگ آهنین JSON', 'POST /api/iron-build بین ۱ تا ۵ پروفایل استاندارد Xray و sing-box با حداکثر ۲۰۰ Route می‌سازد.'),
+  c('config', 'cfg-iron-json', 'کانفیگ آهنین JSON', 'POST /api/iron-build بین ۱ تا ۵ پروفایل استاندارد Xray و sing-box را با تمام Routeهای ساب تا سقف ۲۰۰۰ می‌سازد.'),
   c('scanner', 'scan-clean-ips', 'مخزن کاندیدهای Anycast', 'GET /api/clean-ips فهرست کاندیدها و هشدار تست از ISP واقعی را برمی‌گرداند.'),
   c('config', 'cfg-aminck-brand-token', 'توکن AMINCK در نام کانفیگ', 'قالب پیشفرض نام شامل AMINCK است تا در همهٔ کلاینت‌ها دیده شود.'),
   c('config', 'cfg-aminck-multi', 'گروه مولتی‌پروکسی AMINCK-MULTI', 'Clash load-balance با consistent-hashing روی همهٔ مسیرها.'),
@@ -302,14 +303,14 @@ export const CAPABILITIES: Capability[] = [
   c('traffic', 'tr-unlimited-requests', 'درخواست نامحدود', 'صفر در limitRequests هرگز به پیشفرض تبدیل نمی‌شود.'),
   c('ui', 'ui-unlimited-btn', 'دکمه نامحدود کنار محدودیت‌ها', 'حجم، زمان، اتصال و سقف درخواست با یک کلیک صفر می‌شوند.'),
   c('ui', 'ui-edit-user', 'فرم ویرایش کانفیگ/مشترک', 'نام، قالب، تعداد مسیر و محدودیت‌ها از پنل قابل ویرایش است.'),
-  c('ui', 'ui-path-pick', 'انتخاب تعداد کانفیگ ساب', '۱ تا ۲۰۰ مسیر در ساخت اتومات قابل انتخاب است.'),
+  c('ui', 'ui-path-pick', 'انتخاب تعداد کانفیگ ساب', '۱ تا ۲۰۰۰ مسیر در ساخت اتومات مالک قابل انتخاب است و بالاتر از ۲۰۰ هشدار موبایل دارد.'),
   c('ui', 'ui-caps-tab', 'تب فهرست قابلیت‌ها', 'مانیفست از /api/capabilities در پنل خوانده می‌شود.'),
   c('ui', 'ui-easy-setup', 'لینک ستاپ یک‌کلیکی', 'منوی Deploy رسمی Cloudflare با تنظیمات wrangler ازپیش‌پر.'),
   c('ui', 'ui-no-token-form', 'بدون فرم دریافت توکن', 'پنل هیچ API Token کلودفلر را دریافت یا به Worker ارسال نمی‌کند.'),
   c('deploy', 'd-launch-api', 'API عمومی launch', 'GET /api/launch لینک مخزن، Dashboard و Deploy رسمی را بدون نشست برمی‌گرداند.'),
   c('sub', 'sub-auto-iron', 'آهنین همراه ساخت اتومات', 'auto-build می‌تواند ironCount ۱ تا ۵ را در همان پاسخ بدهد.'),
   c('sub', 'sub-count-select', 'تعداد مسیر در auto-build', 'paths در auto-build با سقف قدرت ادمین محدود می‌شود.'),
-  c('config', 'cfg-200-in-one', 'تا ۲۰۰ پروکسی در یک ساب', 'خروجی ساب تا ۲۰۰ مسیر/پورت را در یک لینک جمع می‌کند.'),
+  c('config', 'cfg-200-in-one', 'پنجره پیشنهادی ۲۰۰ پروکسی موبایل', 'پنل ساخت تا ۲۰۰ مسیر در یک ساب را به‌عنوان پنجره پیشنهادی سازگار با موبایل نگه می‌دارد؛ حالت Giant بالاتر از آن Opt-in است.'),
   c('config', 'cfg-ws-alpn', 'ALPN سازگار WebSocket', 'خروجی VLESS/Clash/sing-box از http/1.1 سازگار با WebSocket Upgrade استفاده می‌کند.'),
   c('config', 'cfg-ws-ua', 'User-Agent استاندارد روی WS', 'هدر User-Agent سازگار برای کلاینت‌هایی که ws headers را پشتیبانی می‌کنند.'),
   c('config', 'cfg-fragment-optin', 'Fragment Hint اختیاری', 'به‌دلیل تفاوت کلاینت‌ها پیش‌فرض خاموش است و مالک می‌تواند بازه ۵۰–۱۲۰ را فعال کند.'),
@@ -328,7 +329,7 @@ export const CAPABILITIES: Capability[] = [
   c('scanner', 'scan-backend-auto-build', 'Probe اجباری در Backend', 'خود API ساخت اتومات قبل از انتخاب Endpoint تست Edge را اجرا می‌کند و فقط موارد سالم را ترجیح می‌دهد.'),
   c('ui', 'ui-raw-test-link', 'نمایش و تست VLESS خام', 'کنار هر ساب لینک Raw قابل مشاهده و دکمه کپی مستقل وجود دارد.'),
   c('config', 'build-endpoint-select', 'انتخاب دامنه‌های واقعی', 'Auto Build انتخاب چند Endpoint یا انتخاب همه را می‌پذیرد و فقط همان گزینه‌ها را Probe می‌کند.'),
-  c('config', 'build-route-count-free', 'تعداد آزاد ۱ تا ۲۰۰', 'تعداد کانفیگ به‌جای فهرست ثابت با ورودی عددی معتبر انتخاب می‌شود.'),
+  c('config', 'build-route-count-free', 'تعداد آزاد ۱ تا ۲۰۰۰', 'تعداد کانفیگ به‌جای فهرست ثابت با ورودی عددی و سقف قدرت Backend انتخاب می‌شود.'),
   c('scanner', 'scan-owned-marker', 'تأیید مالکیت مسیر Worker', 'Probe فقط پاسخ سالم /healthz با Marker خود AMINNOVA را معتبر می‌داند و دامنه نامرتبط را وارد خروجی نمی‌کند.'),
   c('scanner', 'scan-browser-ws', 'تست کامل تونل از ISP مرورگر', 'بعد از ساخت، پنل از شبکه همان کاربر WSS را باز می‌کند، هدر VLESS و درخواست TCP واقعی می‌فرستد و فقط دریافت پاسخ باینری معتبر را موفق می‌داند.'),
   c('config', 'cfg-workers-ai-advice', 'راهنمای اختیاری Workers AI', 'با انتخاب کاربر، binding رسمی Cloudflare فقط از اعداد Probe یک Profile معتبر پیشنهاد می‌دهد؛ Timeout یا سهمیه هرگز ساخت را متوقف نمی‌کند.'),
@@ -354,7 +355,7 @@ export const CAPABILITIES: Capability[] = [
   c('ui', 'pwa-mobile-bottom-nav', 'ناوبری پایین موبایل', 'در نمایشگر کوچک همه بخش‌ها با Bottom Navigation شیشه‌ای، افقی و مناسب لمس در دسترس هستند.'),
   c('ui', 'pwa-safe-area', 'پشتیبانی Safe Area موبایل', 'ناوبری نصب‌شده از env safe-area-inset-bottom برای فاصله مناسب با نوار Home استفاده می‌کند.'),
   c('sub', 'pool-unlimited-time', 'Smart Pool نامحدود زمانی', 'یک Subscription می‌تواند در Refreshهای متوالی نسل‌های نامحدود پنجره فعال تولید کند بدون پاسخ نامتناهی.'),
-  c('sub', 'pool-bounded-window', 'پنجره فعال Client-safe', 'هر پاسخ حداکثر ۲۰۰ مسیر فعال نگه می‌دارد تا Import باعث مصرف بی‌حد حافظه یا Crash کلاینت نشود.'),
+  c('sub', 'pool-bounded-window', 'پنجره فعال با سقف مشخص', 'هر پاسخ حداکثر ۲۰۰۰ مسیر دارد؛ UI برای Client-safe بودن ۲۰۰ یا کمتر را پیشنهاد و درباره Giant هشدار می‌دهد.'),
   c('sub', 'pool-minute-cadence', 'چرخش یک‌دقیقه‌ای Pool', 'rotationMinutes از ۱ تا ۶۰ قابل تنظیم است و پیش‌فرض Smart Pool روی یک دقیقه قرار دارد.'),
   c('sub', 'pool-deterministic-epoch', 'Epoch تعیین‌پذیر چرخش', 'شماره دوره از زمان و بازه Rotation محاسبه می‌شود تا همه خروجی‌های همان دقیقه سازگار بمانند.'),
   c('sub', 'pool-next-rotation', 'زمان Rotation بعدی', 'Backend زمان دقیق دوره بعدی را محاسبه و در پاسخ داخلی و هدر Subscription اعلام می‌کند.'),
@@ -417,6 +418,18 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-rescue-rebind', 'تعمیر یک‌کلیکی همه ساب‌ها', 'دکمه نجات Token و UUID را حفظ می‌کند اما Route همه مشترک‌ها را با Stable و DIRECT SAFE به دامنه فعال فعلی متصل می‌کند.'),
   c('ui', 'ui-mobile-action-sheet', 'منوی پایین موبایل با Action Sheet', 'چهار بخش اصلی در نوار پایین پنج‌ستونه و ابزارهای تکمیلی در Sheet شیشه‌ای لمسی قرار می‌گیرند تا ناوبری موبایل فشرده و خوانا باشد.'),
   c('ui', 'ui-mobile-touch-layout', 'فرم لمسی تک‌ستونه', 'در موبایل فیلدها حداقل ارتفاع لمسی، فونت بدون Zoom ناخواسته iOS، Grid تک‌ستونه، آمار دو ستونه و Safe Area واقعی دارند.'),
+  c('config', 'cfg-2000-owner-routes', 'تا ۲۰۰۰ کانفیگ در یک ساب', 'مالک Ultra می‌تواند به‌صورت Opt-in تا ۲۰۰۰ Route یکتا بسازد؛ پنل برای جلوگیری از کندی کلاینت بالای ۲۰۰ هشدار صریح نشان می‌دهد.'),
+  c('config', 'cfg-iron-whole-sub', 'حالت آهنین برای کل Subscription', 'Iron Mode تمام Routeهای Subscription را با برچسب IRON و گروه‌های انتخاب خودکار خروجی می‌دهد؛ تعداد Route مستقل از تعداد بسته‌های JSON آهنین است.'),
+  c('config', 'cfg-gaming-domain-rules', 'قواعد Gaming مبتنی بر دامنه رسمی', 'انتخاب بازی‌ها دامنه‌های رسمی Login، Launcher، Store و Content ناشر را در Clash، sing-box و Xray به گروه اندازه‌گیری‌شده هدایت می‌کند.'),
+  c('deploy', 'deploy-github-version-check', 'بررسی نسخه GitHub از داخل پنل', 'Update Center نسخه Deploy جاری را با package.json شاخه عمومی مقایسه و در صورت وجود نسخه جدید لینک Deploy امن نشان می‌دهد.'),
+  c('security', 'deploy-no-panel-cloudflare-token', 'آپدیت بدون دریافت توکن در پنل', 'پنل هرگز Cloudflare API Token نمی‌گیرد؛ نصب کد از Deploy رسمی یا Git Integration انجام می‌شود تا Secret مدیریتی وارد UI عمومی نشود.'),
+  c('scanner', 'scan-operator-location-labels', 'برچسب مکان برای Deploy واقعی', 'مالک می‌تواند برای Endpointهای واقعاً مستقرشده برچسب مکان ثبت کند؛ پنل آن را در نام و انتخاب مسیر نمایش می‌دهد اما از Cloudflare Anycast کشور یا خروجی جعلی استنتاج نمی‌کند.'),
+  ...GAME_CATALOG.map((game) => c(
+    'config',
+    `game-route-${game.id}`,
+    `Gaming · ${game.title}`,
+    `Preset قابل انتخاب ${game.title}، دامنه‌های رسمی Login/Launcher/Content ناشر ${game.publisher} را به گروه Gaming پروفایل هدایت می‌کند؛ UDP و Ping فیزیکی تضمین نمی‌شود.`,
+  )),
 ];
 
 export function totalCapabilities(): number {

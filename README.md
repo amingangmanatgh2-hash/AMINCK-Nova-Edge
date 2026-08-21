@@ -13,16 +13,18 @@
 - ساخت، ویرایش، فعال/غیرفعال و حذف مشترک
 - حجم، زمان، اتصال همزمان و تعداد درخواست ساب؛ مقدار `0` یعنی نامحدود
 - ساخت دسته‌ای ۱، ۲، ۳، ۵ یا ۱۰ ساب مستقل با یک کلیک
-- انتخاب ۱ تا ۲۰۰ مسیر هم‌زمان داخل هر Subscription، یا **Smart Pool ∞** برای نسل‌های نامحدود پنجره چرخان در طول زمان
+- انتخاب ۱ تا **۲۰۰۰** مسیر یکتا داخل هر Subscription برای مالک Ultra؛ ۲۰۰ یا کمتر پیشنهاد موبایل است و Giant بالاتر از ۲۰۰ کاملاً Opt-in و همراه هشدار است
 - قالب نام با `{brand}`، `{app}`، `{user}`، `{profile}`، `{index}`، `{endpoint}` و `{port}`
 - نام پیش‌فرض دارای برند **AMINCK**
 - خروجی V2Ray Base64، Raw VLESS، Clash Meta و sing-box
 - سازگار با Import استاندارد در V2Box، V2RayNG، MahsaNG، NapsternetV، Clash Meta/Mihomo و sing-box
 - گروه‌های Auto، Fallback، Balance، Multi و گروه‌های Rule برای YouTube، Instagram و TikTok
-- ساخت ۱ تا ۵ پروفایل مستقل «آهنین» Xray/sing-box؛ هر پروفایل همهٔ مسیرهای انتخاب‌شده (تا ۲۰۰) را با `leastPing`/`urltest` تجمیع می‌کند
+- دو بخش مستقل **Normal** و **Gaming** با ۱۷۴ بازی قابل جست‌وجو، Call of Duty، Minecraft و انتخاب همه؛ قواعد رسمی Login/Launcher/Store/Content در Clash، sing-box و Xray Iron
+- **Whole-subscription Iron Mode** برای برچسب‌گذاری و تجمیع تمام Routeهای همان ساب، از جمله نمونه‌های ۲۰۰ مسیره و حالت Giant تا سقف ۲۰۰۰
+- ساخت ۱ تا ۵ بسته مستقل «آهنین» Xray/sing-box؛ هر بسته همهٔ مسیرهای انتخاب‌شده را با `leastPing`/`urltest` تجمیع می‌کند
 - Probe اجباری Backend پیش از هر Auto Build و Probe دستی از Cloudflare Edge؛ بدون مصرف سهمیه Cron حساب
 - بازیابی صحیح Token، UUID و مسیرها پس از Cold Start یا Restart شدن Durable Object
-- ساخت اتومات با انتخاب چند دامنه/Custom Domain یا «انتخاب همه» و اولویت Endpointهای سالم و کم‌تأخیر
+- ساخت اتومات با انتخاب چند Deploy/Custom Domain یا «انتخاب همه»، برچسب مکان تأییدشده توسط اپراتور و اولویت Endpointهای سالم با کمترین تأخیر اندازه‌گیری‌شده؛ کشور از Anycast حدس زده نمی‌شود
 - مخزن کاندیدهای Cloudflare Anycast و ورودی دستی محدود به بازه‌های IPv4 رسمی Cloudflare؛ direct و IPها ساخته می‌شوند تا `url-test`/`leastPing` روی ISP واقعی انتخاب کند
 - تست WSS پس از ساخت از داخل همان مرورگر برای تفکیک سلامت Edge از وضعیت واقعی ISP کاربر
 - کمک اختیاری binding رسمی Cloudflare Workers AI برای انتخاب Profile از روی اعداد Probe؛ با Fail-open کامل و بدون وابستگی ساخت به AI
@@ -38,7 +40,8 @@
 - Audit log، Backup/Restore قابل حمل، چرخش UUID/Token و Hot Update مسیرها
 - Session تصادفی ۲۵۶ بیتی، PBKDF2، Lockout، Same-Origin و Security Headerها
 - PWA نصب‌پذیر روی Android/iOS/Desktop با Manifest، Service Worker امن، Share و مانیتور Rotation
-- مانیفست قابل جست‌وجو با **۳۵۰+ کنترل و قابلیت پیاده‌سازی‌شده**
+- Update Center داخلی برای مقایسه نسخه Deploy با Source عمومی GitHub و لینک نصب امن Cloudflare؛ پنل توکن Deploy دریافت نمی‌کند و خوداستقرار جعلی ندارد
+- مانیفست قابل جست‌وجو با **۵۵۰+ کنترل، قابلیت و Preset پیاده‌سازی‌شده**
 
 ## نصب سریع و امن
 
@@ -93,10 +96,11 @@ npm run dev:local
 
 1. URL ورکر را باز کنید.
 2. نام کاربری مالک `AMINCK` و مقدار `ADMIN_PASSWORD` را وارد کنید.
-3. در داشبورد تعداد ساب مستقل، تعداد کانفیگ داخل هر ساب و تعداد پروفایل آهنین را انتخاب کنید.
-4. محدودیت‌ها را وارد کنید یا دکمهٔ `∞ نامحدود` را بزنید.
-5. **ساخت اتومات ساب** را بزنید؛ پنل Probe و انتخاب Endpoint سالم را خودش انجام می‌دهد و در Deploy تازه از همان hostname ورکر استفاده می‌کند.
-6. لینک اصلی ساب یا لینک Clash/sing-box را کپی کنید.
+3. در داشبورد **Normal** یا **Gaming** را انتخاب کنید؛ در Gaming حداقل یک بازی یا «انتخاب همه» را بزنید.
+4. تعداد ساب مستقل، تعداد Route داخل هر ساب و Whole-subscription Iron را انتخاب کنید. برای موبایل از ۲۰۰ یا کمتر شروع کنید.
+5. محدودیت‌ها را وارد کنید یا دکمهٔ `∞ نامحدود` را بزنید.
+6. **ساخت اتومات ساب** را بزنید؛ پنل Probe و انتخاب Endpoint سالم را خودش انجام می‌دهد و در Deploy تازه از همان hostname ورکر استفاده می‌کند.
+7. لینک اصلی ساب یا لینک Clash/sing-box را کپی کنید.
 
 افزودن Custom Domain در تب **پینگ** اختیاری است و فقط وقتی لازم می‌شود که دامنهٔ متعلق به خودتان را قبلاً به همین Worker Route کرده باشید.
 
@@ -136,6 +140,9 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
     "ironCount":3,
     "speedPreset":"god",
     "profileMode":"auto",
+    "usageMode":"gaming",
+    "gameIds":["cod-mobile","minecraft-java"],
+    "ironMode":true,
     "configNameTemplate":"{brand} AMINCK {user} {index}",
     "limitBytes":0,
     "limitSeconds":0,
@@ -144,6 +151,15 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
   }'
 ```
 
+`gameIds` فقط از فهرست `POST /api/game-catalog` پذیرفته می‌شود. اگر `usageMode` برابر `gaming` باشد حداقل یک شناسه معتبر لازم است. این Presetها فقط قواعد دامنه رسمی را در خروجی‌های Rule-capable اضافه می‌کنند؛ Raw/Base64 امکان حمل Policy جداگانه ندارد.
+
+## Normal، Gaming و محدودیت واقعی بازی
+
+- **Normal:** خروجی عمومی با DIRECT SAFE و گروه‌های Auto/Fallback/Balance است.
+- **Gaming:** دامنه‌های رسمی انتخاب‌شده را در Clash و sing-box به گروه اندازه‌گیری‌شده می‌فرستد و همین قواعد در بسته Xray Iron قرار می‌گیرند. Call of Duty و Minecraft در Catalogue حضور دارند و «انتخاب همه» همه ۱۷۴ مورد را فعال می‌کند.
+- Gateway امن AMINNOVA فقط UDP/53 را برای DNS می‌پذیرد. در نتیجه ترافیک UDP دلخواه Gameplay از Worker عبور نمی‌کند؛ Login، Launcher، Store، Download و ترافیک TCP-compatible هدف این Preset هستند.
+- Rule مسیر سالم‌تر را میان Deployهای موجود انتخاب می‌کند، اما فاصله فیزیکی تا سرور بازی را تغییر نمی‌دهد. Ping زیر ۹۰ ms، IP خارجی ثابت، دسترسی Gemini/Google یا عبور همگانی از DPI تضمین نمی‌شود.
+- «کشور» فقط برچسبی است که مالک برای یک Deploy واقعی خودش وارد می‌کند. Cloudflare Anycast یا یک Worker واحد سه خروجی کشوری مستقل ایجاد نمی‌کند.
 
 ## پایداری و بازیابی بعد از حذف حساب Cloudflare
 
@@ -160,7 +176,7 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 
 پاسخ واقعاً «بی‌نهایت خط» نه در HTTP عملی است و نه توسط کلاینت‌های موبایل قابل Import؛ چنین خروجی‌ای حافظه و CPU را تمام می‌کند. حالت **Smart Pool ∞** راه امن این نیاز است:
 
-- هر پاسخ یک پنجره فعال ۱ تا ۲۰۰ مسیره و قابل Import دارد.
+- هر پاسخ یک پنجره فعال ۱ تا ۲۰۰۰ مسیره دارد؛ ۲۰۰ یا کمتر برای Import موبایل پیشنهاد می‌شود و Giant می‌تواند حافظه و Health Check کلاینت را سنگین کند.
 - در هر Refresh و با بازه پیش‌فرض یک دقیقه، ترتیب مسیرها و تخصیص IPهای Anycast معتبر تغییر می‌کند.
 - Path، Token و UUID ثابت می‌مانند تا Rotation اتصال‌های موجود را عمداً خراب نکند.
 - مسیر اول و هر دهمین مسیر Direct است؛ بنابراین کاندید Anycast نامناسب همه خروجی را حذف نمی‌کند.
@@ -169,9 +185,15 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 
 این روش قطعی صفر را تضمین نمی‌کند. برای دسترس‌پذیری جدی از Custom Domain خودتان، Backup، Deploy دوم و DNS Failover خارج از حساب اصلی استفاده کنید.
 
+## Release 1.2.0 — Giant / Gaming / Update Center
+
+Release `2026.08.21-giant-gaming.3` سقف مالک را به ۲۰۰۰ Route رسانده، Normal/Gaming و Whole-subscription Iron را اضافه کرده، Catalogue بازی را به ۱۷۴ مورد رسانده و مانیفست را از ۵۵۰ مورد عبور داده است. Update Center فقط نسخه عمومی را کشف می‌کند و برای نصب، Deploy رسمی Cloudflare را باز می‌کند؛ Worker بدون مجوز Cloudflare نمی‌تواند کد خودش را امن Deploy کند.
+
+حالت Giant را ابتدا روی یک کلاینت آزمایشی Import کنید. فایل Clash/sing-box شامل ۲۰۰۰ Outbound می‌تواند چند مگابایت شود و روی موبایل‌های ضعیف کند باشد. Route بیشتر الزاماً Throughput، Location، Ping یا پایداری بیشتری نمی‌دهد؛ نتیجه به Deployهای واقعی، ISP و مقصد وابسته است.
+
 ## رفع Timeout کانفیگ
 
-Release `2026.08.21-rescue-mobile.2` مجموعهٔ قبلی Timeout Fix را کامل‌تر می‌کند:
+Release `2026.08.21-rescue-mobile.2` مجموعهٔ قبلی Timeout Fix را کامل‌تر کرد:
 
 - جهت `WebSocketPair` اصلاح شده است: نسخه قبلی سمت اشتباه Pair را `accept` می‌کرد؛ Handshake با کد `101` باز می‌شد اما Frameهای VLESS هرگز به Handler داخل Worker نمی‌رسیدند.
 - Health Check دیگر آدرس همان Worker را از داخل تونل صدا نمی‌زند. این کار TCP Loop می‌ساخت و چون Cloudflare Workers اتصال Socket خروجی به IPهای Cloudflare را مسدود می‌کند، Routeها در `url-test` به‌اشتباه Timeout دیده می‌شدند. مقصد پیش‌فرض `https://www.gstatic.com/generate_204` است.
@@ -181,13 +203,13 @@ Release `2026.08.21-rescue-mobile.2` مجموعهٔ قبلی Timeout Fix را ک
 - دکمه **«تعمیر همه کانفیگ‌ها روی دامنه فعلی»** UUID و Token را نگه می‌دارد اما تمام مشترک‌ها را در حالت Stable و DIRECT SAFE به همین Deploy متصل می‌کند. پس از آن Subscription کلاینت باید Refresh شود.
 - تست داخل پنل فقط موفقیت `101 WebSocket` را گزارش نمی‌کند؛ Packet واقعی VLESS و درخواست TCP ارسال و وضعیت پاسخ داده می‌شود.
 
-در `/healthz` و هدر `x-aminck-release` نسخه Deploy را بررسی کنید. مقدار فعلی باید `2026.08.21-rescue-mobile.2` یا جدیدتر باشد. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Refresh اشتراک به‌تنهایی Backend را ارتقا نمی‌دهد.
+در `/healthz`، فیلد `version` و هدرهای `x-aminck-release` / `x-aminck-version` نسخه Deploy را بررسی کنید. مقدار Release این نسخه باید `2026.08.21-giant-gaming.3` باشد. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Refresh اشتراک به‌تنهایی Backend را ارتقا نمی‌دهد.
 
 محدودیت پلتفرم: طبق [ملاحظات رسمی Cloudflare TCP Sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/#considerations)، مقصد نهایی‌ای که خودش روی IPهای Cloudflare میزبانی می‌شود ممکن است با Workers TCP Sockets قابل اتصال نباشد. این محدودیت با جعل SNI یا افزودن تعداد Route حل نمی‌شود؛ برای چنین مقصدی Gateway مستقل و متعلق به اپراتور لازم است.
 
 ## اپ موبایل نصب‌پذیر
 
-پنل یک **Progressive Web App** در همان مخزن و همان Worker است. از دکمه «نصب اپ» می‌توان آن را روی Home Screen نصب کرد. اپ همراه مدیریت مشترک، Copy/Share همه فرمت‌ها، بررسی آپدیت و مانیتور یک‌دقیقه‌ای Pool را ارائه می‌دهد. Service Worker فقط Shell عمومی را Cache می‌کند و عمداً `/api`، `/sub`، `/healthz`، `/connect` و WebSocket را Cache نمی‌کند.
+پنل یک **Progressive Web App** در همان مخزن و همان Worker است. از دکمه «نصب اپ» می‌توان آن را روی Home Screen نصب کرد. اپ همراه مدیریت مشترک، Normal/Gaming، Copy/Share همه فرمت‌ها، بررسی Shell و Source Update و مانیتور یک‌دقیقه‌ای Pool را ارائه می‌دهد. بررسی Source اطلاعات عمومی GitHub را می‌خواند؛ نصب کد جدید همچنان به مجوز Deploy Cloudflare نیاز دارد. Service Worker فقط Shell عمومی را Cache می‌کند و عمداً `/api`، `/sub`، `/healthz`، `/connect` و WebSocket را Cache نمی‌کند.
 
 PWA مرورگر اجازه ایجاد VPN سیستمی (`VpnService`/Network Extension) ندارد؛ بنابراین برای اتصال واقعی، Subscription را در V2RayNG، V2Box، MahsaNG، NapsternetV، Clash/Mihomo یا sing-box Import کنید. تب «اپ موبایل» لینک مناسب هر فرمت را می‌دهد؛ جزئیات در [راهنمای اپ موبایل و Smart Pool](docs/MOBILE-PWA-FA.md) آمده است.
 
@@ -208,12 +230,15 @@ PWA مرورگر اجازه ایجاد VPN سیستمی (`VpnService`/Network Ex
 
 | مسیر | توضیح |
 |---|---|
-| `GET /healthz` | سلامت Worker |
+| `GET /healthz` | سلامت، نسخه و Release Worker |
+| `GET /api/launch` | لینک Source/Deploy و نسخه جاری |
+| `GET /api/update-check` | مقایسه نسخه جاری با package عمومی GitHub؛ بدون دریافت توکن Cloudflare |
 | `POST /api/login` | ورود |
 | `GET /api/me` | نشست و Permissionها |
 | `POST /api/users` | فهرست/جست‌وجوی مشترک |
-| `POST /api/user-create` | ساخت مشترک |
-| `POST /api/user-update` | ویرایش محدودیت و مسیر |
+| `POST /api/user-create` | ساخت مشترک Normal/Gaming/Iron |
+| `POST /api/user-update` | ویرایش محدودیت، مسیر، بازی‌ها و Iron Mode |
+| `POST /api/game-catalog` | Metadata امن ۱۷۴ بازی و شناسه‌های انتخاب |
 | `POST /api/config-build` | بازسازی خروجی با Save اختیاری |
 | `POST /api/auto-build` | ساخت اتومات ۱ تا ۱۰ Subscription |
 | `POST /api/iron-build` | ساخت ۱ تا ۵ پروفایل آهنین |

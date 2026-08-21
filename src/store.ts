@@ -38,6 +38,7 @@ import {
   MAX_AUDIT_EVENTS,
   MAX_BATCH_SUBSCRIPTIONS,
   MAX_ENDPOINTS,
+  MAX_PATHS,
   OUTBOUND_TCP_PORTS,
   POWER_LEVELS,
   ROLE_PERMISSIONS,
@@ -61,6 +62,7 @@ import {
   rollingRouteWindow,
   validateNameTemplate,
 } from './config';
+import { publicGameCatalog, sanitizeGameIds } from './games';
 
 export interface Env {
   ADMIN_PASSWORD?: string;
@@ -485,6 +487,12 @@ export class AMINCKStore {
       }
       case 'capabilities':
         return this.capabilitiesResponse();
+      case 'game-catalog':
+        return json({
+          total: publicGameCatalog().length,
+          games: publicGameCatalog(),
+          notice: 'این Presetها دامنه‌های رسمی Login/Launcher/Content را Route می‌کنند؛ کاهش Ping فیزیکی یا UDP بازی را تضمین نمی‌کنند.',
+        });
       default:
         return json({ error: 'not-found' }, 404);
     }
@@ -743,6 +751,14 @@ export class AMINCKStore {
     }
 
     if (route === 'capabilities') return this.capabilitiesResponse();
+    if (route === 'game-catalog') {
+      if (!need('users:view')) return deny();
+      return json({
+        total: publicGameCatalog().length,
+        games: publicGameCatalog(),
+        notice: 'Preset بازی فقط دامنه رسمی Login/Launcher/Content را Route می‌کند؛ Ping فیزیکی و UDP بازی تضمین نمی‌شود.',
+      });
+    }
 
     if (route === 'users') return this.handleUsersRoute(parts, body, me, ip, need, deny);
 
@@ -946,7 +962,7 @@ export class AMINCKStore {
       : defaults.dohAlt;
     const settingTemplate = validateNameTemplate(String(settings.configNameTemplate ?? ''));
     settings.configNameTemplate = settingTemplate.ok ? settingTemplate.value : defaults.configNameTemplate;
-    settings.defaultPaths = clamp(Math.floor(Number(settings.defaultPaths)) || defaults.defaultPaths, 1, 200);
+    settings.defaultPaths = clamp(Math.floor(Number(settings.defaultPaths)) || defaults.defaultPaths, 1, MAX_PATHS);
     settings.updateIntervalHours = clamp(Math.floor(Number(settings.updateIntervalHours)) || defaults.updateIntervalHours, 1, 720);
     settings.fingerprint = ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(settings.fingerprint))
       ? settings.fingerprint
@@ -1012,7 +1028,7 @@ export class AMINCKStore {
       const routePattern = new RegExp(`^/e[a-z0-9]{6,12}${id}$`, 'i');
       let routes: Route[] = rawRoutes
         .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && routePattern.test(String((r as Record<string, unknown>).path ?? '')))
-        .slice(0, 200)
+        .slice(0, MAX_PATHS)
         .map((r, i) => ({
           path: String(r.path),
           endpointId: endpoint.id,
@@ -1041,6 +1057,9 @@ export class AMINCKStore {
         profileMode: ['auto', 'fallback', 'balance'].includes(String(u.profileMode))
           ? (String(u.profileMode) as ProfileMode)
           : settings.profileMode,
+        usageMode: u.usageMode === 'gaming' ? 'gaming' : 'normal',
+        gameIds: u.usageMode === 'gaming' ? sanitizeGameIds(u.gameIds) : [],
+        ironMode: u.ironMode === true,
         fingerprint: ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(u.fingerprint))
           ? (String(u.fingerprint) as User['fingerprint'])
           : null,
@@ -1058,7 +1077,7 @@ export class AMINCKStore {
         lastSubAt: finiteFloor(u.lastSubAt),
       };
       if (routes.length === 0) {
-        routes = buildRoutes(user.id, planRoutes([endpoint], clamp(rawRoutes.length || settings.defaultPaths, 1, 200)), settings);
+        routes = buildRoutes(user.id, planRoutes([endpoint], clamp(rawRoutes.length || settings.defaultPaths, 1, MAX_PATHS)), settings);
         user.routes = routes;
       }
       ids.add(id);
@@ -1195,6 +1214,9 @@ export class AMINCKStore {
     const name = String(body.name ?? '').trim();
     if (!name || name.length > 80) return Promise.resolve(json({ error: 'bad-name', message: 'نام کاربر معتبر نیست' }, 400));
     const limits = sanitizeLimits(body);
+    if (body.usageMode === 'gaming' && sanitizeGameIds(body.gameIds).length === 0) {
+      return Promise.resolve(json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400));
+    }
     const maxPaths = maxPathsFor(me.power);
     const wanted = Number.isFinite(Number(body.paths)) ? Number(body.paths) : this.settings!.defaultPaths;
     const paths = clamp(Math.floor(wanted) || 1, 1, maxPaths);
@@ -1209,6 +1231,15 @@ export class AMINCKStore {
     const id = String(body.id ?? '');
     const user = this.usersCache.find((u) => u.id === id);
     if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
+    const nextUsageMode = body.usageMode === undefined
+      ? (user.usageMode === 'gaming' ? 'gaming' : 'normal')
+      : (body.usageMode === 'gaming' ? 'gaming' : 'normal');
+    const nextGameIds = nextUsageMode === 'gaming'
+      ? sanitizeGameIds(body.gameIds === undefined ? user.gameIds : body.gameIds)
+      : [];
+    if (nextUsageMode === 'gaming' && nextGameIds.length === 0) {
+      return Promise.resolve(json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400));
+    }
     if (body.name !== undefined) {
       const name = String(body.name).trim();
       if (name && name.length <= 80) user.name = name;
@@ -1228,6 +1259,11 @@ export class AMINCKStore {
     if (body.speedPreset !== undefined && (body.speedPreset as string) in SPEED_PRESETS) {
       user.speedPreset = body.speedPreset as SpeedPreset;
     }
+    if (body.usageMode !== undefined || body.gameIds !== undefined) {
+      user.usageMode = nextUsageMode;
+      user.gameIds = nextGameIds;
+    }
+    if (body.ironMode !== undefined) user.ironMode = body.ironMode === true;
     if (body.dynamicPool !== undefined) user.dynamicPool = body.dynamicPool === true;
     if (body.rotationMinutes !== undefined) {
       user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
@@ -1269,6 +1305,9 @@ export class AMINCKStore {
       profileMode: ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
         ? (body.profileMode as ProfileMode)
         : s.profileMode,
+      usageMode: body.usageMode === 'gaming' ? 'gaming' : 'normal',
+      gameIds: body.usageMode === 'gaming' ? sanitizeGameIds(body.gameIds) : [],
+      ironMode: body.ironMode === true,
       fingerprint: null,
       configNameTemplate: String(body.configNameTemplate ?? '').trim() || null,
       dynamicPool: body.dynamicPool === true,
@@ -1300,7 +1339,7 @@ export class AMINCKStore {
     const user = this.usersCache.find((u) => u.id === id);
     if (!user) return json({ error: 'not-found' }, 404);
     const maxPaths = maxPathsFor(this.powerOf(me));
-    const requested = clamp(Math.floor(Number(body.paths ?? user.routes.length)) || 1, 1, 200);
+    const requested = clamp(Math.floor(Number(body.paths ?? user.routes.length)) || 1, 1, MAX_PATHS);
     const paths = Math.min(requested, maxPaths);
     const truncated = paths < requested;
     const formats = parseFormats(body.formats);
@@ -1349,8 +1388,11 @@ export class AMINCKStore {
   }
 
   private async autoBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    if (body.usageMode === 'gaming' && sanitizeGameIds(body.gameIds).length === 0) {
+      return json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400);
+    }
     const maxPaths = maxPathsFor(this.powerOf(me));
-    const requested = clamp(Math.floor(Number(body.paths ?? this.settings!.defaultPaths)) || 1, 1, 200);
+    const requested = clamp(Math.floor(Number(body.paths ?? this.settings!.defaultPaths)) || 1, 1, MAX_PATHS);
     const paths = Math.min(requested, maxPaths);
 
     const orderedRaw = Array.isArray(body.orderedEndpoints) ? (body.orderedEndpoints as unknown[]) : [];
@@ -1551,9 +1593,10 @@ export class AMINCKStore {
     if (s.endpoints.some((e) => e.host === host && e.port === port)) {
       return json({ error: 'duplicate', message: 'Endpoint تکراری' }, 409);
     }
+    const label = String(body.label ?? '').trim().replace(/\s+/g, ' ').slice(0, 60);
     s.endpoints.push({
       id: newId(),
-      label: body.label ? String(body.label).slice(0, 60) : `${host}:${port}`,
+      label: label || `${host}:${port}`,
       host,
       port,
       createdAt: Date.now(),
@@ -1599,7 +1642,7 @@ export class AMINCKStore {
       if (!v.ok) return json({ error: 'bad-template', message: v.error }, 400);
       s.configNameTemplate = v.value;
     }
-    if (patch.defaultPaths !== undefined) s.defaultPaths = clamp(Math.floor(Number(patch.defaultPaths)) || 1, 1, 200);
+    if (patch.defaultPaths !== undefined) s.defaultPaths = clamp(Math.floor(Number(patch.defaultPaths)) || 1, 1, MAX_PATHS);
     if (patch.updateIntervalHours !== undefined) s.updateIntervalHours = clamp(Math.floor(Number(patch.updateIntervalHours)) || 24, 1, 720);
     if (patch.fingerprint !== undefined) {
       const fp = String(patch.fingerprint);
