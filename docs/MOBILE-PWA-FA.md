@@ -43,6 +43,17 @@ Smart Pool پاسخ نامتناهی تولید نمی‌کند. در هر در�
 
 تب اپ یک مانیتور اختیاری دارد که تا زمانی که صفحه باز است هر دقیقه Headerهای Rotation را بررسی می‌کند. مرورگر پس از بسته‌شدن اپ اجازه اجرای دائمی Timer را تضمین نمی‌کند.
 
+## اگر کانفیگ Timeout شد
+
+نسخه Timeout Fix جهت `WebSocketPair` را اصلاح کرده است؛ در نسخه قدیمی `101 Switching Protocols` موفق بود اما Frameهای VLESS به سمت Worker تحویل نمی‌شدند. بنابراین فقط Refresh‌کردن Subscription روی Backend قدیمی کافی نیست و Worker باید دوباره Deploy شود.
+
+1. `/healthz` دامنه Deploy را باز کنید و مطمئن شوید `release` برابر `2026.08.21-timeout-fix.1` یا جدیدتر است.
+2. Subscription را در کلاینت Refresh کنید و ابتدا Route دارای برچسب **DIRECT SAFE** را آزمایش کنید.
+3. نتیجه تست داخل داشبورد باید «WSS + VLESS + TCP موفق» باشد؛ بازشدن WebSocket به‌تنهایی نشانه کارکرد تونل نیست.
+4. Health URL را روی خود Worker قرار ندهید. Worker نمی‌تواند از TCP Socket به خودش یا IPهای Cloudflare Loop بزند؛ AMINNOVA به‌طور پیش‌فرض از gstatic استفاده می‌کند.
+5. اگر DIRECT SAFE کار کرد ولی Anycastها نه، Anycast را برای آن شبکه خاموش کنید؛ «IP تمیز همگانی» وجود ندارد.
+6. اگر مقصد نهایی روی Cloudflare میزبانی شده باشد، محدودیت Workers Sockets ممکن است اتصال آن مقصد را مسدود کند؛ Route بیشتر یا SNI جعلی این محدودیت را رفع نمی‌کند.
+
 ## چرا خود PWA مستقیماً VPN نمی‌شود؟
 
 مرورگر به PWA مجوز Android `VpnService` یا iOS Network Extension نمی‌دهد. ساخت یک VPN Native نیازمند پروژه جداگانه Android/iOS، هسته پروتکل ممیزی‌شده، امضای برنامه و مجوزهای Store است. AMINNOVA به‌جای ادعای اتصال غیرواقعی، لینک استاندارد برای کلاینت‌های معتبر تولید می‌کند.

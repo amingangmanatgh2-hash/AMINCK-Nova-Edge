@@ -169,6 +169,20 @@ curl -X POST https://YOUR_WORKER/api/auto-build \
 
 این روش قطعی صفر را تضمین نمی‌کند. برای دسترس‌پذیری جدی از Custom Domain خودتان، Backup، Deploy دوم و DNS Failover خارج از حساب اصلی استفاده کنید.
 
+## رفع Timeout کانفیگ
+
+Release `2026.08.21-timeout-fix.1` چند علت واقعی Timeout را برطرف می‌کند:
+
+- جهت `WebSocketPair` اصلاح شد: نسخه قبلی سمت اشتباه Pair را `accept` می‌کرد؛ Handshake با کد `101` باز می‌شد اما Frameهای VLESS هرگز به Handler داخل Worker نمی‌رسیدند و همه کانفیگ‌ها Timeout می‌شدند.
+- Health Check دیگر آدرس همان Worker را از داخل تونل صدا نمی‌زند. این کار یک TCP Loop می‌ساخت و چون Cloudflare Workers اتصال Socket خروجی به IPهای Cloudflare را مسدود می‌کند، همه Routeها در `url-test` به‌اشتباه Timeout دیده می‌شدند. مقصد پیش‌فرض اکنون `https://www.gstatic.com/generate_204` است.
+- مسیر اول هر Subscription با برچسب **DIRECT SAFE** بدون Anycast، Early Data و Path padding صادر می‌شود تا کلاینت‌ها و Middleboxهای حساس یک مسیر سازگار داشته باشند.
+- DoH failover هم‌زمان اجرا می‌شود و بازشدن Socket Deadline قطعی دارد؛ اتصال خراب سریع بسته می‌شود و بی‌نهایت معطل نمی‌ماند.
+- تست داخل پنل دیگر فقط موفقیت `101 WebSocket` را گزارش نمی‌کند؛ Packet واقعی VLESS و یک درخواست TCP ارسال می‌شود و باید پاسخ باینری معتبر دریافت شود.
+
+در `/healthz` و هدر `x-aminck-release` نسخه Deploy را بررسی کنید. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Subscription قدیمی با Refresh به‌تنهایی Backend را ارتقا نمی‌دهد.
+
+محدودیت پلتفرم: طبق [ملاحظات رسمی Cloudflare TCP Sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/#considerations)، مقصد نهایی‌ای که خودش روی IPهای Cloudflare میزبانی می‌شود ممکن است با Workers TCP Sockets قابل اتصال نباشد. این محدودیت با جعل SNI یا افزودن تعداد Route حل نمی‌شود؛ برای چنین مقصدی Gateway مستقل و متعلق به اپراتور لازم است.
+
 ## اپ موبایل نصب‌پذیر
 
 پنل یک **Progressive Web App** در همان مخزن و همان Worker است. از دکمه «نصب اپ» می‌توان آن را روی Home Screen نصب کرد. اپ همراه مدیریت مشترک، Copy/Share همه فرمت‌ها، بررسی آپدیت و مانیتور یک‌دقیقه‌ای Pool را ارائه می‌دهد. Service Worker فقط Shell عمومی را Cache می‌کند و عمداً `/api`، `/sub`، `/healthz`، `/connect` و WebSocket را Cache نمی‌کند.

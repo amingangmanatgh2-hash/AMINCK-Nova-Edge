@@ -212,11 +212,20 @@ export class VlessSession {
     let lastError = '';
     for (let attempt = 1; attempt <= this.policy.tcpRetries; attempt++) {
       try {
-        const sock = await this.hooks.tcpConnect(target.address, target.port, {
-          timeoutMs: this.policy.connectTimeoutMs,
-          servername: target.addressType === 2 ? target.address : undefined,
-        });
-        await sock.opened;
+        const sock = await withTimeout(
+          this.hooks.tcpConnect(target.address, target.port, {
+            timeoutMs: this.policy.connectTimeoutMs,
+            servername: target.addressType === 2 ? target.address : undefined,
+          }),
+          this.policy.connectTimeoutMs,
+          'connect-timeout',
+        );
+        try {
+          await withTimeout(sock.opened, this.policy.connectTimeoutMs, 'socket-open-timeout');
+        } catch (error) {
+          sock.end();
+          throw error;
+        }
         if (this.done) {
           sock.end();
           return;
@@ -313,6 +322,20 @@ export class VlessSession {
     }
     this.onStats?.(this.bytesUp, this.bytesDown);
     this.settle({ status, reason, bytesUp: this.bytesUp, bytesDown: this.bytesDown, dnsQueries: this.dnsQueries });
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(reason)), Math.max(100, timeoutMs));
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

@@ -348,10 +348,25 @@ export function privateCidrs(): { v4: string[]; v6: string[] } {
   return { v4: [...PRIVATE_V4_CIDRS], v6: [...PRIVATE_V6_CIDRS] };
 }
 
+export const DEFAULT_TUNNEL_HEALTH_URL = 'https://www.gstatic.com/generate_204';
+
 function healthUrlFor(settings: PanelSettings, firstRoute?: Route): string {
-  if (settings.healthUrl && settings.healthUrl.length > 0) return settings.healthUrl;
-  if (firstRoute) return `https://${firstRoute.host}/healthz`;
-  return 'https://www.gstatic.com/generate_204';
+  const configured = String(settings.healthUrl ?? '').trim();
+  if (configured) {
+    try {
+      const target = new URL(configured);
+      // A health request travels *through* the VLESS tunnel. Pointing it back
+      // at this Worker creates an outbound TCP loop (and Workers Sockets block
+      // Cloudflare IP ranges), which made every client report Timeout even
+      // when the inbound WebSocket itself was healthy.
+      const ownHosts = new Set((settings.endpoints ?? []).map((endpoint) => endpoint.host.toLowerCase()));
+      if (firstRoute) ownHosts.add(firstRoute.host.toLowerCase());
+      if (!ownHosts.has(target.hostname.toLowerCase())) return configured;
+    } catch {
+      // Settings validation normally rejects malformed URLs; fail safe here.
+    }
+  }
+  return DEFAULT_TUNNEL_HEALTH_URL;
 }
 
 export function subUrlFor(token: string, host: string): string {
@@ -377,10 +392,30 @@ interface RouteNames {
   health: string;
 }
 
+interface WsTransportTuning {
+  earlyData: number;
+  path: string;
+}
+
+/**
+ * Route #1 is deliberately a conservative compatibility anchor: direct host,
+ * no early-data header and no padded query. Some mobile WebSocket stacks and
+ * middleboxes time out on large Sec-WebSocket-Protocol headers; advanced
+ * routes keep the selected speed preset while the first route remains usable.
+ */
+function wsTransportTuning(route: Route, index: number, speed: SpeedSpec, anti: AntiDetectSettings): WsTransportTuning {
+  const compatibilityAnchor = index === 0 && !route.frontIp;
+  const earlyData = compatibilityAnchor ? 0 : speed.earlyData;
+  const path = !compatibilityAnchor && anti.pathPadding && route.padding
+    ? `${route.path}?ed=${earlyData}&pad=${route.padding}`
+    : route.path;
+  return { earlyData, path };
+}
+
 function routeNames(ctx: BuildContext): RouteNames {
   const brand = ctx.settings.brand || BRAND;
-  const names = ctx.user.routes.map((r) =>
-    renderConfigName(ctx.nameTemplate, {
+  const names = ctx.user.routes.map((r, index) => {
+    const name = renderConfigName(ctx.nameTemplate, {
       brand,
       app: APP_NAME,
       user: ctx.user.name,
@@ -388,8 +423,9 @@ function routeNames(ctx: BuildContext): RouteNames {
       index: r.index,
       endpoint: `${r.host}:${r.port}`,
       port: r.port,
-    }),
-  );
+    });
+    return index === 0 && !r.frontIp ? `${name} · DIRECT SAFE` : name;
+  });
   return { names, health: healthOrDefault(ctx.settings, ctx.user.routes[0]) };
 }
 
@@ -399,17 +435,18 @@ function buildVlessLines(ctx: BuildContext, speed: SpeedSpec): {
 } {
   const { names } = routeNames(ctx);
   const anti = resolveAntiDetect(ctx.settings);
-  const lines = ctx.user.routes.map((r, i) =>
-    vlessUriFor(ctx.user, r, {
+  const lines = ctx.user.routes.map((r, i) => {
+    const tuning = wsTransportTuning(r, i, speed, anti);
+    return vlessUriFor(ctx.user, r, {
       fingerprint: ctx.fingerprint,
-      earlyData: speed.earlyData,
+      earlyData: tuning.earlyData,
       name: names[i]!,
-      padding: anti.pathPadding,
+      padding: tuning.earlyData > 0 && anti.pathPadding,
       fragment: anti.fragment,
       fragmentLength: anti.fragmentLength,
       fragmentInterval: anti.fragmentInterval,
-    }),
-  );
+    });
+  });
   return { lines, names };
 }
 
@@ -444,10 +481,7 @@ export function buildClashYaml(ctx: BuildContext): string {
     const wsHost = r.wsHost || r.host;
     const server = r.frontIp || r.host;
     const sni = r.sni || r.host;
-    const wsPath =
-      anti.pathPadding && r.padding
-        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
-        : r.path;
+    const tuning = wsTransportTuning(r, i, speed, anti);
     lines.push(
       `  - name: ${yamlStr(names[i]!)}`,
       '    type: vless',
@@ -461,14 +495,14 @@ export function buildClashYaml(ctx: BuildContext): string {
       '    udp: true',
       `    client-fingerprint: ${fp}`,
       '    ws-opts:',
-      `      path: ${yamlStr(wsPath)}`,
+      `      path: ${yamlStr(tuning.path)}`,
       '      headers:',
       `        Host: ${yamlStr(wsHost)}`,
       '        User-Agent: "Mozilla/5.0"',
     );
     if (speed.tcpConcurrent) lines.push('    tcp-concurrent: true');
-    if (speed.earlyData > 0) {
-      lines.push(`    max-early-data: ${speed.earlyData}`, '    early-data-header-name: Sec-WebSocket-Protocol');
+    if (tuning.earlyData > 0) {
+      lines.push(`    max-early-data: ${tuning.earlyData}`, '    early-data-header-name: Sec-WebSocket-Protocol');
     }
     // Mihomo has no portable VLESS TLS-fragment field. Do not emit fork-only
     // keys that make otherwise valid subscriptions fail to import.
@@ -551,10 +585,20 @@ export function buildSingBoxJson(ctx: BuildContext): string {
   const anti = resolveAntiDetect(ctx.settings);
   const outbounds: Record<string, unknown>[] = ctx.user.routes.map((r, i) => {
     const wsHost = r.wsHost || r.host;
-    const wsPath =
-      anti.pathPadding && r.padding
-        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
-        : r.path;
+    const tuning = wsTransportTuning(r, i, speed, anti);
+    const transport: Record<string, unknown> = {
+      type: 'ws',
+      path: tuning.path,
+      headers: {
+        Host: wsHost,
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      },
+    };
+    if (tuning.earlyData > 0) {
+      transport.max_early_data = tuning.earlyData;
+      transport.early_data_header_name = 'Sec-WebSocket-Protocol';
+    }
     const ob: Record<string, unknown> = {
       type: 'vless',
       tag: names[i]!,
@@ -569,17 +613,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
         alpn: ['http/1.1'],
         utls: { enabled: true, fingerprint: fp === 'random' ? 'random' : fp },
       },
-      transport: {
-        type: 'ws',
-        path: wsPath,
-        headers: {
-          Host: wsHost,
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        },
-        max_early_data: speed.earlyData,
-        early_data_header_name: 'Sec-WebSocket-Protocol',
-      },
+      transport,
     };
     if (anti.fragment) {
       // Official sing-box outbound TLS fields. Kept opt-in because older mobile
@@ -808,10 +842,15 @@ export function buildXrayJson(ctx: BuildContext): string {
   const anti = resolveAntiDetect(ctx.settings);
   const outbounds = ctx.user.routes.map((r, i) => {
     const wsHost = r.wsHost || r.host;
-    const wsPath =
-      anti.pathPadding && r.padding
-        ? `${r.path}?ed=${speed.earlyData}&pad=${r.padding}`
-        : r.path;
+    const tuning = wsTransportTuning(r, i, speed, anti);
+    const wsSettings: Record<string, unknown> = {
+      path: tuning.path,
+      headers: { Host: wsHost },
+    };
+    if (tuning.earlyData > 0) {
+      wsSettings.maxEarlyData = tuning.earlyData;
+      wsSettings.earlyDataHeaderName = 'Sec-WebSocket-Protocol';
+    }
     return {
       tag: names[i]!,
       protocol: 'vless',
@@ -827,13 +866,8 @@ export function buildXrayJson(ctx: BuildContext): string {
       streamSettings: {
         network: 'ws',
         security: 'tls',
-        tlsSettings: { serverName: r.host, fingerprint: fp, allowInsecure: false },
-        wsSettings: {
-          path: wsPath,
-          headers: { Host: wsHost },
-          maxEarlyData: speed.earlyData,
-          earlyDataHeaderName: 'Sec-WebSocket-Protocol',
-        },
+        tlsSettings: { serverName: r.sni || r.host, fingerprint: fp, allowInsecure: false },
+        wsSettings,
       },
     };
   });

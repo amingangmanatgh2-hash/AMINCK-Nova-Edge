@@ -34,6 +34,8 @@ import {
 
 export { AMINCKStore };
 
+const AMINNOVA_RELEASE = '2026.08.21-timeout-fix.1';
+
 const PANEL_ASSETS = new Set([
   '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
   '/icon.svg', '/icon-192.png', '/icon-512.png', '/favicon.ico',
@@ -47,8 +49,8 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', ts: Date.now() }), {
-          headers: { 'content-type': 'application/json' },
+        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', release: AMINNOVA_RELEASE, ts: Date.now() }), {
+          headers: { 'content-type': 'application/json', 'x-aminck-release': AMINNOVA_RELEASE },
         }),
         { cors: true },
       );
@@ -414,6 +416,7 @@ async function handleSub(
     headers.set('x-aminck-pool-mode', 'fixed');
   }
   headers.set('etag', `W/"aminnova-${data.user.id}-${settings.configGeneration}-${rotation?.epoch ?? 0}-${format}"`);
+  headers.set('x-aminck-release', AMINNOVA_RELEASE);
   headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
   headers.set('pragma', 'no-cache');
   return withHeaders(new Response(payload, { status: 200, headers }), {});
@@ -457,14 +460,25 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
   }
 
   const pair = new WebSocketPair();
-  const server = pair[0];
+  // WebSocketPair[0] is returned to the client; [1] is the Worker-side socket.
+  // Reversing them still produced HTTP 101 but Worker message handlers never
+  // received client frames, so every valid VLESS config stalled until timeout.
+  const client = pair[0];
+  const server = pair[1];
   server.accept();
-  const client = pair[1];
 
   const bridge = new WsVlessBridge(server, env, ctx, conn.uuid!, conn.policy!);
   server.addEventListener('message', (ev: MessageEvent) => {
     if (typeof ev.data === 'string') return;
-    bridge.feed(ev.data as ArrayBuffer | ArrayBufferView);
+    if (ev.data instanceof ArrayBuffer || ArrayBuffer.isView(ev.data)) {
+      bridge.feed(ev.data as ArrayBuffer | ArrayBufferView);
+      return;
+    }
+    // Some local/runtime WebSocket adapters surface binary frames as Blob.
+    // Accepting it prevents a successful 101 followed by an empty VLESS parser.
+    if (ev.data instanceof Blob) {
+      void ev.data.arrayBuffer().then((data) => bridge.feed(data)).catch(() => bridge.shutdown());
+    }
   });
   server.addEventListener('close', () => bridge.shutdown());
   server.addEventListener('error', () => bridge.shutdown());
@@ -530,9 +544,16 @@ class WsVlessBridge {
         return;
       }
       this.headerBuf = new Uint8Array(0);
-      this.engine = this.createEngine(parsed.target);
-      void this.engine.start();
-      if (parsed.payload.length > 0) this.engine.feed(parsed.payload);
+      const engine = this.createEngine(parsed.target);
+      this.engine = engine;
+      void engine.start().then(() => engine.report).then((report) => {
+        if (this.closed) return;
+        if (report.status === 'ok') this.close(1000, 'upstream-closed');
+        else this.close(1011, safeWsReason(report.reason ?? report.status));
+      }).catch((error: unknown) => {
+        if (!this.closed) this.close(1011, safeWsReason(error instanceof Error ? error.message : 'upstream-error'));
+      });
+      if (parsed.payload.length > 0) engine.feed(parsed.payload);
       return;
     }
     this.engine.feed(bytes);
@@ -581,6 +602,11 @@ class WsVlessBridge {
     }
     this.shutdown();
   }
+}
+
+function safeWsReason(reason: string): string {
+  const safe = reason.replace(/[^\x20-\x7e]/g, '').slice(0, 100);
+  return safe || 'upstream-error';
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
@@ -672,7 +698,9 @@ function socketAdapter(socket: Socket): TcpSocket {
   return {
     opened: socket.opened as Promise<unknown>,
     write: (d) => {
-      writer.write(d).catch(() => undefined);
+      writer.write(d).catch((error) => {
+        for (const cb of errorCbs) cb(error);
+      });
     },
     end: () => {
       socket.close().catch(() => undefined);
@@ -685,24 +713,27 @@ function socketAdapter(socket: Socket): TcpSocket {
 
 async function resolvePublic(hostname: string, dohList: string[], timeoutMs: number): Promise<string | null> {
   const { buildDnsQuery, parseDnsAnswers } = await import('./protocol');
-  const id = Math.floor(Math.random() * 65535);
-  for (const doh of dohList) {
+  const resolvers = [...new Set(dohList.filter((doh) => /^https:\/\//i.test(doh)))];
+  // Run resolver failover concurrently. The old serial loop could consume
+  // three full timeout windows before even opening TCP, which mobile clients
+  // correctly surfaced as a tunnel timeout.
+  const answers = await Promise.all(resolvers.map(async (doh) => {
     try {
+      const id = Math.floor(Math.random() * 65535);
       const res = await fetch(doh, {
         method: 'POST',
         headers: { 'content-type': 'application/dns-message', accept: 'application/dns-message' },
         body: buildDnsQuery(id, hostname, 1),
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (!res.ok) continue;
-      const answers = parseDnsAnswers(new Uint8Array(await res.arrayBuffer()));
-      const ip = answers.find((a) => a.type === 1 && a.data && !isPrivateLiteral(a.data))?.data;
-      if (ip) return ip;
+      if (!res.ok) return null;
+      const parsed = parseDnsAnswers(new Uint8Array(await res.arrayBuffer()));
+      return parsed.find((answer) => answer.type === 1 && answer.data && !isPrivateLiteral(answer.data))?.data ?? null;
     } catch {
-      // failover
+      return null;
     }
-  }
-  return null;
+  }));
+  return answers.find((ip): ip is string => typeof ip === 'string' && ip.length > 0) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -736,6 +767,7 @@ function launchInfo(): Record<string, unknown> {
     deployUrl: CF_DEPLOY_URL,
     dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
     workerName: 'aminnova',
+    release: AMINNOVA_RELEASE,
     hint: 'Deploy رسمی را باز کنید؛ توکن کلودفلر هرگز داخل پنل وارد یا ارسال نمی‌شود.',
   };
 }

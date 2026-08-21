@@ -120,18 +120,45 @@
   function testWsRoute(user) {
     return new Promise(function (resolve) {
       if (!user || !user.routes || !user.routes[0]) { resolve({ ok: false, error: 'مسیر ساخته نشد' }); return; }
+      var uuidHex = String(user.uuid || '').replace(/-/g, '');
+      if (!/^[0-9a-f]{32}$/i.test(uuidHex)) { resolve({ ok: false, error: 'UUID نامعتبر است' }); return; }
       var started = Date.now();
       var scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
       var socket;
       var settled = false;
       function finish(result) { if (settled) return; settled = true; clearTimeout(timer); resolve(result); }
+      function packet() {
+        var domain = new TextEncoder().encode('www.gstatic.com');
+        var request = new TextEncoder().encode('GET /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n\r\n');
+        var header = new Uint8Array(23 + domain.length);
+        var off = 0; header[off++] = 0;
+        for (var i = 0; i < 16; i++) header[off++] = parseInt(uuidHex.slice(i * 2, i * 2 + 2), 16);
+        header[off++] = 0; header[off++] = 1; header[off++] = 0; header[off++] = 80;
+        header[off++] = 2; header[off++] = domain.length; header.set(domain, off);
+        var frame = new Uint8Array(header.length + request.length); frame.set(header); frame.set(request, header.length);
+        return frame;
+      }
+      function inspect(buffer) {
+        var bytes = new Uint8Array(buffer);
+        if (bytes.length >= 2 && bytes[0] === 0) finish({ ok: true, latencyMs: Date.now() - started, bytes: bytes.length });
+        else finish({ ok: false, error: 'پاسخ VLESS معتبر دریافت نشد' });
+        try { socket.close(); } catch (e) {}
+      }
       var timer = setTimeout(function () {
         try { if (socket) socket.close(); } catch (e) {}
-        finish({ ok: false, error: 'Timeout از شبکه مرورگر' });
-      }, 8000);
+        finish({ ok: false, error: 'Timeout تست کامل تونل؛ فقط Handshake کافی نیست' });
+      }, 20000);
       try {
         socket = new WebSocket(scheme + location.host + user.routes[0].path);
-        socket.onopen = function () { finish({ ok: true, latencyMs: Date.now() - started }); socket.close(); };
+        socket.binaryType = 'arraybuffer';
+        socket.onopen = function () { socket.send(packet()); };
+        socket.onmessage = function (event) {
+          if (event.data instanceof ArrayBuffer) inspect(event.data);
+          else if (event.data && event.data.arrayBuffer) event.data.arrayBuffer().then(inspect).catch(function () { finish({ ok: false, error: 'پاسخ باینری خوانده نشد' }); });
+        };
+        socket.onclose = function (event) {
+          if (!settled) finish({ ok: false, error: 'تونل بسته شد: ' + event.code + (event.reason ? ' / ' + event.reason : '') });
+        };
         socket.onerror = function () { finish({ ok: false, error: 'WebSocket روی این دامنه/ISP باز نشد' }); };
       } catch (e) { finish({ ok: false, error: String(e.message || e) }); }
     });
@@ -234,6 +261,7 @@
     html += '<button class="btn" id="install-btn">' + icon('install') + (isStandalone() ? 'نصب‌شده' : 'نصب اپ') + '</button>';
     html += '<button class="btn" id="theme-btn" aria-label="تعویض پوسته">' + icon('theme') + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
     html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
+    if (STATE.launch && STATE.launch.release) html += '<span class="badge mono">' + esc(STATE.launch.release) + '</span>';
     html += '<button class="btn" id="logout-btn">' + icon('logout') + 'خروج</button>';
     if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">' + icon('spark') + 'آپدیت امن</button>';
     html += '</div><div class="hero"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">Liquid Glass Control Center</div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
@@ -381,8 +409,8 @@
           var box = $('#ws-live-test');
           if (!box) return;
           box.textContent = result.ok
-            ? ('WebSocket از شبکه فعلی باز شد: ' + result.latencyMs + 'ms')
-            : ('هشدار: ' + result.error + '؛ Custom Domain خودت یا کاندید Anycast را امتحان کن.');
+            ? ('تست کامل WSS + VLESS + TCP موفق شد: ' + result.latencyMs + 'ms')
+            : ('هشدار واقعی تونل: ' + result.error + '؛ اول مسیر DIRECT SAFE و سپس دامنه Worker را بررسی کن.');
           box.style.borderColor = result.ok ? 'var(--ok)' : 'var(--err)';
         });
         toast(String(subs.length) + ' ساب ساخته شد', true);
@@ -582,6 +610,7 @@
     html += '<label>عنوان پنل</label><input id="st-title" value="' + esc(s.title || 'AMINNOVA') + '" style="width:100%">';
     html += '<label>برند کانفیگ</label><input id="st-brand" value="' + esc(s.brand || 'AMINCK GOD Edition') + '" style="width:100%">';
     html += '<label>لینک پشتیبانی</label><input id="st-support" value="' + esc(s.supportUrl || '') + '" style="width:100%">';
+    html += '<label>Health Check مستقل</label><input id="st-health" value="' + esc(s.healthUrl || '') + '" placeholder="خالی = https://www.gstatic.com/generate_204" style="width:100%"><p class="muted">آدرس خود Worker را اینجا نگذار؛ Loop خروجی باعث Timeout کاذب می‌شود.</p>';
     html += '<label>قالب نام</label><input id="st-template" value="' + esc(s.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
     html += '<div class="grid"><div><label>تعداد پیش‌فرض</label><input id="st-paths" type="number" min="1" max="200" value="' + esc(s.defaultPaths || 3) + '"></div>';
     html += '<div><label>آپدیت ساب (ساعت)</label><input id="st-up" type="number" min="1" max="720" value="' + esc(s.updateIntervalHours || 24) + '"></div></div>';
@@ -610,6 +639,7 @@
         title: $('#st-title').value,
         brand: $('#st-brand').value,
         supportUrl: $('#st-support').value,
+        healthUrl: $('#st-health').value,
         configNameTemplate: $('#st-template').value,
         defaultPaths: Number($('#st-paths').value || 3),
         updateIntervalHours: Number($('#st-up').value || 24),
@@ -657,8 +687,8 @@
     html += '<div class="guide-step"><strong>۱</strong><div><b>Deploy</b><p class="muted">لینک رسمی را باز و فقط ADMIN_PASSWORD قوی تعیین کن.</p></div></div>';
     html += '<div class="guide-step"><strong>۲</strong><div><b>ورود</b><p class="muted">با نام AMINCK وارد شو؛ دامنه جاری خودکار Endpoint می‌شود.</p></div></div>';
     html += '<div class="guide-step"><strong>۳</strong><div><b>ساخت</b><p class="muted">Endpoint، تعداد مسیر، Anycast و Smart Pool را انتخاب و ساخت را بزن.</p></div></div></div>';
-    html += '<div class="card"><h2>Import در کلاینت</h2><div class="guide-step"><strong>۱</strong><div><b>لینک مناسب</b><p class="muted">V2Ray Base64 برای V2RayNG/V2Box؛ YAML برای Clash؛ JSON برای sing-box.</p></div></div><div class="guide-step"><strong>۲</strong><div><b>Refresh</b><p class="muted">برای Pool یک‌دقیقه‌ای، Refresh ساب کلاینت را روی کمترین بازه پشتیبانی‌شده تنظیم کن. url-test خودش مسیر حاضر را انتخاب می‌کند.</p></div></div><div class="guide-step"><strong>۳</strong><div><b>تست</b><p class="muted">نتیجه WSS پنل و تست داخل همان ISP را بررسی کن؛ Edge Ping معادل وضعیت اینترنت کاربر نیست.</p></div></div></div></div>';
-    html += '<div class="card"><h2>Smart Pool و پایداری</h2><ul class="api"><li>∞ به معنی تولید نامحدود پنجره‌های جدید در طول زمان است؛ پاسخ واقعاً بی‌نهایت باعث مصرف حافظه و Crash کلاینت می‌شود.</li><li>Path و Token در چرخش خودکار ثابت می‌مانند تا اتصال‌های موجود عمداً شکسته نشوند.</li><li>همیشه مسیر Direct میان Anycastها حفظ می‌شود.</li><li>هیچ Worker، IP یا ISP بدون قطعی تضمین نمی‌شود؛ Custom Domain، بکاپ و Deploy دوم راهکار واقعی Failover هستند.</li></ul></div>';
+    html += '<div class="card"><h2>Import در کلاینت</h2><div class="guide-step"><strong>۱</strong><div><b>لینک مناسب</b><p class="muted">V2Ray Base64 برای V2RayNG/V2Box؛ YAML برای Clash؛ JSON برای sing-box.</p></div></div><div class="guide-step"><strong>۲</strong><div><b>Refresh</b><p class="muted">برای Pool یک‌دقیقه‌ای، Refresh ساب کلاینت را روی کمترین بازه پشتیبانی‌شده تنظیم کن. url-test خودش مسیر حاضر را انتخاب می‌کند.</p></div></div><div class="guide-step"><strong>۳</strong><div><b>تست</b><p class="muted">نتیجه تست کامل WSS + VLESS + TCP پنل و تست داخل همان ISP را بررسی کن؛ Edge Ping معادل وضعیت اینترنت کاربر نیست.</p></div></div></div></div>';
+    html += '<div class="card"><h2>Smart Pool و پایداری</h2><ul class="api"><li>∞ به معنی تولید نامحدود پنجره‌های جدید در طول زمان است؛ پاسخ واقعاً بی‌نهایت باعث مصرف حافظه و Crash کلاینت می‌شود.</li><li>Path و Token در چرخش خودکار ثابت می‌مانند تا اتصال‌های موجود عمداً شکسته نشوند.</li><li>همیشه مسیر DIRECT SAFE بدون Early Data میان Anycastها حفظ می‌شود.</li><li>Health Check پیش‌فرض از gstatic استفاده می‌کند؛ تست‌کردن Worker از داخل تونل خودش باعث TCP Loop و Timeout می‌شود.</li><li>هیچ Worker، IP یا ISP بدون قطعی تضمین نمی‌شود؛ Custom Domain، بکاپ و Deploy دوم راهکار واقعی Failover هستند.</li></ul></div>';
     html += '<div class="card"><h2>اپ موبایل</h2><p class="muted">در تب «اپ موبایل» PWA را نصب، لینک‌ها را Share و Rotation را مانیتور کن. PWA مرورگر مجوز VpnService سیستم‌عامل ندارد؛ اتصال واقعی با کلاینت استاندارد انجام می‌شود.</p></div>';
     shell(html);
     var a = $('#easy');

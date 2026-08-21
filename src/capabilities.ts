@@ -102,7 +102,7 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-tcp-concurrent', 'tcp-concurrent در Clash', 'فعالسازی tcp-concurrent روی پروکسیها در پروفایلهای Turbo و GOD.'),
   c('config', 'cfg-health-interval', 'Health Check ادواری', 'بازهٔ الفتح پریودیک گروهها در خروجی Clash از پروفایل سرعت.'),
   c('config', 'cfg-tolerance', 'Tolerance قابل تنظیم', 'Tolerance گروه url-test از پروفایل سرعت گرفته میشود.'),
-  c('config', 'cfg-health-url', 'Health URL قابل تنظیم', 'آدرس Health Check در خروجیها از تنظیمات پنل؛ خالی = بهصورت پیشرفته از Endpoint اول.'),
+  c('config', 'cfg-health-url', 'Health URL قابل تنظیم', 'آدرس Health Check در خروجی‌ها از تنظیمات پنل؛ خالی یعنی gstatic مستقل تا اتصال به خود Worker باعث Loop نشود.'),
   c('config', 'cfg-sing-urltest', 'URLTest در sing-box', 'خروجی sing-box با اورتست برای انتخاب بهترین مسیر.'),
   c('config', 'cfg-sing-selector', 'Selector در sing-box', 'Selector با قابلیت انتخاب دستی در sing-box.'),
   c('config', 'cfg-sing-tun', 'TUN inbound در sing-box', 'ورودی TUN با auto_route در خروجی sing-box.'),
@@ -330,7 +330,7 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'build-endpoint-select', 'انتخاب دامنه‌های واقعی', 'Auto Build انتخاب چند Endpoint یا انتخاب همه را می‌پذیرد و فقط همان گزینه‌ها را Probe می‌کند.'),
   c('config', 'build-route-count-free', 'تعداد آزاد ۱ تا ۲۰۰', 'تعداد کانفیگ به‌جای فهرست ثابت با ورودی عددی معتبر انتخاب می‌شود.'),
   c('scanner', 'scan-owned-marker', 'تأیید مالکیت مسیر Worker', 'Probe فقط پاسخ سالم /healthz با Marker خود AMINNOVA را معتبر می‌داند و دامنه نامرتبط را وارد خروجی نمی‌کند.'),
-  c('scanner', 'scan-browser-ws', 'تست WebSocket از ISP مرورگر', 'بعد از ساخت، پنل یک Upgrade واقعی WSS را از شبکه همان کاربر اجرا و نتیجه یا Timeout را نمایش می‌دهد.'),
+  c('scanner', 'scan-browser-ws', 'تست کامل تونل از ISP مرورگر', 'بعد از ساخت، پنل از شبکه همان کاربر WSS را باز می‌کند، هدر VLESS و درخواست TCP واقعی می‌فرستد و فقط دریافت پاسخ باینری معتبر را موفق می‌داند.'),
   c('config', 'cfg-workers-ai-advice', 'راهنمای اختیاری Workers AI', 'با انتخاب کاربر، binding رسمی Cloudflare فقط از اعداد Probe یک Profile معتبر پیشنهاد می‌دهد؛ Timeout یا سهمیه هرگز ساخت را متوقف نمی‌کند.'),
   // ---------------------------------------------------- liquid/PWA/rolling pool
   c('deploy', 'pwa-web-manifest', 'Web App Manifest نصب‌پذیر', 'manifest.webmanifest نام، رنگ، حالت standalone، آیکون و Scope اپ AMINNOVA را تعریف می‌کند.'),
@@ -404,6 +404,13 @@ export const CAPABILITIES: Capability[] = [
   c('deploy', 'pwa-apple-meta', 'متادیتای نصب iOS', 'apple-mobile-web-app-capable، عنوان و Status Bar برای افزودن پنل به Home Screen ثبت شده‌اند.'),
   c('security', 'pwa-same-origin-assets', 'دارایی‌های PWA هم‌مبدأ', 'Manifest، Service Worker، CSS، JavaScript و Icon فقط از همان Worker و زیر هدرهای امنیتی ارائه می‌شوند.'),
   c('security', 'sub-pragma-no-cache', 'Pragma امن Subscription', 'علاوه بر Cache-Control، هدر pragma no-cache برای واسط‌های قدیمی روی ساب تنظیم می‌شود.'),
+  c('config', 'cfg-nonloop-health', 'Health Check بدون TCP Loop', 'URLTest پیش‌فرض به مقصد عمومی مستقل می‌رود و هرگز Worker را از داخل تونل خودش صدا نمی‌زند؛ این کار Timeout کاذب همه مسیرها را حذف می‌کند.'),
+  c('config', 'cfg-direct-safe-anchor', 'مسیر DIRECT SAFE سازگار', 'مسیر اول بدون Anycast، Path padding و Early Data صادر می‌شود تا کلاینت یا Middlebox ناسازگار همیشه یک مسیر محافظه‌کار داشته باشد.'),
+  c('protocol', 'proto-ws-pair-direction', 'جهت صحیح WebSocketPair', 'سمت Client از Pair به پاسخ 101 برگردانده و سمت Server داخل Worker accept می‌شود تا Frameهای VLESS واقعاً به Handler برسند.'),
+  c('protocol', 'proto-connect-deadline', 'Deadline واقعی اتصال TCP', 'بازشدن Socket و مرحله Connect هر دو Deadline دارند؛ مقصد خراب دیگر WebSocket را بی‌نهایت باز و معطل نگه نمی‌دارد.'),
+  c('protocol', 'proto-fast-doh-race', 'Failover هم‌زمان DoH', 'Resolverهای مجاز هم‌زمان پرسیده می‌شوند تا خرابی Resolver اول چند Timeout متوالی پیش از اتصال ایجاد نکند.'),
+  c('scanner', 'scan-vless-payload', 'Probe با Payload واقعی VLESS', 'تست مرورگر بعد از 101 یک Packet استاندارد VLESS و درخواست HTTP می‌فرستد و صرف بازشدن WebSocket را موفق گزارش نمی‌کند.'),
+  c('deploy', 'deploy-release-marker', 'شناسه Release قابل بررسی', 'healthz، Subscription و Topbar شناسه نسخه Timeout Fix را نمایش می‌دهند تا Deploy قدیمی فوراً تشخیص داده شود.'),
 ];
 
 export function totalCapabilities(): number {

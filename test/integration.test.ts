@@ -23,6 +23,8 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
+    expect(data.release).toBe('2026.08.21-timeout-fix.1');
+    expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
     expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
@@ -106,6 +108,8 @@ describe('owner login & session', () => {
 describe('subscription users (unlimited semantics)', () => {
   let userId = '';
   let token = '';
+  let routePath = '';
+  let userUuid = '';
 
   it('creates an unlimited user — zero stays zero', async () => {
     const r = await w.api(ownerCookie, '/api/user-create', {
@@ -126,6 +130,50 @@ describe('subscription users (unlimited semantics)', () => {
     expect(u.token).toMatch(/^[0-9a-f]{64}$/);
     userId = u.id;
     token = u.token;
+    routePath = u.routes[0].path;
+    userUuid = u.uuid;
+  });
+
+  it('delivers client frames to the Worker-side WebSocket endpoint', async () => {
+    const response = await w.mf.dispatchFetch(`${w.base}${routePath}`, {
+      headers: { Upgrade: 'websocket' },
+    });
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    socket!.accept();
+    const closed = new Promise<{ code: number; reason: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('websocket-close-timeout')), 1000);
+      socket!.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve({ code: event.code, reason: event.reason });
+      });
+    });
+    socket!.send(new Uint8Array(20).fill(0xff));
+    await expect(closed).resolves.toEqual(expect.objectContaining({ code: 1002 }));
+  });
+
+  it('parses a valid VLESS frame and rejects a private target immediately', async () => {
+    const response = await w.mf.dispatchFetch(`${w.base}${routePath}`, {
+      headers: { Upgrade: 'websocket' },
+    });
+    const socket = response.webSocket!;
+    socket.accept();
+    const uuid = userUuid.replace(/-/g, '').match(/../g)!.map((hex) => Number.parseInt(hex, 16));
+    const frame = Uint8Array.from([
+      0, ...uuid, 0, // version, UUID, addon length
+      1, 1, 187, // TCP, port 443
+      1, 127, 0, 0, 1, // IPv4 127.0.0.1
+    ]);
+    const closed = new Promise<{ code: number; reason: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('vless-close-timeout')), 1000);
+      socket.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve({ code: event.code, reason: event.reason });
+      });
+    });
+    socket.send(frame);
+    await expect(closed).resolves.toEqual({ code: 1008, reason: 'private-ip' });
   });
 
   it('creates a limited user with real numbers', async () => {
@@ -435,6 +483,12 @@ describe('settings', () => {
       settings: { configNameTemplate: '{nope}' },
     });
     expect(bad.status).toBe(400);
+
+    const healthLoop = await w.api(ownerCookie, '/api/settings', {
+      settings: { healthUrl: 'https://nova.test/healthz' },
+    });
+    expect(healthLoop.status).toBe(400);
+    expect(healthLoop.data.error).toBe('health-loop');
   });
 });
 
@@ -705,6 +759,7 @@ describe('AMINNOVA reliability regressions', () => {
       expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
       expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
       expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-timeout-fix.1');
       expect(res.headers.get('cache-control')).toContain('no-store');
       expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);

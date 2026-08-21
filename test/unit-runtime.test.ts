@@ -132,6 +132,29 @@ describe('Durable Object cold-start persistence', () => {
 });
 
 describe('VLESS downstream framing', () => {
+  it('ends a socket that never opens instead of leaving clients to time out forever', async () => {
+    let ended = 0;
+    const socket: TcpSocket = {
+      opened: new Promise(() => undefined),
+      write: () => undefined,
+      end: () => { ended += 1; },
+      onData: () => undefined,
+      onClose: () => undefined,
+      onError: () => undefined,
+    };
+    const target: VlessTarget = { command: CMD_TCP, port: 443, addressType: ATYP_DOMAIN, address: 'example.com' };
+    const session = new VlessSession(target, {
+      client: { send: () => undefined },
+      hooks: { tcpConnect: async () => socket, dohQuery: async () => null },
+      policy: { tcpPorts: [443], dohList: [], tcpRetries: 1, connectTimeoutMs: 20 },
+    });
+    await session.start();
+    const report = await session.report;
+    expect(report.status).toBe('error');
+    expect(report.reason).toBe('socket-open-timeout');
+    expect(ended).toBe(1);
+  });
+
   it('prefixes only the first upstream frame with the VLESS response header', async () => {
     const dataCallbacks: Array<(data: Uint8Array) => void> = [];
     const closeCallbacks: Array<() => void> = [];

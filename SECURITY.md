@@ -98,6 +98,12 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   sessions, so only route order and validated Cloudflare connection IPs rotate.
 - Manual front IPs must belong to Cloudflare's published IPv4 ranges; TLS SNI
   and WebSocket Host remain the real Worker/custom-domain hostname.
+- Client health checks use an independent non-Cloudflare target. Sending a
+  tunneled health request back to the same Worker creates a TCP loop, while
+  Workers Sockets intentionally block outbound connections to Cloudflare IPs.
+- Every profile keeps a direct, no-early-data `DIRECT SAFE` compatibility
+  anchor. Socket-open deadlines and concurrent DoH failover prevent indefinite
+  pending sessions, but cannot override Cloudflare's destination restrictions.
 
 ### Honest measurements
 

@@ -124,6 +124,25 @@ describe('config builder — output formats', () => {
     expect(uri.endsWith('#AMINCK GOD Edition')).toBe(true);
   });
 
+  it('keeps the first direct route as a no-early-data compatibility anchor', () => {
+    const user = userFixture({
+      routes: routesFor('u'.repeat(24), undefined, 3).map((route) => ({ ...route, padding: 'padvalue' })),
+      speedPreset: 'god',
+    });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!.payload.split('\n');
+    expect(raw[0]).toContain('ed=0');
+    expect(raw[0]).toContain('DIRECT SAFE');
+    expect(raw[0]).not.toContain('pad%3D');
+    expect(raw[1]).toContain('ed=4096');
+
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect((clash.match(/max-early-data:/g) ?? [])).toHaveLength(2);
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    const vless = singbox.outbounds.filter((outbound: { type: string }) => outbound.type === 'vless');
+    expect(vless[0].transport.max_early_data).toBeUndefined();
+    expect(vless[1].transport.max_early_data).toBe(4096);
+  });
+
   it('clash yaml contains NOVA groups, unified-delay and store-selected', () => {
     const user = userFixture();
     const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
@@ -182,10 +201,17 @@ describe('config builder — output formats', () => {
     expect(json.route.final).toBe('NOVA-SMART');
   });
 
-  it('health URL falls back to the first route host /healthz', () => {
+  it('health URL uses a non-Worker target to avoid Cloudflare TCP loops', () => {
     const settings = settingsFixture({ healthUrl: '' });
     const clash = buildFormats(ctx(userFixture(), settings), ['clash'])[0]!.payload;
-    expect(clash).toContain('https://edge-1.example.workers.dev/healthz');
+    expect(clash).toContain('https://www.gstatic.com/generate_204');
+    expect(clash).not.toContain('https://edge-1.example.workers.dev/healthz');
+  });
+
+  it('rejects a custom health URL that loops back through the first Worker route', () => {
+    const settings = settingsFixture({ healthUrl: 'https://edge-1.example.workers.dev/healthz' });
+    const clash = buildFormats(ctx(userFixture(), settings), ['clash'])[0]!.payload;
+    expect(clash).toContain('https://www.gstatic.com/generate_204');
   });
 
   it('custom health URL is respected', () => {

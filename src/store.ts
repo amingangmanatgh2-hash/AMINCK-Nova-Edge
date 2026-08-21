@@ -913,6 +913,14 @@ export class AMINCKStore {
     settings.healthUrl = /^https?:\/\//.test(String(settings.healthUrl ?? ''))
       ? String(settings.healthUrl).slice(0, 300)
       : '';
+    if (settings.healthUrl) {
+      try {
+        const target = new URL(settings.healthUrl);
+        if (settings.endpoints.some((endpoint) => endpoint.host.toLowerCase() === target.hostname.toLowerCase())) {
+          settings.healthUrl = '';
+        }
+      } catch { settings.healthUrl = ''; }
+    }
     settings.doh = isSafeDoH(String(settings.doh ?? '')) ? String(settings.doh) : defaults.doh;
     settings.dohAlt = Array.isArray(settings.dohAlt)
       ? settings.dohAlt.map(String).filter(isSafeDoH).slice(0, 6)
@@ -1536,7 +1544,18 @@ export class AMINCKStore {
     if (patch.supportUrl !== undefined) s.supportUrl = String(patch.supportUrl).trim().slice(0, 300);
     if (patch.healthUrl !== undefined) {
       const u = String(patch.healthUrl).trim();
-      s.healthUrl = /^https?:\/\//.test(u) ? u.slice(0, 300) : '';
+      if (!u) s.healthUrl = '';
+      else {
+        let target: URL;
+        try { target = new URL(u); } catch { return json({ error: 'bad-health-url', message: 'Health URL معتبر نیست' }, 400); }
+        if (!['http:', 'https:'].includes(target.protocol)) {
+          return json({ error: 'bad-health-url', message: 'Health URL باید HTTP یا HTTPS باشد' }, 400);
+        }
+        if (s.endpoints.some((endpoint) => endpoint.host.toLowerCase() === target.hostname.toLowerCase())) {
+          return json({ error: 'health-loop', message: 'Health URL نباید دامنه همین Worker باشد؛ این کار TCP Loop و Timeout می‌سازد' }, 400);
+        }
+        s.healthUrl = u.slice(0, 300);
+      }
     }
     if (patch.doh !== undefined) {
       const u = String(patch.doh).trim();
