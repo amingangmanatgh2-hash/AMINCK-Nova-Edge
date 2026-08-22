@@ -17,6 +17,7 @@ export type BlockReason =
   | 'udp-not-dns'
   | 'port-not-allowed'
   | 'bad-address-type'
+  | 'private-hostname'
   | 'dns-unresolvable'
   | 'connect-failed';
 
@@ -24,16 +25,25 @@ export type TargetDecision =
   | { allowed: true }
   | { allowed: false; reason: BlockReason };
 
+/** Reject local/special-use names before native runtime DNS fallback. */
+export function isPublicProxyHostname(value: string): boolean {
+  const host = value.trim().toLowerCase().replace(/\.$/, '');
+  if (host.length === 0 || host.length > 253 || !host.includes('.')) return false;
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(host) || host.includes('..')) return false;
+  const blocked = ['localhost', 'local', 'internal', 'lan', 'home.arpa', 'test', 'invalid', 'example', 'onion'];
+  return !blocked.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 /**
  * Pure classification of a VLESS target before any socket is opened.
  * - UDP is only permitted for DNS on port 53 (no open proxy)
  * - SMTP ports are always blocked
- * - outbound port must be an allowed TLS port (Cloudflare TLS ports)
- * - IP literals pointing at private/reserved space are blocked
+ * - outbound port must be in the deployment's conservative TCP allow-list
+ * - private IP literals and local/special-use hostnames are blocked
  */
 export function classifyTarget(
   target: VlessTarget,
-  tlsPorts: number[],
+  tcpPorts: number[],
   isPrivateIp: (s: string) => boolean = isPrivateLiteral,
 ): TargetDecision {
   if (target.command === CMD_UDP && target.port !== 53) {
@@ -42,11 +52,14 @@ export function classifyTarget(
   if (isSmtpPort(target.port)) {
     return { allowed: false, reason: 'smtp-port' };
   }
-  if (target.command === CMD_TCP && !tlsPorts.includes(target.port)) {
+  if (target.command === CMD_TCP && !tcpPorts.includes(target.port)) {
     return { allowed: false, reason: 'port-not-allowed' };
   }
   if (target.addressType !== 1 && target.addressType !== 2 && target.addressType !== 3) {
     return { allowed: false, reason: 'bad-address-type' };
+  }
+  if (target.addressType === 2 && !/^\d+\.\d+\.\d+\.\d+$/.test(target.address) && !isPublicProxyHostname(target.address)) {
+    return { allowed: false, reason: 'private-hostname' };
   }
   const isIpLiteral =
     target.addressType === 1 || target.addressType === 3 || /^\d+\.\d+\.\d+\.\d+$/.test(target.address);
@@ -104,7 +117,7 @@ export interface TcpSocket {
 }
 
 export interface SessionHooks {
-  /** Establish a TCP(+TLS) upstream connection. */
+  /** Establish a raw TCP upstream connection; client TLS bytes pass through unchanged. */
   tcpConnect(
     host: string,
     port: number,
@@ -123,7 +136,7 @@ export interface SessionReport {
 }
 
 export interface SessionPolicy {
-  tlsPorts: number[];
+  tcpPorts: number[];
   dohList: string[];
   tcpRetries: number;
   connectTimeoutMs: number;
@@ -146,6 +159,7 @@ export class VlessSession {
   private readonly policy: SessionPolicy;
   private udpBuffer: Uint8Array = new Uint8Array(0);
   private done = false;
+  private responseHeaderSent = false;
   private tcpSocket: TcpSocket | null = null;
   private pendingTcp: Uint8Array | null = null;
   private settle!: (r: SessionReport) => void;
@@ -211,11 +225,20 @@ export class VlessSession {
     let lastError = '';
     for (let attempt = 1; attempt <= this.policy.tcpRetries; attempt++) {
       try {
-        const sock = await this.hooks.tcpConnect(target.address, target.port, {
-          timeoutMs: this.policy.connectTimeoutMs,
-          servername: target.addressType === 2 ? target.address : undefined,
-        });
-        await sock.opened;
+        const sock = await withTimeout(
+          this.hooks.tcpConnect(target.address, target.port, {
+            timeoutMs: this.policy.connectTimeoutMs,
+            servername: target.addressType === 2 ? target.address : undefined,
+          }),
+          this.policy.connectTimeoutMs,
+          'connect-timeout',
+        );
+        try {
+          await withTimeout(sock.opened, this.policy.connectTimeoutMs, 'socket-open-timeout');
+        } catch (error) {
+          sock.end();
+          throw error;
+        }
         if (this.done) {
           sock.end();
           return;
@@ -224,7 +247,7 @@ export class VlessSession {
         sock.onData((data) => {
           this.bytesDown += data.length;
           this.maybeFlush();
-          this.client.send(data);
+          this.sendClient(data);
         });
         sock.onClose(() => this.settleNow('ok'));
         sock.onError((err) => this.settleNow('error', err instanceof Error ? err.message : String(err)));
@@ -273,7 +296,21 @@ export class VlessSession {
     frame[0] = (response.length >> 8) & 0xff;
     frame[1] = response.length & 0xff;
     frame.set(response, 2);
-    this.client.send(frame);
+    this.sendClient(frame);
+  }
+
+  /** Prefix the first downstream frame with the two-byte VLESS response header. */
+  private sendClient(data: Uint8Array): void {
+    if (this.responseHeaderSent) {
+      this.client.send(data);
+      return;
+    }
+    this.responseHeaderSent = true;
+    const framed = new Uint8Array(data.length + 2);
+    framed[0] = 0; // VLESS version
+    framed[1] = 0; // response addon length
+    framed.set(data, 2);
+    this.client.send(framed);
   }
 
   // ------------------------------------------------------------- lifecycle
@@ -298,6 +335,20 @@ export class VlessSession {
     }
     this.onStats?.(this.bytesUp, this.bytesDown);
     this.settle({ status, reason, bytesUp: this.bytesUp, bytesDown: this.bytesDown, dnsQueries: this.dnsQueries });
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, reason: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(reason)), Math.max(100, timeoutMs));
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

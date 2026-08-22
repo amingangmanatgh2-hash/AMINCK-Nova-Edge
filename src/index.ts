@@ -3,29 +3,48 @@
  *
  * Routing:
  *   GET  /healthz            public health check (CORS)
- *   GET  /                   API-only landing (no full admin UI)
+ *   GET  /                   Persian RTL browser admin panel
  *   GET  /app.js /app.css    minimal static assets
  *   POST /api/login …        JSON admin API (proxied to the Durable Object)
  *   POST /api/hot-update     one-click config regen without domain downtime
  *   GET  /sub/:token         subscriptions (v2ray base64 / clash / sing-box / raw)
  *   WS   /e<slug><userid>    VLESS over WebSocket proxy (random path + jitter)
  *
- * Security: Same-Origin checks on mutating requests, HMAC-signed HttpOnly
- * cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
+ * Security: Same-Origin checks on mutating requests, opaque server-stored
+ * 256-bit HttpOnly session cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
  * Permissions-Policy) and server-side permission enforcement in the DO.
  */
 import type { Env } from './store';
 import { AMINCKStore } from './store';
 import type { ConfigFormat, Endpoint, PanelSettings, User } from './types';
+import { MAX_PATHS } from './types';
 import { classifyTarget, VlessSession } from './proxy';
 import type { SessionHooks, TcpSocket } from './proxy';
 import type { VlessTarget } from './protocol';
 import { parseVlessHeader } from './protocol';
-import { verifySessionId, isPrivateLiteral } from './utils';
+import { isPrivateLiteral } from './utils';
 import { defaultRuntimeHooks, probeAll } from './probe';
-import { UI_APP_CSS, UI_APP_JS, uiShell } from './ui';
+import { aiGameIdReference, deterministicAiBuildPlan, parseAiBuildPlan } from './ai';
+import {
+  UI_APP_CSS,
+  UI_APP_JS,
+  UI_ICON_SVG,
+  UI_MANIFEST_JSON,
+  UI_SW_JS,
+  uiShell,
+} from './ui';
 
 export { AMINCKStore };
+
+const AMINNOVA_RELEASE = '2026.08.22-ai-low-ping.4';
+const AMINNOVA_VERSION = '1.3.0';
+const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
+let UPDATE_CACHE: { expiresAt: number; value: Record<string, unknown> } | null = null;
+
+const PANEL_ASSETS = new Set([
+  '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
+  '/icon.svg', '/icon-192.png', '/icon-512.png', '/favicon.ico',
+]);
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -35,32 +54,51 @@ export default {
 
     if (path === '/healthz') {
       return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINCK GOD Edition', ts: Date.now() }), {
-          headers: { 'content-type': 'application/json' },
+        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', version: AMINNOVA_VERSION, release: AMINNOVA_RELEASE, ts: Date.now() }), {
+          headers: { 'content-type': 'application/json', 'x-aminck-release': AMINNOVA_RELEASE },
         }),
         { cors: true },
       );
     }
 
-    if (request.method === 'GET' && (path === '/' || path === '/app.js' || path === '/app.css')) {
-      // API-only landing: static assets from public/ (generated from src/ui.ts)
-      // still go through the Worker so security headers apply.
-      if (env.ASSETS) {
+    if (request.method === 'GET' && PANEL_ASSETS.has(path)) {
+      // Static PWA assets are generated from src/ui.ts and still go through
+      // the Worker so security headers apply. API/subscription responses are
+      // deliberately excluded from the service-worker cache.
+      if (env.ASSETS && path !== '/favicon.ico') {
         const assetRes = await env.ASSETS.fetch(request);
-        if (assetRes.status !== 404) return withHeaders(assetRes, {});
+        if (assetRes.status !== 404) {
+          const headers = new Headers(assetRes.headers);
+          if (path === '/sw.js') {
+            headers.set('cache-control', 'no-cache, no-store, must-revalidate');
+            headers.set('service-worker-allowed', '/');
+          }
+          return withHeaders(new Response(assetRes.body, { status: assetRes.status, headers }), {});
+        }
       }
-      if (path === '/') return withHeaders(html(uiShell('AMINCK GOD Edition')), {});
+      if (path === '/') return withHeaders(html(uiShell('AMINNOVA')), {});
       if (path === '/app.js') {
-        return withHeaders(
-          new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }),
-          {},
-        );
+        return withHeaders(new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }), {});
       }
-      return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
+      if (path === '/app.css') {
+        return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
+      }
+      if (path === '/manifest.webmanifest') {
+        return withHeaders(new Response(UI_MANIFEST_JSON, { headers: { 'content-type': 'application/manifest+json; charset=utf-8' } }), {});
+      }
+      if (path === '/sw.js') {
+        return withHeaders(new Response(UI_SW_JS, { headers: {
+          'content-type': 'application/javascript; charset=utf-8',
+          'cache-control': 'no-cache, no-store, must-revalidate',
+          'service-worker-allowed': '/',
+        } }), {});
+      }
+      if (path === '/icon-192.png' || path === '/icon-512.png') {
+        return withHeaders(json({ error: 'asset-binding-required' }, 404), {});
+      }
+      return withHeaders(new Response(UI_ICON_SVG, { headers: { 'content-type': 'image/svg+xml; charset=utf-8' } }), {});
     }
-    if (request.method === 'GET' && (path === '/favicon.ico' || path === '/robots.txt')) {
-      return new Response('', { status: 204 });
-    }
+    if (request.method === 'GET' && path === '/robots.txt') return new Response('', { status: 204 });
 
     if (path.startsWith('/api/')) {
       return handleApi(request, env, ctx, host);
@@ -72,7 +110,7 @@ export default {
     }
 
     // Anti-detect path jitter: slug length 6–12
-    if (path.match(/^\/[et][a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
+    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
       return handleWs(request, env, ctx, host, path);
     }
 
@@ -89,6 +127,79 @@ export default {
 // ---------------------------------------------------------------------------
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+type AiProfileAdvice = {
+  speedPreset: 'stable' | 'balanced' | 'turbo' | 'god' | 'latency';
+  profileMode: 'auto' | 'fallback' | 'balance';
+};
+
+export function parseAiProfileAdvice(value: unknown): AiProfileAdvice | null {
+  const response = value && typeof value === 'object'
+    ? String((value as { response?: unknown; output_text?: unknown }).response
+      ?? (value as { output_text?: unknown }).output_text ?? '')
+    : String(value ?? '');
+  const match = response.match(/\{[\s\S]*?\}/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[0]) as Partial<AiProfileAdvice>;
+    if (!['stable', 'balanced', 'turbo', 'god', 'latency'].includes(String(parsed.speedPreset))) return null;
+    if (!['auto', 'fallback', 'balance'].includes(String(parsed.profileMode))) return null;
+    return parsed as AiProfileAdvice;
+  } catch {
+    return null;
+  }
+}
+
+async function createAiBuildPlan(prompt: string, env: Env): Promise<Record<string, unknown>> {
+  const fallback = deterministicAiBuildPlan(prompt);
+  if (!env.AI) {
+    return {
+      ok: true,
+      plan: fallback,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'Binding هوش مصنوعی در دسترس نیست؛ موتور امن فارسی همان طرح را به‌صورت محلی ساخت.',
+    };
+  }
+  try {
+    const instruction = [
+      'You are the constrained AMINNOVA subscription planner. Return one JSON object only.',
+      'Allowed fields: paths, subscriptionCount, usageMode, gameIds, ironMode, ironCount, domesticDirect, speedPreset, profileMode, dynamicPool, rotationMinutes, useCleanCatalog.',
+      'speedPreset must be stable|balanced|turbo|god|latency; profileMode auto|fallback|balance; usageMode normal|gaming.',
+      'Use latency for lowest measured route selection, fallback for interruption resistance, and domesticDirect for explicitly requested Iranian/national-network continuity.',
+      'Never promise a ping, location, universal access, censorship bypass, or uptime. Never return URLs, domains, secrets, code, or extra keys.',
+      `Valid game ids: ${aiGameIdReference()}`,
+    ].join('\n');
+    const result = await Promise.race([
+      env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+        messages: [
+          { role: 'system', content: instruction },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 450,
+        temperature: 0,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 5000)),
+    ]);
+    const parsed = parseAiBuildPlan(result, fallback);
+    if (!parsed) throw new Error('ai-invalid-plan');
+    return {
+      ok: true,
+      plan: parsed,
+      cloudflareAiUsed: true,
+      deterministicFallback: false,
+      message: 'Cloudflare AI طرح را ساخت و Backend همه فیلدها و Game IDها را دوباره محدود و اعتبارسنجی کرد.',
+    };
+  } catch {
+    return {
+      ok: true,
+      plan: fallback,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'AI ابری پاسخ معتبر نداد؛ موتور امن فارسی بدون متوقف‌کردن ساخت، طرح محدودشده را آماده کرد.',
+    };
+  }
+}
 
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host: string): Promise<Response> {
   const url = new URL(request.url);
@@ -108,7 +219,7 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
       ip: clientIp(request),
     });
     const data = await doRes.json().catch(() => ({}));
-    const headers = new Headers();
+    const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
     if (data && typeof data === 'object' && (data as { ok?: boolean }).ok && typeof (data as { session?: string }).session === 'string') {
       headers.set(
         'set-cookie',
@@ -122,8 +233,8 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
     return withHeaders(json(launchInfo()), {});
   }
 
-  if (path === '/api/cf-bootstrap' && request.method === 'POST') {
-    return handleCfBootstrap(request);
+  if (path === '/api/update-check' && request.method === 'GET') {
+    return withHeaders(json(await checkForSourceUpdate()), {});
   }
 
   if (path === '/api/logout' && request.method === 'POST') {
@@ -143,16 +254,97 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
   const sessionId = (await cookieSession(request, env)) ?? '';
   const rest = path.slice('/api'.length) || '/';
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+
+  if (path === '/api/ai-plan' && request.method === 'POST') {
+    if (!sessionId) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meResponse = await callDo(env, '/api/me', { sessionId });
+    if (!meResponse.ok) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meData = await meResponse.json() as { me?: { permissions?: string[] } };
+    if (!meData.me?.permissions?.includes('configs:build')) {
+      return withHeaders(json({ error: 'forbidden', message: 'دسترسی ساخت کانفیگ لازم است' }, 403), {});
+    }
+    const prompt = String(body.prompt ?? '').trim().slice(0, 1000);
+    if (prompt.length < 3) {
+      return withHeaders(json({ error: 'bad-prompt', message: 'درخواست خود را حداقل در سه کاراکتر توضیح دهید' }, 400), {});
+    }
+    return withHeaders(json(await createAiBuildPlan(prompt, env)), {});
+  }
+
+  // Auto Build must always measure endpoints immediately before choosing them,
+  // including direct API calls (not only clicks coming from our browser UI).
+  // Only measured-healthy endpoints are passed as a preference; if none pass,
+  // the store safely falls back to the deployment's own registered hostname.
+  if (path === '/api/auto-build' && request.method === 'POST' && sessionId) {
+    delete body.aiApplied;
+    delete body.aiRecommendation;
+    let healthyForAdvice: Array<{ latencyMs: number }> = [];
+    let mayUseAi = false;
+    try {
+      const probeResponse = await handleProbe(request, env);
+      if (probeResponse.ok) {
+        // handleProbe has validated both the session and endpoints:probe
+        // permission, preventing forged cookies from consuming AI quota.
+        mayUseAi = true;
+        const probe = (await probeResponse.json()) as {
+          results?: Record<string, { ok?: boolean; latencyMs?: number }>;
+          ordered?: Endpoint[];
+        };
+        const selectedIds = new Set((Array.isArray(body.endpointIds) ? body.endpointIds : []).map(String));
+        const healthy = (probe.ordered ?? []).filter((endpoint) =>
+          probe.results?.[endpoint.id]?.ok === true && (selectedIds.size === 0 || selectedIds.has(endpoint.id)),
+        );
+        healthyForAdvice = healthy.map((endpoint) => ({
+          latencyMs: Math.max(0, Math.round(Number(probe.results?.[endpoint.id]?.latencyMs ?? 0))),
+        }));
+        if (healthy.length > 0) body.orderedEndpoints = healthy;
+      }
+    } catch {
+      // Fresh deployments still have their own hostname as a safe fallback.
+    }
+
+    if (body.useCloudflareAi === true && mayUseAi && env.AI) {
+      try {
+        const prompt = [
+          'You select conservative AMINNOVA client profile settings from measured data.',
+          'Return only JSON with speedPreset (stable|balanced|turbo|god|latency) and profileMode (auto|fallback|balance).',
+          `routeCount=${Math.max(1, Math.min(MAX_PATHS, Number(body.paths ?? 20) || 20))}`,
+          `healthyEndpointLatenciesMs=${healthyForAdvice.map((item) => item.latencyMs).join(',') || 'none'}`,
+          'Use latency/auto for Gaming or lowest measured delay; prefer fallback/stable when measurements are sparse or interruption resistance is requested. Never claim guaranteed connectivity or ping.',
+        ].join('\n');
+        const inference = env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 80,
+          temperature: 0,
+        });
+        const result = await Promise.race([
+          inference,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 4000)),
+        ]);
+        const advice = parseAiProfileAdvice(result);
+        if (advice) {
+          body.speedPreset = advice.speedPreset;
+          body.profileMode = advice.profileMode;
+          body.aiApplied = true;
+          body.aiRecommendation = `${advice.speedPreset}/${advice.profileMode}`;
+        }
+      } catch {
+        // AI is optional and can be quota/model restricted. Deterministic probe
+        // defaults remain authoritative and Auto Build must still succeed.
+      }
+    }
+  }
+
   const payload: Record<string, unknown> = { ...body, sessionId, ip: clientIp(request), reqHost: host };
   const doRes = await callDo(env, `/api${rest}`, payload);
   return withHeaders(doRes, {});
 }
 
-async function cookieSession(request: Request, env: Env): Promise<string | null> {
+async function cookieSession(request: Request, _env: Env): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? '';
-  const m = cookie.match(/(?:^|;\s*)nova_session=([^;]+)/);
-  if (!m) return null;
-  return verifySessionId(env.SESSION_SECRET ?? '', m[1]);
+  const m = cookie.match(/(?:^|;\s*)nova_session=([0-9a-f]{64})(?:;|$)/i);
+  // The cookie itself is a cryptographically random 256-bit bearer token.
+  // The Durable Object checks that it exists, is active and has not expired.
+  return m ? m[1]!.toLowerCase() : null;
 }
 
 /** Run an on-demand endpoint probe from the worker edge and store results. */
@@ -221,8 +413,15 @@ const seededHosts = new Set<string>();
 async function ensureSelfEndpoint(env: Env, host: string): Promise<void> {
   const clean = host.replace(/:\d+$/, '').toLowerCase();
   if (!clean || seededHosts.has(clean)) return;
-  seededHosts.add(clean);
-  await callDo(env, '/int/ensure-self', { host: clean }).catch(() => undefined);
+  // Mark the host as seeded only after Durable Object persistence succeeds.
+  // A transient cold-start failure must not poison this isolate and leave the
+  // deployment's own (known-working) hostname absent from generated routes.
+  try {
+    const response = await callDo(env, '/int/ensure-self', { host: clean });
+    if (response.ok) seededHosts.add(clean);
+  } catch {
+    // Retry on the next API request.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +450,13 @@ async function handleSub(
     user: User;
     settings: PanelSettings;
     payloads: Record<ConfigFormat, string>;
+    rotation?: {
+      enabled: boolean;
+      epoch: number;
+      nextRotationAt: number;
+      rotationMinutes: number;
+      activeRoutes: number;
+    };
   };
 
   let format: ConfigFormat;
@@ -271,14 +477,31 @@ async function handleSub(
   const headers = new Headers();
   headers.set('content-type', contentTypeFor(format));
   const safeName = user.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40) || 'sub';
-  headers.set('content-disposition', `attachment; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
+  // Keep payload visible when the operator opens a test/raw link in a browser;
+  // subscription clients still consume the exact same response body.
+  headers.set('content-disposition', `inline; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
   headers.set(
     'subscription-userinfo',
     `upload=0; download=${user.usageBytes}; total=${user.limitBytes}; expire=${user.expiresAt}`,
   );
   headers.set('profile-update-interval', `${settings.updateIntervalHours || 24}h`);
   if (settings.supportUrl) headers.set('support-url', settings.supportUrl);
-  headers.set('cache-control', 'no-store');
+  const rotation = data.rotation;
+  if (rotation?.enabled) {
+    headers.set('x-aminck-pool-mode', 'rolling');
+    headers.set('x-aminck-rotation-epoch', String(rotation.epoch));
+    headers.set('x-aminck-rotation-minutes', String(rotation.rotationMinutes));
+    headers.set('x-aminck-next-rotation', String(rotation.nextRotationAt));
+    headers.set('x-aminck-active-routes', String(rotation.activeRoutes));
+    headers.set('x-aminck-refresh-seconds', String(rotation.rotationMinutes * 60));
+  } else {
+    headers.set('x-aminck-pool-mode', 'fixed');
+  }
+  headers.set('etag', `W/"aminnova-${data.user.id}-${settings.configGeneration}-${rotation?.epoch ?? 0}-${format}"`);
+  headers.set('x-aminck-release', AMINNOVA_RELEASE);
+  headers.set('x-aminck-version', AMINNOVA_VERSION);
+  headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
+  headers.set('pragma', 'no-cache');
   return withHeaders(new Response(payload, { status: 200, headers }), {});
 }
 
@@ -308,7 +531,7 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
     uuid?: string;
     policy?: {
       dohList: string[];
-      tlsPorts: number[];
+      tcpPorts: number[];
       tcpRetries: number;
       connectTimeoutMs: number;
       maxEarlyData: number;
@@ -320,17 +543,33 @@ async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host:
   }
 
   const pair = new WebSocketPair();
-  const server = pair[0];
+  // WebSocketPair[0] is returned to the client; [1] is the Worker-side socket.
+  // Reversing them still produced HTTP 101 but Worker message handlers never
+  // received client frames, so every valid VLESS config stalled until timeout.
+  const client = pair[0];
+  const server = pair[1];
   server.accept();
-  const client = pair[1];
 
   const bridge = new WsVlessBridge(server, env, ctx, conn.uuid!, conn.policy!);
   server.addEventListener('message', (ev: MessageEvent) => {
     if (typeof ev.data === 'string') return;
-    bridge.feed(ev.data as ArrayBuffer | ArrayBufferView);
+    if (ev.data instanceof ArrayBuffer || ArrayBuffer.isView(ev.data)) {
+      bridge.feed(ev.data as ArrayBuffer | ArrayBufferView);
+      return;
+    }
+    // Some local/runtime WebSocket adapters surface binary frames as Blob.
+    // Accepting it prevents a successful 101 followed by an empty VLESS parser.
+    if (ev.data instanceof Blob) {
+      void ev.data.arrayBuffer().then((data) => bridge.feed(data)).catch(() => bridge.shutdown());
+    }
   });
   server.addEventListener('close', () => bridge.shutdown());
   server.addEventListener('error', () => bridge.shutdown());
+  const earlyData = decodeWsEarlyData(
+    request.headers.get('sec-websocket-protocol'),
+    conn.policy!.maxEarlyData,
+  );
+  if (earlyData) bridge.feed(earlyData);
   ctx.waitUntil(bridge.finished());
 
   return withHeaders(new Response(null, { status: 101, webSocket: client }), {});
@@ -352,7 +591,7 @@ class WsVlessBridge {
     private uuid: string,
     private policy: {
       dohList: string[];
-      tlsPorts: number[];
+      tcpPorts: number[];
       tcpRetries: number;
       connectTimeoutMs: number;
       maxEarlyData: number;
@@ -378,15 +617,26 @@ class WsVlessBridge {
         this.close(1002, parsed.reason);
         return;
       }
-      const decision = classifyTarget(parsed.target, this.policy.tlsPorts);
+      if (parsed.uuid.toLowerCase() !== this.uuid.toLowerCase()) {
+        this.close(1008, 'uuid-mismatch');
+        return;
+      }
+      const decision = classifyTarget(parsed.target, this.policy.tcpPorts);
       if (!decision.allowed) {
         this.close(1008, decision.reason);
         return;
       }
       this.headerBuf = new Uint8Array(0);
-      this.engine = this.createEngine(parsed.target);
-      void this.engine.start();
-      if (parsed.payload.length > 0) this.engine.feed(parsed.payload);
+      const engine = this.createEngine(parsed.target);
+      this.engine = engine;
+      void engine.start().then(() => engine.report).then((report) => {
+        if (this.closed) return;
+        if (report.status === 'ok') this.close(1000, 'upstream-closed');
+        else this.close(1011, safeWsReason(report.reason ?? report.status));
+      }).catch((error: unknown) => {
+        if (!this.closed) this.close(1011, safeWsReason(error instanceof Error ? error.message : 'upstream-error'));
+      });
+      if (parsed.payload.length > 0) engine.feed(parsed.payload);
       return;
     }
     this.engine.feed(bytes);
@@ -405,7 +655,7 @@ class WsVlessBridge {
       },
       hooks: makeSessionHooks(this.policy),
       policy: {
-        tlsPorts: this.policy.tlsPorts,
+        tcpPorts: this.policy.tcpPorts,
         dohList: this.policy.dohList,
         tcpRetries: this.policy.tcpRetries,
         connectTimeoutMs: this.policy.connectTimeoutMs,
@@ -437,6 +687,11 @@ class WsVlessBridge {
   }
 }
 
+function safeWsReason(reason: string): string {
+  const safe = reason.replace(/[^\x20-\x7e]/g, '').slice(0, 100);
+  return safe || 'upstream-error';
+}
+
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   const out = new Uint8Array(a.length + b.length);
   out.set(a, 0);
@@ -444,9 +699,24 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out;
 }
 
+/** Decode Xray-style base64url WebSocket early data, rejecting large headers. */
+export function decodeWsEarlyData(value: string | null, maxBytes: number): Uint8Array | null {
+  if (!value || value.includes(',') || value.length > Math.max(32, maxBytes * 2)) return null;
+  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  try {
+    const binary = atob(padded);
+    if (binary.length === 0 || binary.length > maxBytes) return null;
+    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
 function makeSessionHooks(policy: {
   dohList: string[];
-  tlsPorts: number[];
+  tcpPorts: number[];
   tcpRetries: number;
   connectTimeoutMs: number;
   maxEarlyData: number;
@@ -456,16 +726,20 @@ function makeSessionHooks(policy: {
       let ip = host;
       const isIpLiteral = /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':');
       if (!isIpLiteral) {
-        const resolved = await resolvePublic(host, policy.dohList, opts.timeoutMs);
-        if (!resolved) throw new Error('dns-unresolvable');
-        ip = resolved;
+        // Prefer a public IP validated through DoH. If every configured DoH
+        // provider is temporarily unreachable, let the Workers Sockets runtime
+        // resolve the already policy-checked public hostname instead of making
+        // every website fail with dns-unresolvable. Cloudflare still blocks
+        // private-network and same-Worker socket targets at the platform layer.
+        const resolved = await resolvePublic(host, policy.dohList, Math.min(opts.timeoutMs, 2500));
+        ip = resolved || host;
       }
       const { connect } = await import('cloudflare:sockets');
-      // Connect via the original hostname so the TLS SNI is the real
-      // destination domain (never a fake/third-party SNI).
+      // VLESS carries the client's own TLS handshake. The Worker must open a
+      // raw TCP socket; wrapping it in another TLS layer breaks HTTPS.
       const socket = connect(
-        { hostname: host, port },
-        { secureTransport: 'on', allowHalfOpen: false },
+        { hostname: ip, port },
+        { secureTransport: 'off', allowHalfOpen: false },
       );
       return socketAdapter(socket);
     },
@@ -510,7 +784,9 @@ function socketAdapter(socket: Socket): TcpSocket {
   return {
     opened: socket.opened as Promise<unknown>,
     write: (d) => {
-      writer.write(d).catch(() => undefined);
+      writer.write(d).catch((error) => {
+        for (const cb of errorCbs) cb(error);
+      });
     },
     end: () => {
       socket.close().catch(() => undefined);
@@ -522,25 +798,37 @@ function socketAdapter(socket: Socket): TcpSocket {
 }
 
 async function resolvePublic(hostname: string, dohList: string[], timeoutMs: number): Promise<string | null> {
+  const cacheKey = hostname.toLowerCase().replace(/\.$/, '');
+  const cached = DNS_CACHE.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.ip;
+  if (cached) DNS_CACHE.delete(cacheKey);
   const { buildDnsQuery, parseDnsAnswers } = await import('./protocol');
-  const id = Math.floor(Math.random() * 65535);
-  for (const doh of dohList) {
+  const resolvers = [...new Set(dohList.filter((doh) => /^https:\/\//i.test(doh)))];
+  // Run resolver failover concurrently. The old serial loop could consume
+  // three full timeout windows before even opening TCP, which mobile clients
+  // correctly surfaced as a tunnel timeout.
+  const answers = await Promise.all(resolvers.map(async (doh) => {
     try {
+      const id = Math.floor(Math.random() * 65535);
       const res = await fetch(doh, {
         method: 'POST',
         headers: { 'content-type': 'application/dns-message', accept: 'application/dns-message' },
         body: buildDnsQuery(id, hostname, 1),
         signal: AbortSignal.timeout(timeoutMs),
       });
-      if (!res.ok) continue;
-      const answers = parseDnsAnswers(new Uint8Array(await res.arrayBuffer()));
-      const ip = answers.find((a) => a.type === 1 && a.data && !isPrivateLiteral(a.data))?.data;
-      if (ip) return ip;
+      if (!res.ok) return null;
+      const parsed = parseDnsAnswers(new Uint8Array(await res.arrayBuffer()));
+      return parsed.find((answer) => answer.type === 1 && answer.data && !isPrivateLiteral(answer.data))?.data ?? null;
     } catch {
-      // failover
+      return null;
     }
+  }));
+  const ip = answers.find((answer): answer is string => typeof answer === 'string' && answer.length > 0) ?? null;
+  if (ip) {
+    if (DNS_CACHE.size >= 512) DNS_CACHE.delete(DNS_CACHE.keys().next().value as string);
+    DNS_CACHE.set(cacheKey, { ip, expiresAt: Date.now() + 60_000 });
   }
-  return null;
+  return ip;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,130 +852,72 @@ async function runCronProbe(env: Env): Promise<void> {
 // helpers
 // ---------------------------------------------------------------------------
 
-const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
-const CF_TOKEN_URL =
-  'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=' +
-  encodeURIComponent(
-    JSON.stringify([
-      { key: 'workers_scripts', type: 'edit' },
-      { key: 'account_settings', type: 'read' },
-    ]),
-  ) +
-  '&name=AMINCK-Nova-Edge';
+const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
 const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
 
 function launchInfo(): Record<string, unknown> {
   return {
     ok: true,
     repo: REPO,
-    tokenUrl: CF_TOKEN_URL,
     deployUrl: CF_DEPLOY_URL,
     dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
-    workerName: 'aminck-nova-god-v2',
-    hint: 'توکن را بساز، ورکر را با تنظیمات آماده Deploy کن، بعد توکن را اینجا بچسبان.',
+    workerName: 'aminnova',
+    version: AMINNOVA_VERSION,
+    release: AMINNOVA_RELEASE,
+    hint: 'Deploy رسمی را باز کنید؛ توکن کلودفلر هرگز داخل پنل وارد یا ارسال نمی‌شود.',
   };
 }
 
-async function handleCfBootstrap(request: Request): Promise<Response> {
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const token = String(body.token ?? '').trim();
-  const workerName = String(body.workerName ?? 'aminck-nova-god-v2')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '')
-    .slice(0, 63) || 'aminck-nova-god-v2';
-  if (!token || token.length < 20 || token.length > 200) {
-    return withHeaders(json({ error: 'bad-token', message: 'توکن کلودفلر نامعتبر است' }, 400), {});
-  }
-  const auth = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+async function checkForSourceUpdate(): Promise<Record<string, unknown>> {
+  if (UPDATE_CACHE && UPDATE_CACHE.expiresAt > Date.now()) return UPDATE_CACHE.value;
+  const source = 'https://raw.githubusercontent.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/arena/01a01b70-aminck-nova-edge/package.json';
   try {
-    const accRes = await fetch('https://api.cloudflare.com/client/v4/accounts?per_page=20', {
-      headers: auth,
-      signal: AbortSignal.timeout(12000),
+    const response = await fetch(source, {
+      headers: { accept: 'application/json', 'user-agent': 'AMINNOVA-Update-Check' },
+      signal: AbortSignal.timeout(5000),
+      cf: { cacheTtl: 300, cacheEverything: true },
     });
-    const accJson = (await accRes.json().catch(() => ({}))) as {
-      success?: boolean;
-      errors?: Array<{ message?: string }>;
-      result?: Array<{ id: string; name: string }>;
+    if (!response.ok) throw new Error(`github-${response.status}`);
+    const remote = await response.json() as { version?: unknown };
+    const latestVersion = /^\d+\.\d+\.\d+$/.test(String(remote.version)) ? String(remote.version) : AMINNOVA_VERSION;
+    const value = {
+      ok: true,
+      currentVersion: AMINNOVA_VERSION,
+      latestVersion,
+      updateAvailable: compareVersions(latestVersion, AMINNOVA_VERSION) > 0,
+      release: AMINNOVA_RELEASE,
+      source,
+      deployUrl: CF_DEPLOY_URL,
+      checkedAt: Date.now(),
+      autoUpdate: false,
+      message: 'بررسی نسخه خودکار است؛ نصب کد جدید فقط از Deploy امن Cloudflare/Git Integration انجام می‌شود و پنل توکن Cloudflare دریافت نمی‌کند.',
     };
-    if (!accRes.ok || !accJson.success || !accJson.result?.length) {
-      return withHeaders(
-        json(
-          {
-            error: 'cf-auth',
-            message: accJson.errors?.[0]?.message || 'توکن قبول نشد. Workers:Edit و Account:Read لازم است',
-          },
-          401,
-        ),
-        {},
-      );
-    }
-    const account = accJson.result[0]!;
-    const scriptsRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/scripts`,
-      { headers: auth, signal: AbortSignal.timeout(12000) },
-    );
-    const scriptsJson = (await scriptsRes.json().catch(() => ({}))) as {
-      result?: Array<{ id: string }>;
+    UPDATE_CACHE = { expiresAt: Date.now() + 5 * 60_000, value };
+    return value;
+  } catch (error) {
+    return {
+      ok: false,
+      currentVersion: AMINNOVA_VERSION,
+      latestVersion: null,
+      updateAvailable: false,
+      release: AMINNOVA_RELEASE,
+      source,
+      deployUrl: CF_DEPLOY_URL,
+      checkedAt: Date.now(),
+      autoUpdate: false,
+      message: `GitHub فعلاً قابل بررسی نیست: ${error instanceof Error ? error.message : 'network-error'}`,
     };
-    const names = (scriptsJson.result ?? []).map((s) => s.id);
-    const found = names.includes(workerName);
-    const subRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${account.id}/workers/subdomain`,
-      { headers: auth, signal: AbortSignal.timeout(8000) },
-    );
-    const subJson = (await subRes.json().catch(() => ({}))) as { result?: { subdomain?: string } };
-    const sub = subJson.result?.subdomain || '';
-    const url = sub ? `https://${workerName}.${sub}.workers.dev` : '';
-
-    if (found && typeof body.adminPassword === 'string' && body.adminPassword.length >= 10) {
-      await putWorkerSecret(account.id, workerName, token, 'ADMIN_PASSWORD', String(body.adminPassword));
-      const sess =
-        typeof body.sessionSecret === 'string' && body.sessionSecret.length >= 16
-          ? String(body.sessionSecret)
-          : crypto.randomUUID() + crypto.randomUUID();
-      await putWorkerSecret(account.id, workerName, token, 'SESSION_SECRET', sess);
-    }
-
-    return withHeaders(
-      json({
-        ok: true,
-        accountId: account.id,
-        accountName: account.name,
-        workerName,
-        found,
-        workers: names.slice(0, 30),
-        url,
-        ready: found && !!url,
-        message: found
-          ? 'ورکر پیدا شد — حدود ۱۰ ثانیه دیگر پنل آماده است'
-          : 'توکن درست است. اول دکمه ساخت ورکر را بزن (تنظیمات از قبل پر است) بعد دوباره وصل کن',
-        deployUrl: CF_DEPLOY_URL,
-        tokenUrl: CF_TOKEN_URL,
-      }),
-      {},
-    );
-  } catch {
-    return withHeaders(json({ error: 'cf-timeout', message: 'ارتباط با کلودفلر برقرار نشد' }, 504), {});
   }
 }
 
-async function putWorkerSecret(
-  accountId: string,
-  workerName: string,
-  token: string,
-  name: string,
-  value: string,
-): Promise<void> {
-  await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${workerName}/secrets`,
-    {
-      method: 'PUT',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name, text: value, type: 'secret_text' }),
-      signal: AbortSignal.timeout(10000),
-    },
-  ).catch(() => undefined);
+export function compareVersions(a: string, b: string): number {
+  const av = a.split('.').map(Number);
+  const bv = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const diff = (av[i] ?? 0) - (bv[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 function json(data: unknown, status = 200): Response {
@@ -719,5 +949,7 @@ function withHeaders(resp: Response, extra: { cors?: boolean }): Response {
     headers.set('access-control-allow-methods', 'GET, OPTIONS');
     headers.set('access-control-max-age', '86400');
   }
-  return new Response(resp.body, { status: resp.status, headers });
+  const init: ResponseInit = { status: resp.status, statusText: resp.statusText, headers };
+  if (resp.webSocket) init.webSocket = resp.webSocket;
+  return new Response(resp.body, init);
 }

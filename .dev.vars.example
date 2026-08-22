@@ -1,12 +1,6 @@
-# EDGE PANEL — local development secrets
-# Copy this file to `.dev.vars` (NEVER commit `.dev.vars` — it is git-ignored).
-# On Cloudflare, set the same two secrets with:
-#   wrangler secret put ADMIN_PASSWORD
-#   wrangler secret put SESSION_SECRET
+# AMINNOVA — required secret shown by the official Deploy to Cloudflare wizard.
+# Local development: copy this file to `.dev.vars` and choose your password.
+# CLI deployment: npx wrangler secret put ADMIN_PASSWORD
 #
-# ADMIN_PASSWORD — password of the owner account (username: AMINCK).
-#                  Minimum length: 10 characters.
+# Owner username is AMINCK. Minimum length is 10 characters.
 ADMIN_PASSWORD=
-# SESSION_SECRET — random key used to HMAC-SHA256 sign admin session cookies.
-#                  Generate with:  openssl rand -hex 32
-SESSION_SECRET=

@@ -32,15 +32,19 @@ export interface PowerSpec {
 
 export const POWER_LEVELS: Record<PowerLevel, PowerSpec> = {
   limited: { label: 'Limited', maxPaths: 5 },
-  normal: { label: 'Normal', maxPaths: 30 },
-  strong: { label: 'Strong', maxPaths: 80 },
-  ultra: { label: 'Ultra', maxPaths: 200 },
+  normal: { label: 'Normal', maxPaths: 100 },
+  strong: { label: 'Strong', maxPaths: 500 },
+  ultra: { label: 'Ultra', maxPaths: 2000 },
 };
 
 /** Maximum number of endpoints the scanner/settings accept. */
 export const MAX_ENDPOINTS = 50;
-/** Maximum number of paths a user subscription may hold. */
-export const MAX_PATHS = 200;
+/** Hard owner ceiling for routes emitted inside one subscription. */
+export const MAX_PATHS = 2000;
+/** Recommended mobile-safe ceiling; larger profiles are explicitly opt-in. */
+export const RECOMMENDED_MOBILE_PATHS = 200;
+/** Maximum subscriptions created by one automatic batch request. */
+export const MAX_BATCH_SUBSCRIPTIONS = 10;
 /** Minimum accepted admin password length. */
 export const MIN_PASSWORD_LENGTH = 10;
 /** Hard minimum for password-protected accounts. */
@@ -50,7 +54,7 @@ export const MAX_AUDIT_EVENTS = 1000;
 // Speed presets (all values are real knobs honoured by the generated configs)
 // ---------------------------------------------------------------------------
 
-export type SpeedPreset = 'stable' | 'balanced' | 'turbo' | 'god';
+export type SpeedPreset = 'stable' | 'balanced' | 'turbo' | 'god' | 'latency';
 
 export interface SpeedSpec {
   label: string;
@@ -109,12 +113,27 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
   god: {
     label: 'GOD',
     earlyData: 4096,
-    tcpRetries: 6,
-    healthInterval: 15,
-    tolerance: 30,
+    // More retries increase time-to-first-byte when an endpoint is dead.
+    // Two quick attempts are a better stability/latency trade-off at the edge.
+    tcpRetries: 2,
+    healthInterval: 25,
+    tolerance: 35,
     tcpConcurrent: true,
     dnsFailover: true,
-    probeTimeoutMs: 4000,
+    probeTimeoutMs: 3500,
+    downAfterFails: 1,
+  },
+  latency: {
+    label: 'LOW PING',
+    // Small optional early-data is faster to parse than oversized WS headers.
+    // Hostname-direct compatibility anchors still force this value to zero.
+    earlyData: 1536,
+    tcpRetries: 1,
+    healthInterval: 15,
+    tolerance: 20,
+    tcpConcurrent: true,
+    dnsFailover: true,
+    probeTimeoutMs: 2500,
     downAfterFails: 1,
   },
 };
@@ -125,37 +144,30 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
 
 /** Mechanism a subscription prefers when grouping multiple routes. */
 export type ProfileMode = 'auto' | 'fallback' | 'balance';
+/** Client-output intent. Gaming only changes routing/selection metadata; it cannot change physical distance. */
+export type UsageMode = 'normal' | 'gaming';
 
 export type Fingerprint = 'chrome' | 'firefox' | 'safari' | 'edge' | 'random';
 
 export const FINGERPRINTS: Fingerprint[] = ['chrome', 'firefox', 'safari', 'edge', 'random'];
 
-/** TLS ports Cloudflare accepts for HTTPS traffic (plus 8443 for Enterprise). */
+/** HTTPS listener ports supported by Cloudflare proxied hostnames. */
 export const CLOUDFLARE_TLS_PORTS = [443, 2053, 2083, 2087, 2096, 8443];
 
 /**
- * Popular Iranian / national-net friendly domains used as WS Host camouflage
- * and optional clean-IP front hosts (Zooz/BPB-style). Connection still lands
- * on the real Worker endpoint; these only shape client-side SNI/Host noise.
+ * Conservative TCP destination allow-list for subscriber traffic. This is
+ * intentionally separate from Worker listener ports: clients commonly need
+ * HTTP/HTTPS while mail and arbitrary high-risk ports remain unavailable.
  */
-export const DEFAULT_FAKE_DOMAINS = [
-  'snaap.ir',
-  'www.snapp.ir',
-  'www.digikala.com',
-  'www.aparat.com',
-  'www.varzesh3.com',
-  'www.bankmellat.ir',
-  'www.irna.ir',
-  'www.isna.ir',
-  'www.hamshahrionline.ir',
-  'www.telewebion.com',
-  'www.filimo.com',
-  'cafebazaar.ir',
-  'www.sheypoor.com',
-  'www.divar.ir',
-  'www.shaparak.ir',
-  'www.tsetmc.com',
-];
+export const OUTBOUND_TCP_PORTS = [80, 443, 2053, 2082, 2083, 2086, 2087, 2095, 2096, 8080, 8443];
+
+/**
+ * Host aliases are deliberately empty by default. An alias is only useful
+ * when the operator owns it and has routed it to this same Worker. Pretending
+ * to be an unrelated third-party domain is unreliable, can violate that
+ * party's rights, and usually fails Cloudflare routing/TLS validation.
+ */
+export const DEFAULT_HOST_ALIASES: string[] = [];
 
 export interface Endpoint {
   id: string;
@@ -178,7 +190,7 @@ export interface AntiDetectSettings {
   fragmentLength: [number, number];
   /** Fragment interval range (ms), inclusive. */
   fragmentInterval: [number, number];
-  /** Rotate WS Host header across fakeDomains. */
+  /** Rotate WS Host across operator-owned aliases routed to this Worker. */
   hostCamouflage: boolean;
   /** When true, emit one config line per selected TLS port (Zooz/BPB style). */
   multiPort: boolean;
@@ -187,18 +199,19 @@ export interface AntiDetectSettings {
 export const DEFAULT_ANTI_DETECT: AntiDetectSettings = {
   pathPadding: true,
   pathJitter: true,
-  fragment: true,
+  // Off by default because fragment syntax differs between client forks.
+  fragment: false,
   fragmentLength: [50, 120],
   fragmentInterval: [10, 20],
-  hostCamouflage: true,
-  /** Off by default so path count stays exact; enable for Zooz/BPB multi-port. */
+  hostCamouflage: false,
+  /** Off by default; non-443 ports require a compatible proxied custom host. */
   multiPort: false,
 };
 
 export interface ProbeResult {
   endpointId: string;
   ok: boolean;
-  /** TCP connect + TLS handshake time measured from the Cloudflare edge, ms. */
+  /** HTTPS response-header latency measured from the Cloudflare edge, ms. */
   latencyMs: number | null;
   error?: string;
   checkedAt: number;
@@ -235,9 +248,9 @@ export interface PanelSettings {
   speedPreset: SpeedPreset;
   /** Allowed outbound TLS ports (Zooz/BPB multi-port selection). */
   tlsPorts: number[];
-  /** Camouflage / national-net domains (Host header rotation). */
-  fakeDomains: string[];
-  /** Anti-detection: padding, jitter, fragment, multi-port. */
+  /** Operator-owned hostnames routed to this same Worker (optional Host rotation). */
+  hostAliases: string[];
+  /** Transport tuning: padding, jitter, optional client hints and multi-port. */
   antiDetect: AntiDetectSettings;
   /** Monotonic panel config generation — bumped on one-click hot update. */
   configGeneration: number;
@@ -286,16 +299,30 @@ export interface User {
   limitSeconds: number;
   /** 0 = unlimited. */
   maxConnections: number;
-  /** 0 = unlimited; otherwise hard cap on /sub fetch calls (429 after). */
+  /** Maximum successful subscription fetches; 0 = unlimited. */
   limitRequests: number;
-  /** Live counter of sub fetches (requestCount / limitRequests). */
+  /** Number of successful subscription fetches. */
   requestCount: number;
   active: boolean;
   speedPreset: SpeedPreset;
   profileMode: ProfileMode;
+  /** Normal or gaming-oriented client routing output. */
+  usageMode?: UsageMode;
+  /** Validated ids from GAME_CATALOG; only meaningful in gaming mode. */
+  gameIds?: string[];
+  /** Label the whole subscription as IRON and use aggregate-safe groups. */
+  ironMode?: boolean;
+  /** Keep .ir / Iran GeoIP traffic direct in rule-capable clients when requested. */
+  domesticDirect?: boolean;
   fingerprint?: Fingerprint | null;
   /** Per-user config name template; falls back to settings.configNameTemplate. */
   configNameTemplate?: string | null;
+  /** Rolling pool emits a bounded, client-safe window that changes on refresh. */
+  dynamicPool?: boolean;
+  /** Rotation cadence in minutes; the UI defaults to one minute. */
+  rotationMinutes?: number;
+  /** Validated Cloudflare Anycast candidates assigned to routes each rotation. */
+  poolCleanIps?: string[];
   /** Internal note, only visible to admins. */
   note: string;
   createdAt: number;
@@ -394,16 +421,20 @@ export type AuditAction =
   | 'user.toggle'
   | 'user.reset_usage'
   | 'user.reset_connections'
+  | 'user.reset_requests'
   | 'user.rotate_uuid'
   | 'user.rotate_token'
   | 'config.build'
   | 'config.auto_build'
+  | 'config.iron_build'
   | 'config.sub_fetch'
   | 'settings.update'
   | 'endpoints.probe'
   | 'endpoints.update'
   | 'backup.export'
-  | 'panel.hot_update';
+  | 'backup.restore'
+  | 'panel.hot_update'
+  | 'panel.rescue_update';
 
 export interface AuditEvent {
   id: string;
@@ -428,6 +459,9 @@ export interface BuildRequest {
   fingerprint?: Fingerprint;
   configNameTemplate?: string;
   endpointIds?: string[]; // optional subset of endpoints to use
+  domesticDirect?: boolean; // direct .ir / Iran GeoIP rules in capable clients
+  dynamicPool?: boolean; // rotating active window; never emits an unbounded response
+  rotationMinutes?: number; // 1..60
 }
 
 export interface BuiltConfig {

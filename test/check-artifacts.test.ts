@@ -3,7 +3,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UI_APP_CSS, UI_APP_JS, UI_SHELL_HTML } from '../src/ui';
+import {
+  UI_APP_CSS,
+  UI_APP_JS,
+  UI_ICON_SVG,
+  UI_MANIFEST_JSON,
+  UI_SHELL_HTML,
+  UI_SW_JS,
+} from '../src/ui';
 
 describe('artifact checks (runtime smoke steps)', () => {
   it('browser JavaScript passes node --check', () => {
@@ -28,9 +35,37 @@ describe('artifact checks (runtime smoke steps)', () => {
     const html = readFileSync('public/index.html', 'utf8');
     expect(js).toBe(UI_APP_JS);
     expect(css).toBe(UI_APP_CSS);
-    expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'AMINCK GOD Edition'));
+    expect(html).toContain(UI_SHELL_HTML.replace('{TITLE}', 'AMINNOVA'));
+    expect(readFileSync('public/manifest.webmanifest', 'utf8')).toBe(UI_MANIFEST_JSON);
+    expect(readFileSync('public/sw.js', 'utf8')).toBe(UI_SW_JS);
+    expect(readFileSync('public/icon.svg', 'utf8')).toBe(UI_ICON_SVG);
+    const icon192 = readFileSync('public/icon-192.png');
+    const icon512 = readFileSync('public/icon-512.png');
+    expect(icon192.subarray(1, 4).toString()).toBe('PNG');
+    expect(icon512.subarray(1, 4).toString()).toBe('PNG');
+    const pngWidth = (icon: Uint8Array) => (((icon[16]! << 24) >>> 0) + (icon[17]! << 16) + (icon[18]! << 8) + icon[19]!);
+    expect(pngWidth(icon192)).toBe(192);
+    expect(pngWidth(icon512)).toBe(512);
+    expect(JSON.parse(UI_MANIFEST_JSON).display).toBe('standalone');
+    expect(UI_SW_JS).toContain("'/api/'");
+    expect(UI_SW_JS).toContain("'/sub/'");
+    expect(UI_SW_JS).toContain("'/healthz'");
+    expect(UI_SW_JS).toContain("'/connect'");
+    expect(UI_SW_JS).toContain('SHELL.indexOf(url.pathname) < 0');
+    expect(UI_SHELL_HTML).toContain('rel="manifest"');
+    expect(UI_APP_JS).toContain('usage-gaming');
+    expect(UI_APP_JS).toContain('games-all');
+    expect(UI_APP_JS).toContain('iron-sub');
+    expect(UI_APP_JS).toContain('/api/update-check');
+    expect(UI_APP_JS).toContain('/api/ai-plan');
+    expect(UI_APP_JS).toContain('ai-build');
+    expect(UI_APP_JS).toContain('domestic-direct');
+    expect(UI_APP_JS).toContain('value="latency"');
+    expect(UI_APP_JS).toContain('max="2000"');
+    expect(UI_SW_JS).toContain('aminnova-shell-v8-ai-low-ping');
     // the committed assets are also valid JS
     execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
+    execFileSync(process.execPath, ['--check', 'public/sw.js'], { stdio: 'pipe', cwd: process.cwd() });
   });
 
   it('no secrets or .dev.vars are tracked in git', () => {
@@ -41,14 +76,25 @@ describe('artifact checks (runtime smoke steps)', () => {
     const example = readFileSync('.dev.vars.example', 'utf8');
     expect(example.length).toBeGreaterThan(0);
     expect(example).toContain('ADMIN_PASSWORD');
-    expect(example).toContain('SESSION_SECRET');
+    expect(example).not.toContain('SESSION_SECRET');
+    const wrangler = readFileSync('wrangler.jsonc', 'utf8');
+    expect(wrangler).toMatch(/"required"\s*:\s*\["ADMIN_PASSWORD"\]/);
+    expect(wrangler).not.toContain('SESSION_SECRET');
+    expect(wrangler).not.toMatch(/"crons"\s*:/);
+    expect(wrangler).toMatch(/"workers_dev"\s*:\s*true/);
+    expect(wrangler).toMatch(/"preview_urls"\s*:\s*true/);
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    expect(Object.keys(pkg.cloudflare.bindings)).toEqual(['ADMIN_PASSWORD']);
+    expect(pkg.scripts.build).toContain('build:public');
+    expect(pkg.scripts.predeploy).toBe('npm run build:public');
+    expect(readFileSync('README.md', 'utf8')).not.toContain('SESSION_SECRET');
     const gitignore = readFileSync('.gitignore', 'utf8');
     expect(gitignore).toContain('.dev.vars');
   });
 
   it('capability manifest satisfies the contract', async () => {
     const { CAPABILITIES, ownerCapabilitiesCount } = await import('../src/capabilities');
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(200);
+    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(500);
     expect(ownerCapabilitiesCount()).toBeGreaterThanOrEqual(50);
   });
 });

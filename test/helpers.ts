@@ -2,7 +2,7 @@ import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { OWNER_PASSWORD, SESSION_SECRET } from './fixtures';
+import { OWNER_PASSWORD } from './fixtures';
 
 export interface TestWorker {
   mf: Miniflare;
@@ -33,7 +33,6 @@ export async function startWorker(): Promise<TestWorker> {
     compatibilityDate: '2025-06-01',
     bindings: {
       ADMIN_PASSWORD: OWNER_PASSWORD,
-      SESSION_SECRET,
     },
     durableObjects: {
       AMINCK_STORE: { className: 'AMINCKStore', useSQLite: true },

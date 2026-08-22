@@ -5,13 +5,10 @@ import { CMD_TCP, CMD_UDP } from '../src/protocol';
 import {
   BLOCKED_SMTP_PORTS,
   hashPassword,
-  hmacSha256,
   isPrivateLiteral,
   isSmtpPort,
   isUnlimited,
-  signSessionId,
   verifyPassword,
-  verifySessionId,
 } from '../src/utils';
 import { constantTimeEq, maxPathsFor, permissionsFor, sanitizeLimits } from '../src/store';
 import { POWER_LEVELS } from '../src/types';
@@ -89,6 +86,16 @@ describe('classifyTarget', () => {
     const r = classifyTarget(target({ addressType: 3, address: 'fd00::1' }), TLS_PORTS);
     expect(r).toEqual({ allowed: false, reason: 'private-ip' });
   });
+
+  it('blocks local and special-use hostnames before runtime DNS fallback', () => {
+    for (const hostname of ['localhost', 'router.local', 'metadata.google.internal', 'service.lan', 'x.test']) {
+      expect(classifyTarget(target({ address: hostname }), TLS_PORTS)).toEqual({
+        allowed: false,
+        reason: 'private-hostname',
+      });
+    }
+    expect(classifyTarget(target({ address: 'www.gstatic.com' }), TLS_PORTS).allowed).toBe(true);
+  });
 });
 
 describe('resolvePublicTarget + DNS failover', () => {
@@ -129,29 +136,6 @@ describe('resolvePublicTarget + DNS failover', () => {
   it('does not even try dead resolver results beyond the list', async () => {
     const r = await resolvePublicTarget('x.com', deadResolver, ['https://doh1']);
     expect(r).toEqual({ ok: false, reason: 'dns-unresolvable' });
-  });
-});
-
-describe('HMAC session signing', () => {
-  it('signs and verifies a session id', async () => {
-    const signed = await signSessionId('secret', 'abc123');
-    expect(signed).toMatch(/^abc123\.[0-9a-f]{64}$/);
-    expect(await verifySessionId('secret', signed)).toBe('abc123');
-  });
-
-  it('rejects tampered signatures', async () => {
-    const signed = await signSessionId('secret', 'abc123');
-    const tampered = signed.slice(0, -1) + (signed.endsWith('0') ? '1' : '0');
-    expect(await verifySessionId('secret', tampered)).toBeNull();
-    expect(await verifySessionId('secret', 'abc123.bad')).toBeNull();
-    expect(await verifySessionId('other', signed)).toBeNull();
-    expect(await verifySessionId('secret', '')).toBeNull();
-    expect(await verifySessionId('secret', null)).toBeNull();
-  });
-
-  it('hmacSha256 is deterministic', async () => {
-    expect(await hmacSha256('k', 'm')).toBe(await hmacSha256('k', 'm'));
-    expect(await hmacSha256('k', 'm')).not.toBe(await hmacSha256('k', 'n'));
   });
 });
 
@@ -211,11 +195,11 @@ describe('limits & power (zero means unlimited)', () => {
 
   it('power levels cap paths (backend constants)', () => {
     expect(POWER_LEVELS.limited.maxPaths).toBe(5);
-    expect(POWER_LEVELS.normal.maxPaths).toBe(30);
-    expect(POWER_LEVELS.strong.maxPaths).toBe(80);
-    expect(POWER_LEVELS.ultra.maxPaths).toBe(200);
+    expect(POWER_LEVELS.normal.maxPaths).toBe(100);
+    expect(POWER_LEVELS.strong.maxPaths).toBe(500);
+    expect(POWER_LEVELS.ultra.maxPaths).toBe(2000);
     expect(maxPathsFor('limited')).toBe(5);
-    expect(maxPathsFor('ultra')).toBe(200);
+    expect(maxPathsFor('ultra')).toBe(2000);
   });
 });
 

@@ -8,8 +8,10 @@ import {
   CLEAN_IP_CATALOG,
   expandRoutesMultiPort,
   expandTunnelFronts,
+  isCloudflareIpv4Candidate,
   planRoutes,
   renderConfigName,
+  rollingRouteWindow,
   validateNameTemplate,
   validateTlsPorts,
   vlessUriFor,
@@ -106,6 +108,24 @@ describe('config builder — 200 routes', () => {
   });
 });
 
+describe('config builder — Giant 2000-route ceiling', () => {
+  it('plans, stores and emits 2000 unique owner routes', () => {
+    const settings = settingsFixture();
+    const plan = planRoutes(settings.endpoints, 2500);
+    expect(plan).toHaveLength(2000);
+    const routes = buildRoutes('a'.repeat(24), plan, settings);
+    expect(routes).toHaveLength(2000);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(2000);
+    expect(routes.at(-1)?.index).toBe(2000);
+
+    const user = userFixture({ id: 'a'.repeat(24), routes, ironMode: true });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!;
+    expect(raw.paths).toBe(2000);
+    expect(raw.payload.split('\n')).toHaveLength(2000);
+    expect(raw.payload).toContain('IRON');
+  });
+});
+
 describe('config builder — output formats', () => {
   it('emits vless URI with the expected parameters (workers.dev default port 443)', () => {
     const user = userFixture();
@@ -120,6 +140,39 @@ describe('config builder — output formats', () => {
     expect(uri).toContain(`sni=${encodeURIComponent(route.host)}`);
     expect(uri).toContain('encryption=none');
     expect(uri.endsWith('#AMINCK GOD Edition')).toBe(true);
+  });
+
+  it('keeps direct routes conservative while tuning only optional Anycast copies', () => {
+    const routes = routesFor('u'.repeat(24), undefined, 3).map((route, index) => ({
+      ...route,
+      padding: 'padvalue',
+      frontIp: index === 0 ? undefined : `104.16.0.${index}`,
+    }));
+    const user = userFixture({ routes, speedPreset: 'god' });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!.payload.split('\n');
+    expect(raw[0]).toContain('ed=0');
+    expect(raw[0]).toContain('DIRECT SAFE');
+    expect(raw[0]).not.toContain('pad%3D');
+    expect(raw[1]).toContain('ed=4096');
+
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect((clash.match(/max-early-data:/g) ?? [])).toHaveLength(2);
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    const vless = singbox.outbounds.filter((outbound: { type: string }) => outbound.type === 'vless');
+    expect(vless[0].transport.max_early_data).toBeUndefined();
+    expect(vless[1].transport.max_early_data).toBe(4096);
+  });
+
+  it('emits every hostname-direct route without early data or padding', () => {
+    const user = userFixture({
+      routes: routesFor('u'.repeat(24), undefined, 3).map((route) => ({ ...route, padding: 'padvalue' })),
+      speedPreset: 'god',
+    });
+    const raw = buildFormats(ctx(user), ['raw'])[0]!.payload.split('\n');
+    expect(raw.every((line) => line.includes('ed=0') && line.includes('DIRECT SAFE'))).toBe(true);
+    expect(raw.every((line) => !line.includes('pad%3D'))).toBe(true);
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('max-early-data:');
   });
 
   it('clash yaml contains NOVA groups, unified-delay and store-selected', () => {
@@ -143,7 +196,74 @@ describe('config builder — output formats', () => {
     expect(clash).toContain('MATCH,NOVA-SMART');
     expect(clash).toContain('client-fingerprint: chrome');
     expect(clash).toContain('udp: true');
-    expect(clash).toContain('max-early-data:');
+    expect(clash).not.toContain('max-early-data:');
+  });
+
+  it('emits selected Gaming domains in Clash, sing-box and Xray Iron output', () => {
+    const user = userFixture({
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java', 'not-a-game'],
+      ironMode: true,
+    });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).toContain('name: AMINCK-GAMING');
+    expect(clash).toContain('DOMAIN-SUFFIX,callofduty.com,AMINCK-GAMING');
+    expect(clash).toContain('DOMAIN-SUFFIX,minecraft.net,AMINCK-GAMING');
+    expect(clash).not.toContain('not-a-game');
+    expect(clash).toContain('GAMING · IRON');
+
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    const gamingRule = singbox.route.rules.find((rule: { domain_suffix?: string[] }) =>
+      rule.domain_suffix?.includes('callofduty.com'));
+    expect(gamingRule).toEqual(expect.objectContaining({ outbound: 'NOVA-AUTO' }));
+    expect(gamingRule.domain_suffix).toContain('minecraft.net');
+
+    const xray = JSON.parse(buildIronPack(ctx(user), 1)[0]!.json);
+    const xrayRule = xray.routing.rules.find((rule: { domain?: string[] }) =>
+      rule.domain?.includes('domain:callofduty.com'));
+    expect(xrayRule).toEqual(expect.objectContaining({ balancerTag: 'AMINCK-IRON-AUTO' }));
+    expect(xrayRule.domain).toContain('domain:minecraft.net');
+  });
+
+  it('keeps Normal mode free of Gaming-only routing rules', () => {
+    const user = userFixture({ usageMode: 'normal', gameIds: ['cod-mobile'] });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('AMINCK-GAMING');
+    expect(clash).not.toContain('DOMAIN-SUFFIX,callofduty.com');
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules.some((rule: { domain_suffix?: string[] }) =>
+      rule.domain_suffix?.includes('callofduty.com'))).toBe(false);
+  });
+
+  it('places domestic destinations before tunnel rules when Domestic Direct is enabled', () => {
+    const user = userFixture({ domesticDirect: true, usageMode: 'gaming', gameIds: ['cod-mobile'] });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).toContain('IP-CIDR,192.168.0.0/16,DIRECT,no-resolve');
+    expect(clash).toContain('IP-CIDR6,fc00::/7,DIRECT,no-resolve');
+    expect(clash).toContain('DOMAIN-SUFFIX,ir,DIRECT');
+    expect(clash).toContain('GEOIP,IR,DIRECT,no-resolve');
+    expect(clash.indexOf('DOMAIN-SUFFIX,ir,DIRECT')).toBeLessThan(clash.indexOf('DOMAIN-SUFFIX,callofduty.com'));
+
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules[3]).toEqual(expect.objectContaining({ domain_suffix: ['ir'], outbound: 'direct' }));
+
+    const xray = JSON.parse(buildIronPack(ctx(user), 1)[0]!.json);
+    expect(xray.routing.rules[1]).toEqual(expect.objectContaining({
+      domain: ['geosite:ir'], outboundTag: 'direct',
+    }));
+    expect(xray.routing.rules[2]).toEqual(expect.objectContaining({
+      ip: ['geoip:ir'], outboundTag: 'direct',
+    }));
+  });
+
+  it('does not emit domestic direct rules when the user disables continuity mode', () => {
+    const user = userFixture({ domesticDirect: false });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('DOMAIN-SUFFIX,ir,DIRECT');
+    expect(clash).not.toContain('GEOIP,IR,DIRECT');
+    expect(clash).toContain('IP-CIDR,10.0.0.0/8,DIRECT,no-resolve');
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules.some((rule: { geoip?: string[] }) => rule.geoip?.includes('ir'))).toBe(false);
   });
 
   it('god preset enables tcp-concurrent, stable does not', () => {
@@ -155,9 +275,13 @@ describe('config builder — output formats', () => {
     expect(clashStable).not.toContain('tcp-concurrent:');
     // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
-    expect(SPEED_PRESETS.god.healthInterval).toBe(15);
-    expect(SPEED_PRESETS.god.tolerance).toBe(30);
-    expect(SPEED_PRESETS.god.tcpRetries).toBe(6);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(25);
+    expect(SPEED_PRESETS.god.tolerance).toBe(35);
+    expect(SPEED_PRESETS.god.tcpRetries).toBe(2);
+    expect(SPEED_PRESETS.latency.healthInterval).toBe(15);
+    expect(SPEED_PRESETS.latency.tolerance).toBe(20);
+    expect(SPEED_PRESETS.latency.tcpRetries).toBe(1);
+    expect(SPEED_PRESETS.latency.tcpConcurrent).toBe(true);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 
@@ -180,10 +304,17 @@ describe('config builder — output formats', () => {
     expect(json.route.final).toBe('NOVA-SMART');
   });
 
-  it('health URL falls back to the first route host /healthz', () => {
+  it('health URL uses a non-Worker target to avoid Cloudflare TCP loops', () => {
     const settings = settingsFixture({ healthUrl: '' });
     const clash = buildFormats(ctx(userFixture(), settings), ['clash'])[0]!.payload;
-    expect(clash).toContain('https://edge-1.example.workers.dev/healthz');
+    expect(clash).toContain('https://www.gstatic.com/generate_204');
+    expect(clash).not.toContain('https://edge-1.example.workers.dev/healthz');
+  });
+
+  it('rejects a custom health URL that loops back through the first Worker route', () => {
+    const settings = settingsFixture({ healthUrl: 'https://edge-1.example.workers.dev/healthz' });
+    const clash = buildFormats(ctx(userFixture(), settings), ['clash'])[0]!.payload;
+    expect(clash).toContain('https://www.gstatic.com/generate_204');
   });
 
   it('custom health URL is respected', () => {
@@ -253,17 +384,20 @@ describe('config builder — anti-detect & multi-port', () => {
     }
   });
 
-  it('attaches national-net fake domains as wsHost', () => {
-    const settings = settingsFixture();
-    const plan = planRoutes(settings.endpoints, 5);
-    const routes = buildRoutes('u'.repeat(24), plan, settings);
-    expect(routes.some((r) => r.wsHost && r.wsHost.includes('snaap.ir') || (r.wsHost ?? '').includes('.'))).toBe(true);
-    expect(routes.every((r) => !!r.wsHost)).toBe(true);
+  it('uses only real endpoints or operator-owned endpoint aliases as wsHost', () => {
+    const base = settingsFixture();
+    const settings = settingsFixture({
+      hostAliases: [base.endpoints[1]!.host, 'unrelated.example'],
+      antiDetect: { ...base.antiDetect, hostCamouflage: true },
+    });
+    const routes = buildRoutes('u'.repeat(24), planRoutes(settings.endpoints, 5), settings);
+    expect(routes.some((r) => r.wsHost === base.endpoints[1]!.host)).toBe(true);
+    expect(routes.every((r) => r.wsHost !== 'unrelated.example')).toBe(true);
   });
 
   it('vless URI includes fragment and padding when anti-detect is on', () => {
     const user = userFixture();
-    const route = { ...user.routes[0]!, padding: 'abcd1234', wsHost: 'snaap.ir' };
+    const route = { ...user.routes[0]!, padding: 'abcd1234', wsHost: 'edge-1.example.workers.dev' };
     const uri = vlessUriFor(user, route, {
       fingerprint: 'chrome',
       earlyData: 4096,
@@ -274,7 +408,7 @@ describe('config builder — anti-detect & multi-port', () => {
       fragmentInterval: [10, 20],
     });
     expect(uri).toContain('fragment=');
-    expect(uri).toContain('host=snaap.ir');
+    expect(uri).toContain('host=edge-1.example.workers.dev');
     expect(uri.includes('pad=') || uri.includes('pad%3D')).toBe(true);
   });
 
@@ -284,17 +418,95 @@ describe('config builder — anti-detect & multi-port', () => {
     expect(out.length).toBeGreaterThan(user.routes.length);
     expect(out.some((r) => r.frontIp === '1.2.3.4')).toBe(true);
     expect(out.every((r) => (r.sni || r.host).includes('example.workers.dev') || !r.frontIp)).toBe(true);
+
+    const route = out.find((r) => r.frontIp === '1.2.3.4')!;
+    const fronted = { ...user, routes: [route] };
+    const formats = buildFormats(ctx(fronted), ['raw', 'clash', 'singbox']);
+    expect(formats[0]!.payload).toContain('@1.2.3.4:');
+    expect(formats[0]!.payload).toContain('sni=edge-1.example.workers.dev');
+    expect(formats[0]!.payload).toContain('host=edge-1.example.workers.dev');
+    expect(formats[1]!.payload).toContain('server: "1.2.3.4"');
+    expect(formats[1]!.payload).toContain('servername: "edge-1.example.workers.dev"');
+    const singbox = JSON.parse(formats[2]!.payload);
+    const singboxRoute = singbox.outbounds.find((item: any) => item.type === 'vless');
+    expect(singboxRoute.server).toBe('1.2.3.4');
+    expect(singboxRoute.tls.server_name).toBe('edge-1.example.workers.dev');
+    expect(singboxRoute.transport.headers.Host).toBe('edge-1.example.workers.dev');
+
+    const iron = buildIronPack(ctx(fronted), 2);
+    const xray = JSON.parse(iron.find((profile) => profile.client === 'xray')!.json);
+    const xrayRoute = xray.outbounds.find((item: any) => item.protocol === 'vless');
+    expect(xrayRoute.settings.vnext[0].address).toBe('1.2.3.4');
+    expect(xrayRoute.streamSettings.tlsSettings.serverName).toBe('edge-1.example.workers.dev');
+    const ironSingBox = JSON.parse(iron.find((profile) => profile.client === 'singbox')!.json);
+    const ironRoute = ironSingBox.outbounds.find((item: any) => item.type === 'vless');
+    expect(ironRoute.server).toBe('1.2.3.4');
+    expect(ironRoute.tls.server_name).toBe('edge-1.example.workers.dev');
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(10);
+    expect(CLEAN_IP_CATALOG.every((item) => isCloudflareIpv4Candidate(item.ip))).toBe(true);
+    expect(isCloudflareIpv4Candidate('8.8.8.8')).toBe(false);
   });
 
-  it('iron pack returns 1–5 JSON profiles', () => {
-    const pack = buildIronPack(ctx(userFixture()), 5);
+  it('rotates a client-safe Anycast window without invalidating stored paths', () => {
+    const user = userFixture({
+      routes: routesFor('u'.repeat(24), undefined, 20),
+      dynamicPool: true,
+      rotationMinutes: 1,
+      poolCleanIps: ['162.159.36.1', '104.16.132.229', '8.8.8.8'],
+    });
+    const first = rollingRouteWindow(user, 120_000);
+    const second = rollingRouteWindow(user, 180_000);
+    expect(first.enabled).toBe(true);
+    expect(first.routes).toHaveLength(20);
+    expect(first.routes[0]!.frontIp).toBeUndefined();
+    expect(first.routes[10]!.frontIp).toBeUndefined();
+    expect(first.routes.filter((route) => route.frontIp).length).toBeGreaterThan(15);
+    expect(first.routes.every((route) => user.routes.some((stored) => stored.path === route.path))).toBe(true);
+    expect(first.routes.map((route) => route.path)).not.toEqual(second.routes.map((route) => route.path));
+    expect(first.routes.some((route) => route.frontIp === '8.8.8.8')).toBe(false);
+    expect(first.nextRotationAt).toBe(180_000);
+  });
+
+  it('keeps fixed subscriptions unchanged by rolling-window logic', () => {
+    const user = userFixture({ dynamicPool: false, rotationMinutes: 1 });
+    const window = rollingRouteWindow(user, 120_000);
+    expect(window.enabled).toBe(false);
+    expect(window.routes).toEqual(user.routes);
+  });
+
+  it('iron pack puts every route into each aggregate JSON profile', () => {
+    const user = userFixture();
+    const pack = buildIronPack(ctx(user), 5);
     expect(pack.length).toBe(5);
     expect(CLEAN_IP_CATALOG.length).toBeGreaterThan(3);
     for (const p of pack) {
       expect(p.json.length).toBeGreaterThan(20);
-      JSON.parse(p.json);
+      const doc = JSON.parse(p.json);
+      if (p.client === 'xray') {
+        expect(doc.outbounds.filter((x: any) => x.protocol === 'vless')).toHaveLength(user.routes.length);
+        expect(doc.routing.balancers[0].strategy.type).toBe('leastPing');
+        expect(doc.routing.balancers[0].selector).toHaveLength(user.routes.length);
+        expect(doc.observatory.subjectSelector).toHaveLength(user.routes.length);
+      } else {
+        expect(doc.outbounds.filter((x: any) => x.type === 'vless')).toHaveLength(user.routes.length);
+        expect(doc.outbounds.find((x: any) => x.type === 'urltest').outbounds).toHaveLength(user.routes.length);
+      }
     }
+  });
+
+  it('builds one Xray IRON aggregate with 200 selectable routes', () => {
+    const user = userFixture({
+      id: 'a'.repeat(24),
+      routes: routesFor('a'.repeat(24), undefined, 200),
+      speedPreset: 'god',
+    });
+    const iron = buildIronPack(ctx(user), 1)[0]!;
+    expect(iron.client).toBe('xray');
+    expect(iron.name).toContain('200 ROUTES');
+    const doc = JSON.parse(iron.json);
+    expect(doc.outbounds.filter((x: any) => x.protocol === 'vless')).toHaveLength(200);
+    expect(doc.routing.balancers[0].selector).toHaveLength(200);
+    expect(doc.routing.rules.at(-1).balancerTag).toBe('AMINCK-IRON-AUTO');
   });
 
   it('expandRoutesMultiPort multiplies ports Zooz/BPB style', () => {

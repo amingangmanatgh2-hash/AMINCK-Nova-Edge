@@ -7,9 +7,9 @@ import {
 } from '../src/capabilities';
 
 describe('capability manifest', () => {
-  it('contains at least 150 real capabilities', () => {
-    expect(totalCapabilities()).toBeGreaterThanOrEqual(200);
-    expect(CAPABILITIES.length).toBeGreaterThanOrEqual(200);
+  it('contains at least 500 implemented capabilities and catalogue controls', () => {
+    expect(totalCapabilities()).toBe(560);
+    expect(CAPABILITIES.length).toBe(560);
   });
 
   it('contains at least 50 owner/administrator management capabilities', () => {

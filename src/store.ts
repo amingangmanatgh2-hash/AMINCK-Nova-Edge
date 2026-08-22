@@ -9,7 +9,7 @@
  * role integrity and power-level caps. Even a direct API call can never
  * exceed a Limited admin's 5-path cap because the cap is applied here.
  *
- * The browser admin UI is intentionally disabled — management is API-only.
+ * The browser admin UI and JSON API both call this same permission boundary.
  * One-click hot-update regenerates subscription paths without changing the
  * Worker domain / custom hostname binding.
  */
@@ -33,15 +33,19 @@ import type {
 } from './types';
 import {
   DEFAULT_ANTI_DETECT,
-  DEFAULT_FAKE_DOMAINS,
+  DEFAULT_HOST_ALIASES,
+  CLOUDFLARE_TLS_PORTS,
   MAX_AUDIT_EVENTS,
+  MAX_BATCH_SUBSCRIPTIONS,
   MAX_ENDPOINTS,
+  MAX_PATHS,
+  OUTBOUND_TCP_PORTS,
   POWER_LEVELS,
   ROLE_PERMISSIONS,
   SPEED_PRESETS,
   type ProfileMode,
 } from './types';
-import { clamp, newId, randomHex, signSessionId, sleep, verifyPassword } from './utils';
+import { clamp, newId, randomHex, sleep, verifyPassword } from './utils';
 import { hashPassword } from './utils';
 import {
   BuildContext,
@@ -52,15 +56,19 @@ import {
   buildRoutes,
   expandRoutesMultiPort,
   expandTunnelFronts,
+  isCloudflareIpv4Candidate,
   planRoutes,
   resolveAntiDetect,
+  rollingRouteWindow,
   validateNameTemplate,
 } from './config';
+import { publicGameCatalog, sanitizeGameIds } from './games';
 
 export interface Env {
   ADMIN_PASSWORD?: string;
-  SESSION_SECRET?: string;
   AMINCK_STORE: DurableObjectNamespace;
+  /** Optional Workers AI binding used only when the operator explicitly enables it. */
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
   /** Workers Static Assets binding (present when wrangler assets config is active). */
   ASSETS?: Fetcher;
 }
@@ -88,9 +96,9 @@ const AUDIT_CHUNK_SIZE = 200;
 
 export function defaultSettings(): PanelSettings {
   return {
-  title: 'AMINCK Nova Edge',
+    title: 'AMINNOVA',
   brand: 'AMINCK GOD Edition',
-    supportUrl: 'https://t.me/EDGEPANEL',
+    supportUrl: '',
     doh: 'https://cloudflare-dns.com/dns-query',
     dohAlt: ['https://one.one.one.one/dns-query', 'https://dns.google/dns-query'],
     healthUrl: '',
@@ -100,8 +108,10 @@ export function defaultSettings(): PanelSettings {
     fingerprint: 'chrome',
     profileMode: 'auto',
     speedPreset: 'god',
-    tlsPorts: [443, 2053, 2083, 2087, 2096, 8443],
-    fakeDomains: [...DEFAULT_FAKE_DOMAINS],
+    // workers.dev is reliably available on 443. Operators with a proxied
+    // custom hostname can explicitly enable additional listener ports.
+    tlsPorts: [443],
+    hostAliases: [...DEFAULT_HOST_ALIASES],
     antiDetect: { ...DEFAULT_ANTI_DETECT },
     configGeneration: 1,
     endpoints: [],
@@ -110,26 +120,46 @@ export function defaultSettings(): PanelSettings {
   };
 }
 
-/** Merge legacy stored settings with new AMINCK GOD Edition fields. */
+/** Merge legacy stored settings with current fields and safe defaults. */
 export function normalizeSettings(raw: PanelSettings | null | undefined): PanelSettings {
   const d = defaultSettings();
   if (!raw || typeof raw !== 'object') return d;
+  const endpoints = Array.isArray(raw.endpoints) ? raw.endpoints : [];
+  const endpointHosts = new Set(endpoints.map((e) => String(e.host).toLowerCase()));
+  const legacy = (raw as unknown as { fakeDomains?: unknown }).fakeDomains;
+  const aliasesRaw = Array.isArray(raw.hostAliases)
+    ? raw.hostAliases
+    : Array.isArray(legacy)
+      ? legacy.map(String)
+      : [];
+  // Old releases shipped unrelated third-party Host values. They are dropped
+  // during migration unless the same hostname is configured as an endpoint.
+  const hostAliases = aliasesRaw
+    .map((x) => String(x).trim().toLowerCase())
+    .filter((x) => endpointHosts.has(x))
+    .slice(0, 30);
   const anti: AntiDetectSettings = {
     ...DEFAULT_ANTI_DETECT,
     ...(raw.antiDetect && typeof raw.antiDetect === 'object' ? raw.antiDetect : {}),
   };
-  return {
+  if (hostAliases.length === 0) anti.hostCamouflage = false;
+  const tlsPorts = Array.isArray(raw.tlsPorts)
+    ? [...new Set(raw.tlsPorts.map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))]
+    : [];
+  const normalized: PanelSettings & { fakeDomains?: unknown } = {
     ...d,
     ...raw,
     brand: raw.brand || d.brand,
     title: raw.title || d.title,
-    fakeDomains: Array.isArray(raw.fakeDomains) && raw.fakeDomains.length > 0 ? raw.fakeDomains : d.fakeDomains,
+    hostAliases,
     antiDetect: anti,
     configGeneration: Number(raw.configGeneration) > 0 ? Number(raw.configGeneration) : 1,
-    tlsPorts: Array.isArray(raw.tlsPorts) && raw.tlsPorts.length > 0 ? raw.tlsPorts : d.tlsPorts,
-    endpoints: Array.isArray(raw.endpoints) ? raw.endpoints : [],
+    tlsPorts: tlsPorts.length > 0 ? tlsPorts : d.tlsPorts,
+    endpoints,
     probeResults: raw.probeResults && typeof raw.probeResults === 'object' ? raw.probeResults : {},
   };
+  delete normalized.fakeDomains;
+  return normalized;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,8 +326,27 @@ export class AMINCKStore {
     this.sessionsCache = sessionsRaw ?? [];
     const ids = indexRaw ?? [];
     if (ids.length > 0) {
-      const entries = await this.state.storage.get<Record<string, User>>(ids.map((id) => K.user(id)));
-      this.usersCache = Object.values(entries).sort((a, b) => a.createdAt - b.createdAt);
+      // DurableObjectStorage multi-get returns a Map, not a plain object.
+      // Reading it with Object.values() silently produced an empty user list
+      // after a Durable Object restart, making every persisted /sub token 404.
+      const entries = await this.state.storage.get<User>(ids.map((id) => K.user(id)));
+      this.usersCache = [...entries.values()]
+        .map((u): User => ({
+          ...u,
+          limitRequests: Number(u.limitRequests) >= 0 ? Number(u.limitRequests) : 0,
+          requestCount: Number(u.requestCount) >= 0 ? Number(u.requestCount) : 0,
+          speedPreset: String(u.speedPreset) in SPEED_PRESETS ? u.speedPreset : this.settingsCache!.speedPreset,
+          usageMode: u.usageMode === 'gaming' ? 'gaming' : 'normal',
+          gameIds: u.usageMode === 'gaming' ? sanitizeGameIds(u.gameIds) : [],
+          ironMode: u.ironMode === true,
+          domesticDirect: u.domesticDirect !== false,
+          dynamicPool: u.dynamicPool === true,
+          rotationMinutes: clamp(Math.floor(Number(u.rotationMinutes)) || 1, 1, 60),
+          poolCleanIps: Array.isArray(u.poolCleanIps)
+            ? [...new Set(u.poolCleanIps.map(String).filter(isCloudflareIpv4Candidate))].slice(0, 50)
+            : [],
+        }))
+        .sort((a, b) => a.createdAt - b.createdAt);
     }
     await this.loadAuditChunks();
     if (!this.adminsCache.some((a) => a.role === 'owner')) {
@@ -427,7 +476,7 @@ export class AMINCKStore {
       case 'ensure-self': {
         const host = String(body.host ?? '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
         const s = this.settingsCache!;
-        if (host && /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(host) && !s.endpoints.some((e) => e.host === host)) {
+        if (host && /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(host) && !s.endpoints.some((e) => e.host === host && e.port === 443)) {
           if (s.endpoints.length < MAX_ENDPOINTS) {
             s.endpoints.push({
               id: newId(),
@@ -443,6 +492,12 @@ export class AMINCKStore {
       }
       case 'capabilities':
         return this.capabilitiesResponse();
+      case 'game-catalog':
+        return json({
+          total: publicGameCatalog().length,
+          games: publicGameCatalog(),
+          notice: 'این Presetها دامنه‌های رسمی Login/Launcher/Content را Route می‌کنند؛ کاهش Ping فیزیکی یا UDP بازی را تضمین نمی‌کنند.',
+        });
       default:
         return json({ error: 'not-found' }, 404);
     }
@@ -461,6 +516,16 @@ export class AMINCKStore {
   // -------------------------------------------------------------- login
 
   private async intLogin(username: string, password: string, ip: string): Promise<Response> {
+    if ((this.env.ADMIN_PASSWORD ?? '').length < 10) {
+      return json(
+        {
+          ok: false,
+          reason: 'setup-required',
+          message: 'ADMIN_PASSWORD باید هنگام Deploy به‌عنوان Secret تنظیم شود',
+        },
+        503,
+      );
+    }
     return this.withLock(async () => {
       const nameKey = (username || OWNER_USERNAME).toLowerCase();
       const tIp = this.attemptsByIp.get(ip);
@@ -513,7 +578,7 @@ export class AMINCKStore {
       await this.audit(admin.username, 'admin.login', admin.username, 'ورود موفق', ip);
       return json({
         ok: true,
-        session: await signSessionId(this.env.SESSION_SECRET ?? '', sessionId),
+        session: sessionId,
         me: this.meOf(admin),
       });
     });
@@ -599,14 +664,14 @@ export class AMINCKStore {
       ok: true,
       policy: {
         dohList: [s.doh, ...(s.dohAlt ?? [])],
-        tlsPorts: s.tlsPorts,
+        tcpPorts: OUTBOUND_TCP_PORTS,
         tcpRetries: speed.tcpRetries,
         connectTimeoutMs: speed.probeTimeoutMs,
         maxEarlyData: speed.earlyData,
       },
       limits: {
         bytes: user.limitBytes,
-        bytesLeft: user.limitBytes,
+        bytesLeft: user.limitBytes === 0 ? 0 : Math.max(0, user.limitBytes - user.usageBytes),
         connections: user.maxConnections,
         activeConnections: active + 1,
       },
@@ -627,17 +692,30 @@ export class AMINCKStore {
     if (!user) return json({ error: 'not-found' }, 404);
     if (!user.active) return json({ error: 'disabled' }, 403);
     if (user.expiresAt > 0 && user.expiresAt <= Date.now()) return json({ error: 'expired' }, 410);
-    user.requestCount = (user.requestCount || 0) + 1;
-    if (user.limitRequests > 0 && user.requestCount > user.limitRequests) {
+    if (user.limitRequests > 0 && user.requestCount >= user.limitRequests) {
       return json({ error: 'request-limit', message: 'سقف درخواست ساب پر شد' }, 429);
     }
+    user.requestCount += 1;
     user.lastSubAt = Date.now();
     await this.persistUsers();
     await this.audit('system', 'config.sub_fetch', user.name, `دریافت ساب (${ua.slice(0, 60) || 'بدون UA'})`, ip);
-    const built = buildFormats(this.ctx(user, host), ['v2ray', 'raw', 'clash', 'singbox']);
+    const generatedAt = Date.now();
+    const rolling = rollingRouteWindow(user, generatedAt);
+    const built = buildFormats(this.ctx(user, host, generatedAt), ['v2ray', 'raw', 'clash', 'singbox']);
     const payloads: Record<string, string> = {};
     for (const b of built) payloads[b.format] = b.payload;
-    return json({ user: { ...user }, settings: this.settingsCache, payloads });
+    return json({
+      user: { ...user },
+      settings: this.settingsCache,
+      payloads,
+      rotation: {
+        enabled: rolling.enabled,
+        epoch: rolling.epoch,
+        nextRotationAt: rolling.nextRotationAt,
+        rotationMinutes: rolling.rotationMinutes,
+        activeRoutes: rolling.routes.length,
+      },
+    });
   }
 
   private async intStats(uuid: string, up: number, down: number): Promise<Response> {
@@ -678,6 +756,14 @@ export class AMINCKStore {
     }
 
     if (route === 'capabilities') return this.capabilitiesResponse();
+    if (route === 'game-catalog') {
+      if (!need('users:view')) return deny();
+      return json({
+        total: publicGameCatalog().length,
+        games: publicGameCatalog(),
+        notice: 'Preset بازی فقط دامنه رسمی Login/Launcher/Content را Route می‌کند؛ Ping فیزیکی و UDP بازی تضمین نمی‌شود.',
+      });
+    }
 
     if (route === 'users') return this.handleUsersRoute(parts, body, me, ip, need, deny);
 
@@ -718,7 +804,12 @@ export class AMINCKStore {
 
     if (route === 'clean-ips') {
       if (!need('endpoints:probe') && !need('users:view')) return deny();
-      return json({ ok: true, ips: CLEAN_IP_CATALOG });
+      return json({
+        ok: true,
+        ips: CLEAN_IP_CATALOG,
+        autoSelected: false,
+        warning: 'این‌ها کاندید Anycast هستند؛ IP تمیز برای هر ISP فرق دارد و باید از دستگاه کاربر تست شود.',
+      });
     }
 
     if (route === 'endpoints') {
@@ -749,17 +840,23 @@ export class AMINCKStore {
 
     if (route === 'backup') {
       if (!need('backup:export')) return deny();
-      await this.audit(me.username, 'backup.export', 'backup', 'صدور بکاپ کامل', ip);
+      await this.audit(me.username, 'backup.export', 'backup', me.role === 'owner' ? 'صدور بکاپ کامل' : 'صدور بکاپ بدون رکورد ادمین‌ها', ip);
       return json({
-        app: 'AMINCK GOD Edition',
-        version: 'AMINCK GOD Edition',
+        app: 'AMINNOVA',
+        version: 2,
         exportedAt: Date.now(),
         settings: this.settingsCache,
         users: this.usersCache,
-        // Full backup includes PBKDF2 hashes so a restore can keep passwords.
-        admins: this.adminsCache,
+        // Staff hashes are exported for disaster recovery; owner auth always
+        // remains the ADMIN_PASSWORD secret of the new deployment.
+        admins: me.role === 'owner' ? this.adminsCache.filter((a) => a.role !== 'owner') : [],
         audit: this.auditCache.slice(-500),
       });
+    }
+
+    if (route === 'restore') {
+      if (me.role !== 'owner') return deny();
+      return this.restoreBackup(body.backup, String(body.reqHost ?? ''), me, ip);
     }
 
     // One-click hot update: regenerate all user paths / anti-detect without
@@ -775,19 +872,28 @@ export class AMINCKStore {
   /** Bump config generation + rebuild every subscriber's routes in-place. */
   private async hotUpdate(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
     const s = this.settingsCache!;
+    const rescue = body.rescue === true;
+    const requestHost = String(body.reqHost ?? '').toLowerCase().replace(/:\d+$/, '');
+    const selfEndpoint = s.endpoints.find((endpoint) => endpoint.host.toLowerCase() === requestHost && endpoint.port === 443)
+      ?? s.endpoints.find((endpoint) => endpoint.host.toLowerCase() === requestHost);
+    if (rescue && !selfEndpoint) {
+      return json({ error: 'self-endpoint-missing', message: 'دامنه فعلی Worker هنوز ثبت نشده؛ صفحه را تازه‌سازی و دوباره تلاش کنید' }, 409);
+    }
     s.configGeneration = (s.configGeneration || 0) + 1;
     if (body.speedPreset !== undefined && String(body.speedPreset) in SPEED_PRESETS) {
       s.speedPreset = body.speedPreset as SpeedPreset;
     }
     if (body.tlsPorts !== undefined && Array.isArray(body.tlsPorts)) {
-      const ports = [...new Set((body.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
-      if (ports.length > 0) s.tlsPorts = ports.slice(0, 10);
+      const ports = [...new Set((body.tlsPorts as unknown[]).map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))];
+      if (ports.length > 0) s.tlsPorts = ports;
     }
-    if (body.fakeDomains !== undefined && Array.isArray(body.fakeDomains)) {
-      s.fakeDomains = (body.fakeDomains as unknown[])
+    if (body.hostAliases !== undefined && Array.isArray(body.hostAliases)) {
+      const knownHosts = new Set(s.endpoints.map((e) => e.host));
+      s.hostAliases = (body.hostAliases as unknown[])
         .map((d) => String(d).trim().toLowerCase())
-        .filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d))
+        .filter((d) => knownHosts.has(d))
         .slice(0, 30);
+      if (s.hostAliases.length === 0) s.antiDetect.hostCamouflage = false;
     }
     if (body.antiDetect && typeof body.antiDetect === 'object') {
       s.antiDetect = { ...resolveAntiDetect(s), ...(body.antiDetect as Partial<AntiDetectSettings>) };
@@ -795,16 +901,24 @@ export class AMINCKStore {
     let rebuilt = 0;
     for (const user of this.usersCache) {
       const n = Math.max(1, user.routes.length || s.defaultPaths);
-      user.routes = this.buildRoutesFor(user, n);
+      if (rescue && selfEndpoint) {
+        user.speedPreset = 'stable';
+        user.dynamicPool = false;
+        user.poolCleanIps = [];
+        user.routes = buildRoutes(user.id, planRoutes([selfEndpoint], n), s);
+      } else {
+        user.routes = this.buildRoutesFor(user, n);
+      }
       rebuilt += 1;
     }
+    if (rescue) s.speedPreset = 'stable';
     await this.persistSettings();
     await this.persistUsers();
     await this.audit(
       me.username,
-      'panel.hot_update',
+      rescue ? 'panel.rescue_update' : 'panel.hot_update',
       'panel',
-      `آپدیت بدون قطعی دامنه — gen=${s.configGeneration} — ${rebuilt} مشترک`,
+      `${rescue ? 'بازسازی مستقیم روی دامنه فعلی' : 'آپدیت بدون قطعی دامنه'} — gen=${s.configGeneration} — ${rebuilt} مشترک`,
       ip,
     );
     return json({
@@ -812,7 +926,234 @@ export class AMINCKStore {
       configGeneration: s.configGeneration,
       rebuiltUsers: rebuilt,
       domainUnchanged: true,
-      message: 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
+      rescue,
+      endpoint: rescue ? selfEndpoint?.host : undefined,
+      message: rescue
+        ? 'همه کانفیگ‌ها روی دامنه فعلی و حالت DIRECT SAFE بازسازی شدند؛ ساب را در کلاینت Refresh کنید'
+        : 'کانفیگ‌ها بازسازی شدند؛ دامنه Worker بدون تغییر باقی ماند',
+    });
+  }
+
+  /** Restore a portable backup and bind every route to the new Worker host. */
+  private async restoreBackup(raw: unknown, reqHost: string, me: audience, ip: string): Promise<Response> {
+    if (!raw || typeof raw !== 'object') return json({ error: 'bad-backup', message: 'فایل بکاپ معتبر نیست' }, 400);
+    const backup = raw as Record<string, unknown>;
+    const supportedApp = backup.app === 'AMINNOVA' || backup.app === 'AMINCK GOD Edition';
+    if (!supportedApp || !Array.isArray(backup.users) || !backup.settings || typeof backup.settings !== 'object') {
+      return json({ error: 'bad-backup', message: 'ساختار فایل بکاپ AMINNOVA معتبر نیست' }, 400);
+    }
+    const rawUsers = backup.users;
+    if (rawUsers.length > 5000) return json({ error: 'too-many-users', message: 'حداکثر ۵۰۰۰ مشترک قابل بازیابی است' }, 422);
+
+    const settings = normalizeSettings(backup.settings as PanelSettings);
+    const defaults = defaultSettings();
+    settings.title = String(settings.title ?? '').trim().slice(0, 80) || defaults.title;
+    settings.brand = String(settings.brand ?? '').trim().slice(0, 40) || defaults.brand;
+    settings.supportUrl = String(settings.supportUrl ?? '').trim().slice(0, 300);
+    settings.healthUrl = /^https?:\/\//.test(String(settings.healthUrl ?? ''))
+      ? String(settings.healthUrl).slice(0, 300)
+      : '';
+    if (settings.healthUrl) {
+      try {
+        const target = new URL(settings.healthUrl);
+        if (settings.endpoints.some((endpoint) => endpoint.host.toLowerCase() === target.hostname.toLowerCase())) {
+          settings.healthUrl = '';
+        }
+      } catch { settings.healthUrl = ''; }
+    }
+    settings.doh = isSafeDoH(String(settings.doh ?? '')) ? String(settings.doh) : defaults.doh;
+    settings.dohAlt = Array.isArray(settings.dohAlt)
+      ? settings.dohAlt.map(String).filter(isSafeDoH).slice(0, 6)
+      : defaults.dohAlt;
+    const settingTemplate = validateNameTemplate(String(settings.configNameTemplate ?? ''));
+    settings.configNameTemplate = settingTemplate.ok ? settingTemplate.value : defaults.configNameTemplate;
+    settings.defaultPaths = clamp(Math.floor(Number(settings.defaultPaths)) || defaults.defaultPaths, 1, MAX_PATHS);
+    settings.updateIntervalHours = clamp(Math.floor(Number(settings.updateIntervalHours)) || defaults.updateIntervalHours, 1, 720);
+    settings.fingerprint = ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(settings.fingerprint))
+      ? settings.fingerprint
+      : defaults.fingerprint;
+    settings.profileMode = ['auto', 'fallback', 'balance'].includes(String(settings.profileMode))
+      ? settings.profileMode
+      : defaults.profileMode;
+    settings.speedPreset = String(settings.speedPreset) in SPEED_PRESETS ? settings.speedPreset : defaults.speedPreset;
+    settings.configGeneration = clamp(Math.floor(Number(settings.configGeneration)) || 1, 1, 1_000_000);
+    const importedAnti = settings.antiDetect && typeof settings.antiDetect === 'object' ? settings.antiDetect : defaults.antiDetect;
+    const safeRange = (value: unknown, fallback: [number, number], ceiling: number): [number, number] => {
+      if (!Array.isArray(value) || value.length !== 2) return fallback;
+      const lo = clamp(Math.floor(Number(value[0])) || fallback[0], 1, ceiling);
+      const hi = clamp(Math.floor(Number(value[1])) || fallback[1], lo, ceiling);
+      return [lo, hi];
+    };
+    settings.antiDetect = {
+      pathPadding: typeof importedAnti.pathPadding === 'boolean' ? importedAnti.pathPadding : defaults.antiDetect.pathPadding,
+      pathJitter: typeof importedAnti.pathJitter === 'boolean' ? importedAnti.pathJitter : defaults.antiDetect.pathJitter,
+      fragment: typeof importedAnti.fragment === 'boolean' ? importedAnti.fragment : defaults.antiDetect.fragment,
+      hostCamouflage: false,
+      multiPort: false,
+      fragmentLength: safeRange(importedAnti.fragmentLength, defaults.antiDetect.fragmentLength, 1500),
+      fragmentInterval: safeRange(importedAnti.fragmentInterval, defaults.antiDetect.fragmentInterval, 500),
+    };
+
+    const host = reqHost.trim().toLowerCase().replace(/:\d+$/, '');
+    const validHost = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host);
+    if (!validHost) return json({ error: 'bad-host', message: 'دامنه Deploy جدید معتبر نیست' }, 400);
+    const endpoint: Endpoint = {
+      id: newId(),
+      label: `${host}:443`,
+      host,
+      port: 443,
+      createdAt: Date.now(),
+    };
+    settings.endpoints = [endpoint];
+    settings.probeResults = {};
+    settings.lastProbeAt = 0;
+    settings.hostAliases = [];
+    settings.tlsPorts = [443];
+    settings.antiDetect = { ...settings.antiDetect, hostCamouflage: false, multiPort: false };
+
+    const finiteFloor = (value: unknown, fallback = 0): number => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), Number.MAX_SAFE_INTEGER) : fallback;
+    };
+    const cleanText = (value: unknown, max: number): string =>
+      String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max);
+    const ids = new Set<string>();
+    const uuids = new Set<string>();
+    const tokens = new Set<string>();
+    const users: User[] = [];
+    for (const value of rawUsers) {
+      if (!value || typeof value !== 'object') continue;
+      const u = value as Record<string, unknown>;
+      const id = String(u.id ?? '').toLowerCase();
+      const uuid = String(u.uuid ?? '').toLowerCase();
+      const token = String(u.token ?? '').toLowerCase();
+      if (!/^[0-9a-f]{24}$/.test(id) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(uuid) || !/^[0-9a-f]{64}$/.test(token)) continue;
+      if (ids.has(id) || uuids.has(uuid) || tokens.has(token)) continue;
+      const rawRoutes = Array.isArray(u.routes) ? u.routes : [];
+      const routePattern = new RegExp(`^/e[a-z0-9]{6,12}${id}$`, 'i');
+      let routes: Route[] = rawRoutes
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && routePattern.test(String((r as Record<string, unknown>).path ?? '')))
+        .slice(0, MAX_PATHS)
+        .map((r, i) => ({
+          path: String(r.path),
+          endpointId: endpoint.id,
+          host: endpoint.host,
+          port: 443,
+          index: i + 1,
+          sni: endpoint.host,
+          wsHost: endpoint.host,
+          padding: typeof r.padding === 'string' ? r.padding.slice(0, 48) : undefined,
+        }));
+      const templateResult = validateNameTemplate(String(u.configNameTemplate ?? '').trim() || DEFAULT_NAME_TEMPLATE);
+      const limits = sanitizeLimits(u);
+      const user: User = {
+        id,
+        name: cleanText(u.name, 80) || 'مشترک بازیابی',
+        uuid,
+        token,
+        routes,
+        limitBytes: limits.limitBytes,
+        limitSeconds: limits.limitSeconds,
+        maxConnections: limits.maxConnections,
+        limitRequests: limits.limitRequests,
+        requestCount: finiteFloor(u.requestCount),
+        active: u.active !== false,
+        speedPreset: String(u.speedPreset) in SPEED_PRESETS ? (String(u.speedPreset) as SpeedPreset) : settings.speedPreset,
+        profileMode: ['auto', 'fallback', 'balance'].includes(String(u.profileMode))
+          ? (String(u.profileMode) as ProfileMode)
+          : settings.profileMode,
+        usageMode: u.usageMode === 'gaming' ? 'gaming' : 'normal',
+        gameIds: u.usageMode === 'gaming' ? sanitizeGameIds(u.gameIds) : [],
+        ironMode: u.ironMode === true,
+        domesticDirect: u.domesticDirect !== false,
+        fingerprint: ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(u.fingerprint))
+          ? (String(u.fingerprint) as User['fingerprint'])
+          : null,
+        configNameTemplate: templateResult.ok ? templateResult.value : null,
+        dynamicPool: u.dynamicPool === true,
+        rotationMinutes: clamp(Math.floor(Number(u.rotationMinutes)) || 1, 1, 60),
+        poolCleanIps: Array.isArray(u.poolCleanIps)
+          ? [...new Set(u.poolCleanIps.map(String).filter(isCloudflareIpv4Candidate))].slice(0, 50)
+          : [],
+        note: cleanText(u.note, 1000),
+        createdAt: finiteFloor(u.createdAt, Date.now()),
+        expiresAt: finiteFloor(u.expiresAt),
+        usageBytes: finiteFloor(u.usageBytes),
+        lastSeenAt: finiteFloor(u.lastSeenAt),
+        lastSubAt: finiteFloor(u.lastSubAt),
+      };
+      if (routes.length === 0) {
+        routes = buildRoutes(user.id, planRoutes([endpoint], clamp(rawRoutes.length || settings.defaultPaths, 1, MAX_PATHS)), settings);
+        user.routes = routes;
+      }
+      ids.add(id);
+      uuids.add(uuid);
+      tokens.add(token);
+      users.push(user);
+    }
+
+    if (rawUsers.length > 0 && users.length === 0) {
+      return json({ error: 'empty-restore', message: 'هیچ مشترک معتبری داخل بکاپ نبود' }, 400);
+    }
+
+    const owner = this.adminsCache.find((a) => a.role === 'owner') ?? ownerRecord();
+    const rawAdmins = Array.isArray(backup.admins) ? backup.admins : [];
+    const staffNames = new Set([owner.username.toLowerCase()]);
+    const staffIds = new Set([owner.id.toLowerCase()]);
+    const staff: Admin[] = rawAdmins
+      .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+      .filter((a) => ['admin', 'operator', 'support'].includes(String(a.role)))
+      .filter((a) => /^[a-z0-9_.]{3,32}$/.test(String(a.username ?? '')))
+      .filter((a) => /^[0-9a-f]{32}$/i.test(String(a.salt ?? '')) && /^[0-9a-f]{64}$/i.test(String(a.hash ?? '')))
+      .filter((a) => Number.isInteger(Number(a.iterations)) && Number(a.iterations) >= 100_000 && Number(a.iterations) <= 1_000_000)
+      .filter((a) => {
+        const username = String(a.username).toLowerCase();
+        const id = String(a.id ?? '').toLowerCase();
+        if (staffNames.has(username) || (/^[0-9a-f]{24}$/.test(id) && staffIds.has(id))) return false;
+        staffNames.add(username);
+        if (/^[0-9a-f]{24}$/.test(id)) staffIds.add(id);
+        return true;
+      })
+      .slice(0, 100)
+      .map((a) => ({
+        id: /^[0-9a-f]{24}$/i.test(String(a.id ?? '')) ? String(a.id).toLowerCase() : newId(),
+        username: String(a.username).toLowerCase(),
+        role: String(a.role) as Exclude<AdminRole, 'owner'>,
+        power: ['limited', 'normal', 'strong', 'ultra'].includes(String(a.power)) ? (String(a.power) as PowerLevel) : 'limited',
+        active: a.active !== false,
+        salt: String(a.salt).toLowerCase(),
+        hash: String(a.hash).toLowerCase(),
+        iterations: Number(a.iterations),
+        createdAt: finiteFloor(a.createdAt, Date.now()),
+        lastLoginAt: Number.isFinite(Number(a.lastLoginAt)) && Number(a.lastLoginAt) > 0 ? finiteFloor(a.lastLoginAt) : null,
+      }));
+
+    const oldKeys = this.usersCache.map((u) => K.user(u.id));
+    const admins = [owner, ...staff];
+    const sessions = this.sessionsCache.filter((s) => s.adminId === owner.id);
+    // Commit the replacement as one Durable Object transaction so an
+    // interrupted restore cannot leave a half-written subscriber index.
+    await this.state.storage.transaction(async (txn) => {
+      if (oldKeys.length > 0) await txn.delete(oldKeys);
+      await txn.put(K.settings, settings);
+      await txn.put(K.userIndex, users.map((u) => u.id));
+      for (const user of users) await txn.put(K.user(user.id), user);
+      await txn.put(K.admins, admins);
+      await txn.put(K.sessions, sessions);
+    });
+    this.settingsCache = settings;
+    this.usersCache = users;
+    this.adminsCache = admins;
+    this.sessionsCache = sessions;
+    await this.audit(me.username, 'backup.restore', 'backup', `بازیابی ${users.length} مشترک روی ${endpoint.host}`, ip);
+    return json({
+      ok: true,
+      restoredUsers: users.length,
+      skippedUsers: rawUsers.length - users.length,
+      restoredAdmins: staff.length,
+      skippedAdmins: rawAdmins.length - staff.length,
+      endpoint: endpoint.host,
+      message: 'بکاپ بازیابی شد؛ Token و UUID مشترک‌ها حفظ و مسیرها به دامنه جدید متصل شدند',
     });
   }
 
@@ -850,6 +1191,10 @@ export class AMINCKStore {
         this.liveSessions.delete(user.uuid);
         await this.audit(me.username, 'user.reset_connections', user.name, 'ریست نشستها', ip);
         break;
+      case 'reset_requests':
+        user.requestCount = 0;
+        await this.audit(me.username, 'user.reset_requests', user.name, 'ریست شمارنده درخواست ساب', ip);
+        break;
       case 'rotate_uuid':
         user.uuid = crypto.randomUUID();
         await this.audit(me.username, 'user.rotate_uuid', user.name, 'تعویض UUID', ip);
@@ -875,6 +1220,9 @@ export class AMINCKStore {
     const name = String(body.name ?? '').trim();
     if (!name || name.length > 80) return Promise.resolve(json({ error: 'bad-name', message: 'نام کاربر معتبر نیست' }, 400));
     const limits = sanitizeLimits(body);
+    if (body.usageMode === 'gaming' && sanitizeGameIds(body.gameIds).length === 0) {
+      return Promise.resolve(json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400));
+    }
     const maxPaths = maxPathsFor(me.power);
     const wanted = Number.isFinite(Number(body.paths)) ? Number(body.paths) : this.settings!.defaultPaths;
     const paths = clamp(Math.floor(wanted) || 1, 1, maxPaths);
@@ -889,21 +1237,43 @@ export class AMINCKStore {
     const id = String(body.id ?? '');
     const user = this.usersCache.find((u) => u.id === id);
     if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
+    const nextUsageMode = body.usageMode === undefined
+      ? (user.usageMode === 'gaming' ? 'gaming' : 'normal')
+      : (body.usageMode === 'gaming' ? 'gaming' : 'normal');
+    const nextGameIds = nextUsageMode === 'gaming'
+      ? sanitizeGameIds(body.gameIds === undefined ? user.gameIds : body.gameIds)
+      : [];
+    if (nextUsageMode === 'gaming' && nextGameIds.length === 0) {
+      return Promise.resolve(json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400));
+    }
     if (body.name !== undefined) {
       const name = String(body.name).trim();
       if (name && name.length <= 80) user.name = name;
     }
     const limits = sanitizeLimits(body);
-    user.limitBytes = limits.limitBytes;
-    user.limitSeconds = limits.limitSeconds;
-    user.maxConnections = limits.maxConnections;
-    user.limitRequests = limits.limitRequests;
+    if (body.limitBytes !== undefined) user.limitBytes = limits.limitBytes;
+    if (body.limitSeconds !== undefined) {
+      user.limitSeconds = limits.limitSeconds;
+      user.expiresAt = limits.limitSeconds === 0 ? 0 : Date.now() + limits.limitSeconds * 1000;
+    }
+    if (body.maxConnections !== undefined) user.maxConnections = limits.maxConnections;
+    if (body.limitRequests !== undefined) user.limitRequests = limits.limitRequests;
     if (body.active !== undefined) user.active = Boolean(body.active);
     if (body.profileMode !== undefined && ['auto', 'fallback', 'balance'].includes(String(body.profileMode))) {
       user.profileMode = String(body.profileMode) as ProfileMode;
     }
     if (body.speedPreset !== undefined && (body.speedPreset as string) in SPEED_PRESETS) {
       user.speedPreset = body.speedPreset as SpeedPreset;
+    }
+    if (body.usageMode !== undefined || body.gameIds !== undefined) {
+      user.usageMode = nextUsageMode;
+      user.gameIds = nextGameIds;
+    }
+    if (body.ironMode !== undefined) user.ironMode = body.ironMode === true;
+    if (body.domesticDirect !== undefined) user.domesticDirect = body.domesticDirect !== false;
+    if (body.dynamicPool !== undefined) user.dynamicPool = body.dynamicPool === true;
+    if (body.rotationMinutes !== undefined) {
+      user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
     }
     if (body.note !== undefined) user.note = String(body.note).slice(0, 1000);
     if (body.configNameTemplate !== undefined) {
@@ -942,8 +1312,15 @@ export class AMINCKStore {
       profileMode: ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
         ? (body.profileMode as ProfileMode)
         : s.profileMode,
+      usageMode: body.usageMode === 'gaming' ? 'gaming' : 'normal',
+      gameIds: body.usageMode === 'gaming' ? sanitizeGameIds(body.gameIds) : [],
+      ironMode: body.ironMode === true,
+      domesticDirect: body.domesticDirect !== false,
       fingerprint: null,
       configNameTemplate: String(body.configNameTemplate ?? '').trim() || null,
+      dynamicPool: body.dynamicPool === true,
+      rotationMinutes: clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60),
+      poolCleanIps: body.useCleanCatalog === true ? CLEAN_IP_CATALOG.map((candidate) => candidate.ip) : [],
       note: String(body.note ?? '').slice(0, 1000),
       createdAt: Date.now(),
       expiresAt: limits.limitSeconds === 0 ? 0 : Date.now() + limits.limitSeconds * 1000,
@@ -965,50 +1342,46 @@ export class AMINCKStore {
 
   // ------------------------------------------------------------ config build
 
-  private buildConfig(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+  private async buildConfig(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
     const id = String(body.id ?? '');
     const user = this.usersCache.find((u) => u.id === id);
-    if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
+    if (!user) return json({ error: 'not-found' }, 404);
     const maxPaths = maxPathsFor(this.powerOf(me));
-    const requested = clamp(Math.floor(Number(body.paths ?? user.routes.length)) || 1, 1, 200);
+    const requested = clamp(Math.floor(Number(body.paths ?? user.routes.length)) || 1, 1, MAX_PATHS);
     const paths = Math.min(requested, maxPaths);
     const truncated = paths < requested;
     const formats = parseFormats(body.formats);
     const save = body.save === true || body.save === 'true';
-    if (save) user.routes = this.buildRoutesFor(user, paths);
-    return this.persistUsers()
-      .then(() => {
-        const built = buildFormats(this.ctx(user, String(body.reqHost ?? body.host ?? '')), formats);
-        return this.audit(
-          me.username,
-          'config.build',
-          user.name,
-          `${paths} مسیر (${formats.join('،')})${truncated ? ' — محدودشده به قدرت' : ''}`,
-          ip,
-        ).then(() => json({ ok: true, configs: built, truncated }));
-      });
-  }
-
-  /** Build 1–5 standalone JSON profiles (Xray + sing-box) for a user. */
-  private ironBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
-    const id = String(body.id ?? '');
-    const user = this.usersCache.find((u) => u.id === id);
-    if (!user) return Promise.resolve(json({ error: 'not-found' }, 404));
-    const count = clamp(Math.floor(Number(body.count ?? 1)) || 1, 1, 5);
-    const iron = buildIronPack(this.ctx(user, String(body.reqHost ?? body.host ?? '')), count);
-    return this.audit(me.username, 'config.build', user.name, `آهنین ${count} پروفایل`, ip).then(() =>
-      json({ ok: true, iron }),
+    const generatedRoutes = this.buildRoutesFor(user, paths);
+    const view: User = { ...user, routes: generatedRoutes };
+    if (save) {
+      user.routes = generatedRoutes;
+      await this.persistUsers();
+    }
+    const built = buildFormats(this.ctx(view, String(body.reqHost ?? body.host ?? '')), formats).map((item) => ({
+      ...item,
+      requestedPaths: requested,
+      truncated,
+    }));
+    await this.audit(
+      me.username,
+      'config.build',
+      user.name,
+      `${paths} مسیر (${formats.join('،')})${truncated ? ' — محدودشده به قدرت' : ''}`,
+      ip,
     );
+    return json({ ok: true, configs: built, truncated, saved: save });
   }
 
-  private ctx(user: User, host: string): BuildContext {
+  private ctx(user: User, host: string, generatedAt = Date.now()): BuildContext {
     const s = this.settings!;
     // Zooz/BPB multi-port: clone each route across selected TLS ports for
     // subscription output only — stored path count is unchanged.
     const anti = resolveAntiDetect(s);
-    let routes = user.routes;
+    const rolling = rollingRouteWindow(user, generatedAt);
+    let routes = rolling.routes;
     if (anti.multiPort && s.tlsPorts.length > 1) {
-      routes = expandRoutesMultiPort(user.routes, s.tlsPorts);
+      routes = expandRoutesMultiPort(routes, s.tlsPorts);
     }
     const view: User = { ...user, routes };
     return {
@@ -1022,57 +1395,178 @@ export class AMINCKStore {
     };
   }
 
-  private autoBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+  private async autoBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    if (body.usageMode === 'gaming' && sanitizeGameIds(body.gameIds).length === 0) {
+      return json({ error: 'bad-games', message: 'برای Gaming حداقل یک بازی معتبر انتخاب کنید' }, 400);
+    }
     const maxPaths = maxPathsFor(this.powerOf(me));
-    const requested = clamp(Math.floor(Number(body.paths ?? this.settings!.defaultPaths)) || 1, 1, 200);
+    const requested = clamp(Math.floor(Number(body.paths ?? this.settings!.defaultPaths)) || 1, 1, MAX_PATHS);
     const paths = Math.min(requested, maxPaths);
 
     const orderedRaw = Array.isArray(body.orderedEndpoints) ? (body.orderedEndpoints as unknown[]) : [];
     const known = new Set(this.settings!.endpoints.map((e) => e.id));
+    const endpointSelectionProvided = Array.isArray(body.endpointIds);
+    const requestedEndpointIds = new Set(
+      (endpointSelectionProvided ? body.endpointIds as unknown[] : [])
+        .map(String)
+        .filter((id) => known.has(id)),
+    );
+    const endpointAllowed = (endpoint: Endpoint): boolean =>
+      !endpointSelectionProvided || requestedEndpointIds.has(endpoint.id);
     let ordered: Endpoint[] = orderedRaw
       .filter((e): e is Endpoint => !!e && typeof (e as Endpoint).id === 'string' && known.has((e as Endpoint).id))
       .map((e) => this.settings!.endpoints.find((x) => x.id === e.id)!)
-      .filter((e) => !!e && Number(e.port) > 0)
+      .filter((e) => !!e && endpointAllowed(e) && Number(e.port) > 0)
       .slice(0, MAX_ENDPOINTS);
+    const requestHost = String(body.reqHost ?? '').toLowerCase().replace(/:\d+$/, '');
     if (ordered.length === 0) {
-      ordered = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults).filter((e) => Number(e.port) > 0);
+      const sorted = orderEndpointsByProbe(this.settings!.endpoints, this.settings!.probeResults)
+        .filter((e) => endpointAllowed(e) && Number(e.port) > 0);
+      const healthy = sorted.filter((e) => this.settings!.probeResults[e.id]?.ok);
+      // Custom domains are usable after /healthz proves they route back to
+      // AMINNOVA. The hostname of this API request and workers.dev are safe
+      // fallbacks because the request itself reached this deployment; unrelated
+      // third-party domains are never emitted as fake SNI/Host values.
+      const ownWorkerHosts = sorted.filter((e) => e.host.endsWith('.workers.dev') || e.host === requestHost);
+      ordered = healthy.length > 0 ? healthy : ownWorkerHosts;
+    }
+    // The request hostname just reached this exact Worker, so it is the most
+    // reliable compatibility endpoint. Keep it first whenever the selection
+    // permits it; stale/deleted workers.dev entries must never become route #1.
+    const eligibleSelfEndpoints = this.settings!.endpoints.filter((endpoint) =>
+      endpoint.host.toLowerCase() === requestHost && endpointAllowed(endpoint) && Number(endpoint.port) > 0,
+    );
+    const selfEndpoint = eligibleSelfEndpoints.find((endpoint) => endpoint.port === 443) ?? eligibleSelfEndpoints[0];
+    if (selfEndpoint) {
+      ordered = [selfEndpoint, ...ordered.filter((endpoint) => endpoint.id !== selfEndpoint.id)].slice(0, MAX_ENDPOINTS);
     }
     if (ordered.length === 0) {
-      return Promise.resolve(json({ error: 'no-endpoints', message: 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده' }, 400));
+      return json({
+        error: 'no-endpoints',
+        message: endpointSelectionProvided
+          ? 'حداقل یک دامنه معتبر و متصل به همین Worker را انتخاب کنید'
+          : 'دامنه Worker هنوز به‌عنوان Endpoint ثبت نشده',
+      }, 400);
     }
 
-    const name = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
+    const baseName = String(body.name ?? 'مشترک جدید').trim() || 'مشترک جدید';
+    const subscriptionCount = clamp(
+      Math.floor(Number(body.subscriptionCount ?? 1)) || 1,
+      1,
+      MAX_BATCH_SUBSCRIPTIONS,
+    );
     const limits = sanitizeLimits(body);
-    const user = this.newUser(name, limits, body, 1);
-    user.speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS ? (body.speedPreset as SpeedPreset) : this.settings!.speedPreset;
-    user.profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
+    const speedPreset = (body.speedPreset as SpeedPreset) in SPEED_PRESETS
+      ? (body.speedPreset as SpeedPreset)
+      : this.settings!.speedPreset;
+    const profileMode = ['auto', 'fallback', 'balance'].includes(String(body.profileMode))
       ? (body.profileMode as ProfileMode)
       : this.settings!.profileMode;
-    user.speedPreset = 'god';
-    user.routes = buildRoutes(user.id, planRoutes(ordered, paths), this.settings!);
-    this.usersCache.push(user);
-    return this.persistUsers()
-      .then(() => {
-        const host = String(body.reqHost ?? body.host ?? '');
-        const prev = this.settings!.antiDetect.multiPort;
-        const fronts = CLEAN_IP_CATALOG.slice(0, 8).map((c) => c.ip);
-        const tunneled: User = {
-          ...user,
-          routes: expandTunnelFronts(expandRoutesMultiPort(user.routes, this.settings!.tlsPorts), fronts, 200),
-        };
-        this.settings!.antiDetect.multiPort = false;
-        const built = buildFormats(this.ctx(tunneled, host), ['v2ray', 'raw', 'clash', 'singbox']);
-        this.settings!.antiDetect.multiPort = prev;
-        const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
-        const iron = ironCount > 0 ? buildIronPack(this.ctx(user, host), ironCount) : [];
-        return this.audit(
-          me.username,
-          'config.auto_build',
-          user.name,
-          `ساخت اتومات GOD — ${paths} مسیر + آهنین ${ironCount}`,
-          ip,
-        ).then(() => json({ ok: true, user: { ...user }, configs: built, iron, subUrl: `https://${host}/sub/${user.token}` }));
-      });
+    const cleanIpInputs = (Array.isArray(body.cleanIps) ? body.cleanIps : String(body.cleanIps ?? '').split(/[\s,;]+/))
+      .map(String)
+      .map((ip) => ip.trim())
+      .filter(Boolean);
+    const invalidCleanIps = cleanIpInputs.filter((ip) => !isCloudflareIpv4Candidate(ip));
+    if (invalidCleanIps.length > 0) {
+      return json({ error: `IPv4 باید معتبر و داخل بازه رسمی Cloudflare باشد: ${invalidCleanIps.slice(0, 3).join(', ')}` }, 400);
+    }
+    const manualIps = Array.from(new Set(cleanIpInputs)).slice(0, 50);
+    const catalogIps = body.useCleanCatalog === true
+      ? CLEAN_IP_CATALOG.map((candidate) => candidate.ip)
+      : [];
+    // These are Cloudflare Anycast candidates, never a universal "clean IP"
+    // promise. The client-side url-test/leastPing decides what works on the
+    // user's actual ISP while SNI and Host remain the operator's Worker.
+    const cleanIps = [...new Set([...manualIps, ...catalogIps])].slice(0, 50);
+    const users: User[] = [];
+    for (let i = 0; i < subscriptionCount; i++) {
+      const suffix = subscriptionCount > 1 ? `-${String(i + 1).padStart(2, '0')}` : '';
+      const user = this.newUser(`${baseName}${suffix}`.slice(0, 80), limits, body, 1);
+      user.speedPreset = speedPreset;
+      user.profileMode = profileMode;
+      user.dynamicPool = body.dynamicPool === true;
+      user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
+      user.poolCleanIps = [...cleanIps];
+      const baseRouteCount = cleanIps.length > 0
+        ? Math.max(1, Math.ceil(paths / (cleanIps.length + 1)))
+        : paths;
+      const directRoutes = buildRoutes(user.id, planRoutes(ordered, baseRouteCount), this.settings!);
+      user.routes = (cleanIps.length > 0
+        ? expandTunnelFronts(directRoutes, cleanIps, paths)
+        : directRoutes)
+        .slice(0, paths)
+        .map((route, index) => ({ ...route, index: index + 1 }));
+      users.push(user);
+    }
+    this.usersCache.push(...users);
+    await this.persistUsers();
+
+    const host = String(body.reqHost ?? body.host ?? '');
+    const first = users[0]!;
+    // Keep full generated payloads for the first subscription for backward
+    // compatibility. Every subscription has its own format URLs below.
+    const built = buildFormats(this.ctx(first, host), ['v2ray', 'raw', 'clash', 'singbox']).map((item) => ({
+      ...item,
+      requestedPaths: requested,
+      truncated: paths < requested,
+    }));
+    const ironCount = clamp(Math.floor(Number(body.ironCount ?? 0)) || 0, 0, 5);
+    const iron = ironCount > 0 ? buildIronPack(this.ctx(first, host), ironCount) : [];
+    const subscriptions = users.map((user) => ({
+      id: user.id,
+      name: user.name,
+      token: user.token,
+      paths: user.routes.length,
+      subUrl: `https://${host}/sub/${user.token}`,
+      rawUrl: `https://${host}/sub/${user.token}/raw`,
+      clashUrl: `https://${host}/sub/${user.token}/clash`,
+      singboxUrl: `https://${host}/sub/${user.token}/singbox`,
+    }));
+    await this.audit(
+      me.username,
+      'config.auto_build',
+      baseName.slice(0, 80),
+      `ساخت اتومات ${subscriptionCount} ساب ${speedPreset} — هرکدام ${paths} مسیر + آهنین ${ironCount}`,
+      ip,
+    );
+    return json({
+      ok: true,
+      user: { ...first },
+      users: users.map((user) => ({ ...user })),
+      subscriptions,
+      subscriptionCount,
+      configs: built,
+      iron,
+      selectedEndpoints: ordered.map((e) => e.id),
+      cleanIpsUsed: cleanIps,
+      directAndFrontedRoutes: cleanIps.length > 0,
+      rollingPool: {
+        enabled: first.dynamicPool === true,
+        activeWindow: first.routes.length,
+        rotationMinutes: first.rotationMinutes ?? 1,
+        note: first.dynamicPool === true
+          ? 'پنجره فعال در هر Refresh می‌چرخد؛ تعداد هم‌زمان برای پایداری کلاینت محدود است'
+          : '',
+      },
+      aiAssistance: {
+        requested: body.useCloudflareAi === true,
+        applied: body.aiApplied === true,
+        recommendation: body.aiApplied === true ? String(body.aiRecommendation ?? '') : '',
+      },
+      truncated: paths < requested,
+      subUrl: subscriptions[0]!.subUrl,
+    });
+  }
+
+  private async ironBuild(body: Record<string, unknown>, me: audience, ip: string): Promise<Response> {
+    const user = this.usersCache.find((u) => u.id === String(body.id ?? ''));
+    if (!user) return json({ error: 'not-found', message: 'مشترک پیدا نشد' }, 404);
+    if (user.routes.length === 0) return json({ error: 'no-routes', message: 'برای مشترک مسیری ساخته نشده' }, 400);
+    const count = clamp(Math.floor(Number(body.count ?? 1)) || 1, 1, 5);
+    const host = String(body.reqHost ?? body.host ?? '');
+    const iron = buildIronPack(this.ctx(user, host), count);
+    await this.audit(me.username, 'config.iron_build', user.name, `ساخت ${count} پروفایل آهنین`, ip);
+    return json({ ok: true, count: iron.length, iron });
   }
 
   // ------------------------------------------------------------- endpoints
@@ -1097,8 +1591,8 @@ export class AMINCKStore {
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) || host.length > 200) {
       return json({ error: 'bad-host', message: 'Endpoint معتبر نیست' }, 400);
     }
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      return json({ error: 'bad-port', message: 'پورت نامعتبر' }, 400);
+    if (!CLOUDFLARE_TLS_PORTS.includes(port)) {
+      return json({ error: 'bad-port', message: 'پورت باید یکی از پورت‌های HTTPS کلودفلر باشد' }, 400);
     }
     const s = this.settingsCache!;
     if (s.endpoints.length >= MAX_ENDPOINTS) {
@@ -1107,9 +1601,10 @@ export class AMINCKStore {
     if (s.endpoints.some((e) => e.host === host && e.port === port)) {
       return json({ error: 'duplicate', message: 'Endpoint تکراری' }, 409);
     }
+    const label = String(body.label ?? '').trim().replace(/\s+/g, ' ').slice(0, 60);
     s.endpoints.push({
       id: newId(),
-      label: body.label ? String(body.label).slice(0, 60) : `${host}:${port}`,
+      label: label || `${host}:${port}`,
       host,
       port,
       createdAt: Date.now(),
@@ -1129,7 +1624,18 @@ export class AMINCKStore {
     if (patch.supportUrl !== undefined) s.supportUrl = String(patch.supportUrl).trim().slice(0, 300);
     if (patch.healthUrl !== undefined) {
       const u = String(patch.healthUrl).trim();
-      s.healthUrl = /^https?:\/\//.test(u) ? u.slice(0, 300) : '';
+      if (!u) s.healthUrl = '';
+      else {
+        let target: URL;
+        try { target = new URL(u); } catch { return json({ error: 'bad-health-url', message: 'Health URL معتبر نیست' }, 400); }
+        if (!['http:', 'https:'].includes(target.protocol)) {
+          return json({ error: 'bad-health-url', message: 'Health URL باید HTTP یا HTTPS باشد' }, 400);
+        }
+        if (s.endpoints.some((endpoint) => endpoint.host.toLowerCase() === target.hostname.toLowerCase())) {
+          return json({ error: 'health-loop', message: 'Health URL نباید دامنه همین Worker باشد؛ این کار TCP Loop و Timeout می‌سازد' }, 400);
+        }
+        s.healthUrl = u.slice(0, 300);
+      }
     }
     if (patch.doh !== undefined) {
       const u = String(patch.doh).trim();
@@ -1144,7 +1650,7 @@ export class AMINCKStore {
       if (!v.ok) return json({ error: 'bad-template', message: v.error }, 400);
       s.configNameTemplate = v.value;
     }
-    if (patch.defaultPaths !== undefined) s.defaultPaths = clamp(Math.floor(Number(patch.defaultPaths)) || 1, 1, 200);
+    if (patch.defaultPaths !== undefined) s.defaultPaths = clamp(Math.floor(Number(patch.defaultPaths)) || 1, 1, MAX_PATHS);
     if (patch.updateIntervalHours !== undefined) s.updateIntervalHours = clamp(Math.floor(Number(patch.updateIntervalHours)) || 24, 1, 720);
     if (patch.fingerprint !== undefined) {
       const fp = String(patch.fingerprint);
@@ -1159,17 +1665,18 @@ export class AMINCKStore {
       if (sp in SPEED_PRESETS) s.speedPreset = sp as SpeedPreset;
     }
     if (patch.tlsPorts !== undefined) {
-      const ports = [...new Set((patch.tlsPorts as unknown[]).map(Number).filter((p) => Number.isInteger(p) && p > 0 && p < 65536))];
-      if (ports.length === 0) return json({ error: 'bad-ports', message: 'حداقل یک پورت TLS لازم است' }, 400);
-      s.tlsPorts = ports.slice(0, 10);
+      const ports = [...new Set((patch.tlsPorts as unknown[]).map(Number).filter((p) => CLOUDFLARE_TLS_PORTS.includes(p)))];
+      if (ports.length === 0) return json({ error: 'bad-ports', message: 'حداقل یک پورت TLS معتبر کلودفلر لازم است' }, 400);
+      s.tlsPorts = ports;
     }
-    if (patch.fakeDomains !== undefined && Array.isArray(patch.fakeDomains)) {
-      const domains = (patch.fakeDomains as unknown[])
+    if (patch.hostAliases !== undefined && Array.isArray(patch.hostAliases)) {
+      const knownHosts = new Set(s.endpoints.map((e) => e.host));
+      const domains = (patch.hostAliases as unknown[])
         .map((d) => String(d).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
-        .filter((d) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(d) && d.length <= 200)
+        .filter((d) => knownHosts.has(d))
         .slice(0, 30);
-      if (domains.length === 0) return json({ error: 'bad-domains', message: 'حداقل یک دامنه جعلی معتبر لازم است' }, 400);
-      s.fakeDomains = domains;
+      s.hostAliases = domains;
+      if (domains.length === 0) s.antiDetect.hostCamouflage = false;
     }
     if (patch.antiDetect !== undefined && typeof patch.antiDetect === 'object' && patch.antiDetect) {
       const a = patch.antiDetect as Partial<AntiDetectSettings>;

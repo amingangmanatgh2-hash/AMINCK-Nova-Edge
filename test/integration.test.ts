@@ -23,6 +23,9 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
+    expect(data.version).toBe('1.3.0');
+    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
+    expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
     expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
@@ -31,12 +34,24 @@ describe('health & headers', () => {
     expect(res.headers.get('permissions-policy')).toContain('camera=()');
   });
 
+  it('exposes a safe public source-update check without deployment credentials', async () => {
+    const res = await w.mf.dispatchFetch(`${w.base}/api/update-check`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.currentVersion).toBe('1.3.0');
+    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
+    expect(data.autoUpdate).toBe(false);
+    expect(data.source).toContain('raw.githubusercontent.com');
+    expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
+    expect(JSON.stringify(data).toLowerCase()).not.toContain('api_token');
+  });
+
   it('serves the panel shell and assets', async () => {
     const html = await w.mf.dispatchFetch(`${w.base}/`);
     expect(html.status).toBe(200);
     const text = await html.text();
     expect(text).toContain('dir="rtl"');
-    expect(text).toContain('AMINCK GOD Edition');
+    expect(text).toContain('AMINNOVA');
     expect(html.headers.get('content-security-policy')).toContain("script-src 'self'");
 
     const js = await w.mf.dispatchFetch(`${w.base}/app.js`);
@@ -46,6 +61,19 @@ describe('health & headers', () => {
     const css = await w.mf.dispatchFetch(`${w.base}/app.css`);
     expect(css.status).toBe(200);
     expect((await css.text()).length).toBeGreaterThan(500);
+
+    const manifest = await w.mf.dispatchFetch(`${w.base}/manifest.webmanifest`);
+    expect(manifest.status).toBe(200);
+    expect(manifest.headers.get('content-type')).toContain('manifest');
+    expect(((await manifest.json()) as any).display).toBe('standalone');
+    const sw = await w.mf.dispatchFetch(`${w.base}/sw.js`);
+    expect(sw.status).toBe(200);
+    expect(sw.headers.get('service-worker-allowed')).toBe('/');
+    expect(sw.headers.get('cache-control')).toContain('no-store');
+    expect(await sw.text()).toContain("'/sub/'");
+    const icon = await w.mf.dispatchFetch(`${w.base}/icon.svg`);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get('content-type')).toContain('image/svg+xml');
   });
 });
 
@@ -65,6 +93,10 @@ describe('owner login & session', () => {
     expect(r.me.role).toBe('owner');
     expect(r.me.power).toBe('ultra');
     expect(r.me.permissions.length).toBe(10);
+    expect(r.cookie).toMatch(/^[0-9a-f]{64}$/);
+    const second = await w.login('AMINCK', OWNER_PASSWORD);
+    expect(second.cookie).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.cookie).not.toBe(r.cookie);
   });
 
   it('accepts owner with empty username', async () => {
@@ -89,6 +121,8 @@ describe('owner login & session', () => {
 describe('subscription users (unlimited semantics)', () => {
   let userId = '';
   let token = '';
+  let routePath = '';
+  let userUuid = '';
 
   it('creates an unlimited user — zero stays zero', async () => {
     const r = await w.api(ownerCookie, '/api/user-create', {
@@ -104,11 +138,56 @@ describe('subscription users (unlimited semantics)', () => {
     expect(u.limitSeconds).toBe(0);
     expect(u.maxConnections).toBe(0);
     expect(u.expiresAt).toBe(0);
+    expect(u.domesticDirect).toBe(true);
     expect(u.routes.length).toBe(3);
     expect(u.uuid).toMatch(/^[0-9a-f-]{36}$/);
     expect(u.token).toMatch(/^[0-9a-f]{64}$/);
     userId = u.id;
     token = u.token;
+    routePath = u.routes[0].path;
+    userUuid = u.uuid;
+  });
+
+  it('delivers client frames to the Worker-side WebSocket endpoint', async () => {
+    const response = await w.mf.dispatchFetch(`${w.base}${routePath}`, {
+      headers: { Upgrade: 'websocket' },
+    });
+    expect(response.status).toBe(101);
+    const socket = response.webSocket;
+    expect(socket).not.toBeNull();
+    socket!.accept();
+    const closed = new Promise<{ code: number; reason: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('websocket-close-timeout')), 1000);
+      socket!.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve({ code: event.code, reason: event.reason });
+      });
+    });
+    socket!.send(new Uint8Array(20).fill(0xff));
+    await expect(closed).resolves.toEqual(expect.objectContaining({ code: 1002 }));
+  });
+
+  it('parses a valid VLESS frame and rejects a private target immediately', async () => {
+    const response = await w.mf.dispatchFetch(`${w.base}${routePath}`, {
+      headers: { Upgrade: 'websocket' },
+    });
+    const socket = response.webSocket!;
+    socket.accept();
+    const uuid = userUuid.replace(/-/g, '').match(/../g)!.map((hex) => Number.parseInt(hex, 16));
+    const frame = Uint8Array.from([
+      0, ...uuid, 0, // version, UUID, addon length
+      1, 1, 187, // TCP, port 443
+      1, 127, 0, 0, 1, // IPv4 127.0.0.1
+    ]);
+    const closed = new Promise<{ code: number; reason: string }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('vless-close-timeout')), 1000);
+      socket.addEventListener('close', (event) => {
+        clearTimeout(timer);
+        resolve({ code: event.code, reason: event.reason });
+      });
+    });
+    socket.send(frame);
+    await expect(closed).resolves.toEqual({ code: 1008, reason: 'private-ip' });
   });
 
   it('creates a limited user with real numbers', async () => {
@@ -141,7 +220,8 @@ describe('subscription users (unlimited semantics)', () => {
     expect(res.headers.get('subscription-userinfo')).toContain('download=');
     expect(res.headers.get('subscription-userinfo')).toContain('total=0');
     expect(res.headers.get('profile-update-interval')).toBe('24h');
-    expect(res.headers.get('support-url')).toBeTruthy();
+    expect(res.headers.get('content-disposition')).toContain('inline');
+    expect(res.headers.get('support-url')).toBeNull();
     const payload = await res.text();
     const decoded = Buffer.from(payload, 'base64').toString('utf8');
     expect(decoded.split('\n').length).toBe(3);
@@ -198,21 +278,24 @@ describe('subscription users (unlimited semantics)', () => {
 });
 
 describe('power-level enforcement (backend, not UI)', () => {
-  it('owner (ultra) can build 200 paths', async () => {
+  it('owner (ultra) can build and emit the 2000-route ceiling', async () => {
     const r = await w.api(ownerCookie, '/api/user-create', {
-      name: 'کاربر ۲۰۰ مسیر',
-      paths: 200,
+      name: 'کاربر ۲۰۰۰ مسیر',
+      paths: 2000,
+      ironMode: true,
     });
     expect(r.status).toBe(200);
-    expect(r.data.user.routes.length).toBe(200);
+    expect(r.data.user.routes.length).toBe(2000);
+    expect(new Set(r.data.user.routes.map((route: any) => route.path)).size).toBe(2000);
 
     const cfg = await w.api(ownerCookie, '/api/config-build', {
       id: r.data.user.id,
-      paths: 200,
-      formats: ['clash'],
+      paths: 2000,
+      formats: ['raw'],
     });
     expect(cfg.status).toBe(200);
-    expect(cfg.data.configs[0].paths).toBe(200);
+    expect(cfg.data.configs[0].paths).toBe(2000);
+    expect(cfg.data.configs[0].payload.split('\n')).toHaveLength(2000);
     expect(cfg.data.truncated).toBe(false);
   });
 
@@ -246,15 +329,18 @@ describe('power-level enforcement (backend, not UI)', () => {
     expect(cfg.data.truncated).toBe(true);
   });
 
-  it('limited admin is forbidden from privileged ops (settings/admins/backup)', async () => {
+  it('limits settings/admin/restore privileges while allowing a redacted export', async () => {
     const lim = await w.login('lim1', 'LimitedPass123!');
     const settings = await w.api(lim.cookie, '/api/settings', { settings: { title: 'hack' } });
     expect(settings.status).toBe(403);
     const admins = await w.api(lim.cookie, '/api/admins/list', {});
     expect(admins.status).toBe(403);
-    // admin role legitimately holds backup:export — this must NOT be blocked
+    // admin role legitimately holds backup:export, but staff password hashes stay owner-only.
     const backup = await w.api(lim.cookie, '/api/backup', {});
     expect(backup.status).toBe(200);
+    expect(backup.data.admins).toEqual([]);
+    const restore = await w.api(lim.cookie, '/api/restore', { backup: backup.data });
+    expect(restore.status).toBe(403);
   });
 
   it('support role cannot create/delete users', async () => {
@@ -382,8 +468,8 @@ describe('backup', () => {
   it('exports the full JSON backup', async () => {
     const r = await w.api(ownerCookie, '/api/backup', {});
     expect(r.status).toBe(200);
-    expect(r.data.app).toBe('AMINCK GOD Edition');
-    expect(r.data.version).toBe('AMINCK GOD Edition');
+    expect(r.data.app).toBe('AMINNOVA');
+    expect(r.data.version).toBe(2);
     expect(Array.isArray(r.data.users)).toBe(true);
     expect(r.data.users.length).toBeGreaterThanOrEqual(4);
     expect(Array.isArray(r.data.admins)).toBe(true);
@@ -414,6 +500,12 @@ describe('settings', () => {
       settings: { configNameTemplate: '{nope}' },
     });
     expect(bad.status).toBe(400);
+
+    const healthLoop = await w.api(ownerCookie, '/api/settings', {
+      settings: { healthUrl: 'https://nova.test/healthz' },
+    });
+    expect(healthLoop.status).toBe(400);
+    expect(healthLoop.data.error).toBe('health-loop');
   });
 });
 
@@ -427,10 +519,12 @@ describe('endpoints', () => {
   it('adds and removes endpoints with validation', async () => {
     const add = await w.api(ownerCookie, '/api/endpoints', {
       action: 'add',
+      label: '  Frankfurt   Primary  ',
       host: 'edge-extra.example.com',
       port: 443,
     });
     expect(add.status).toBe(200);
+    expect(add.data.endpoints.find((e: any) => e.host === 'edge-extra.example.com').label).toBe('Frankfurt Primary');
     const dup = await w.api(ownerCookie, '/api/endpoints', {
       action: 'add',
       host: 'edge-extra.example.com',
@@ -451,12 +545,109 @@ describe('endpoints', () => {
 });
 
 describe('capabilities API', () => {
-  it('reports ≥150 capabilities and ≥50 owner/admin ones', async () => {
+  it('reports ≥500 implemented capabilities/catalogue controls and ≥50 owner/admin ones', async () => {
     const r = await w.api(ownerCookie, '/api/capabilities', {});
     expect(r.status).toBe(200);
-    expect(r.data.total).toBeGreaterThanOrEqual(150);
+    expect(r.data.total).toBeGreaterThanOrEqual(500);
     expect(r.data.ownerCount).toBeGreaterThanOrEqual(50);
     expect(r.data.capabilities.length).toBe(r.data.total);
+  });
+});
+
+describe('Gaming and whole-subscription Iron APIs', () => {
+  it('serves safe catalogue metadata with Call of Duty and Minecraft', async () => {
+    const r = await w.api(ownerCookie, '/api/game-catalog', {});
+    expect(r.status).toBe(200);
+    expect(r.data.total).toBeGreaterThanOrEqual(170);
+    expect(r.data.games).toHaveLength(r.data.total);
+    expect(r.data.games.some((game: any) => /Call of Duty/i.test(game.title))).toBe(true);
+    expect(r.data.games.some((game: any) => /Minecraft/i.test(game.title))).toBe(true);
+    expect(r.data.games.every((game: any) => game.domains === undefined)).toBe(true);
+  });
+
+  it('rejects Gaming mode when no valid game is selected', async () => {
+    const r = await w.api(ownerCookie, '/api/user-create', {
+      name: 'empty-gaming-user',
+      paths: 2,
+      usageMode: 'gaming',
+      gameIds: ['not-in-catalogue'],
+    });
+    expect(r.status).toBe(400);
+    expect(r.data.error).toBe('bad-games');
+  });
+
+  it('persists validated Gaming choices and labels the whole subscription IRON', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'gaming-iron-user',
+      paths: 4,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java', 'invalid-game', 'cod-mobile'],
+      ironMode: true,
+    });
+    expect(created.status).toBe(200);
+    expect(created.data.user.usageMode).toBe('gaming');
+    expect(created.data.user.gameIds).toEqual(['cod-mobile', 'minecraft-java']);
+    expect(created.data.user.ironMode).toBe(true);
+
+    const raw = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/raw`);
+    expect(raw.status).toBe(200);
+    const rawText = await raw.text();
+    expect(rawText.split('\n')).toHaveLength(4);
+    expect(rawText).toContain('GAMING');
+    expect(rawText).toContain('IRON');
+
+    const clash = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/clash`);
+    const clashText = await clash.text();
+    expect(clashText).toContain('DOMAIN-SUFFIX,callofduty.com,AMINCK-GAMING');
+    expect(clashText).toContain('DOMAIN-SUFFIX,minecraft.net,AMINCK-GAMING');
+
+    const singbox = await w.mf.dispatchFetch(`${w.base}/sub/${created.data.user.token}/singbox`);
+    const singboxJson = JSON.parse(await singbox.text());
+    expect(singboxJson.route.rules.some((rule: any) =>
+      rule.outbound === 'NOVA-AUTO' && rule.domain_suffix?.includes('minecraft.net'))).toBe(true);
+  });
+
+  it('permission-gates conversational planning and falls back without an AI binding', async () => {
+    const anonymous = await w.api('', '/api/ai-plan', { prompt: 'برای کالاف 20 کانفیگ کم پینگ بساز' });
+    expect(anonymous.status).toBe(401);
+
+    const planned = await w.api(ownerCookie, '/api/ai-plan', {
+      prompt: 'برای کالاف 20 کانفیگ کمترین پینگ آهنین بساز و نت ملی مستقیم بماند',
+    });
+    expect(planned.status).toBe(200);
+    expect(planned.data.cloudflareAiUsed).toBe(false);
+    expect(planned.data.deterministicFallback).toBe(true);
+    expect(planned.data.plan).toEqual(expect.objectContaining({
+      paths: 20,
+      usageMode: 'gaming',
+      speedPreset: 'latency',
+      profileMode: 'auto',
+      ironMode: true,
+      domesticDirect: true,
+      ready: true,
+    }));
+    expect(planned.data.plan.gameIds).toContain('cod-mobile');
+  });
+
+  it('persists LOW PING and Domestic Direct through the validated Auto Build path', async () => {
+    const built = await w.api(ownerCookie, '/api/auto-build', {
+      name: 'ai-low-ping',
+      paths: 7,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile'],
+      speedPreset: 'latency',
+      profileMode: 'auto',
+      domesticDirect: true,
+      ironMode: true,
+    });
+    expect(built.status).toBe(200);
+    const user = built.data.users[0];
+    expect(user).toEqual(expect.objectContaining({
+      speedPreset: 'latency', profileMode: 'auto', domesticDirect: true, ironMode: true,
+    }));
+    expect(user.gameIds).toEqual(['cod-mobile']);
+    const clash = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}/clash`);
+    expect(await clash.text()).toContain('DOMAIN-SUFFIX,ir,DIRECT');
   });
 });
 
@@ -544,10 +735,23 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
     expect(nu.routes[0].path).not.toBe(oldPath);
   });
 
-  it('settings accept fakeDomains and antiDetect', async () => {
+  it('rescue update rebinds every profile to the active request hostname', async () => {
+    const r = await w.api(ownerCookie, '/api/hot-update', { rescue: true, speedPreset: 'stable' });
+    expect(r.status).toBe(200);
+    expect(r.data.rescue).toBe(true);
+    expect(r.data.endpoint).toBe('nova.test');
+    const users = await w.api(ownerCookie, '/api/users', {});
+    for (const user of users.data.users) {
+      expect(user.speedPreset).toBe('stable');
+      expect(user.dynamicPool).toBe(false);
+      expect(user.routes.every((route: { host: string; frontIp?: string }) => route.host === 'nova.test' && !route.frontIp)).toBe(true);
+    }
+  });
+
+  it('settings accept hostAliases and antiDetect', async () => {
     const r = await w.api(ownerCookie, '/api/settings', {
       settings: {
-        fakeDomains: ['snaap.ir', 'www.digikala.com'],
+        hostAliases: ['nova.test', 'snaap.ir'],
         antiDetect: {
           pathPadding: true,
           pathJitter: true,
@@ -559,7 +763,7 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
       },
     });
     expect(r.status).toBe(200);
-    expect(r.data.settings.fakeDomains).toContain('snaap.ir');
+    expect(r.data.settings.hostAliases).toEqual(['nova.test']);
     expect(r.data.settings.antiDetect.fragment).toBe(true);
     expect(r.data.settings.speedPreset).toBe('god');
   });
@@ -580,5 +784,194 @@ describe('AMINCK GOD Edition hot-update & anti-detect', () => {
     // host camouflage or sni present
     expect(text).toContain('security=tls');
     expect(text).toContain('type=ws');
+  });
+});
+
+
+describe('AMINNOVA reliability regressions', () => {
+  it('launch metadata exposes official deploy links but no token collection endpoint', async () => {
+    const res = await w.mf.dispatchFetch(`${w.base}/api/launch`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.repo).toContain('AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge');
+    expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
+    expect(data.tokenUrl).toBeUndefined();
+    expect(JSON.stringify(data)).not.toContain('api-tokens');
+  });
+
+  it('builds five valid iron profiles through the authenticated API', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'iron-api-user',
+      paths: 5,
+    });
+    const result = await w.api(ownerCookie, '/api/iron-build', {
+      id: created.data.user.id,
+      count: 5,
+    });
+    expect(result.status).toBe(200);
+    expect(result.data.iron).toHaveLength(5);
+    for (const profile of result.data.iron) expect(() => JSON.parse(profile.json)).not.toThrow();
+  });
+
+  it('enforces and resets the subscription request cap', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'request-cap-user',
+      paths: 1,
+      limitRequests: 1,
+    });
+    const user = created.data.user;
+    const first = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    const second = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    const reset = await w.api(ownerCookie, `/api/users/${user.id}`, { action: 'reset_requests' });
+    expect(reset.status).toBe(200);
+    const third = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}`);
+    expect(third.status).toBe(200);
+  });
+
+  it('keeps omitted limits during a partial user edit', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'partial-before',
+      paths: 2,
+      limitBytes: 123456,
+      limitSeconds: 3600,
+      maxConnections: 4,
+      limitRequests: 9,
+    });
+    const updated = await w.api(ownerCookie, '/api/user-update', {
+      id: created.data.user.id,
+      name: 'partial-after',
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.data.user.limitBytes).toBe(123456);
+    expect(updated.data.user.limitSeconds).toBe(3600);
+    expect(updated.data.user.maxConnections).toBe(4);
+    expect(updated.data.user.limitRequests).toBe(9);
+  });
+
+  it('creates a selectable batch of independent subscriptions', async () => {
+    const listed = await w.api(ownerCookie, '/api/endpoints', { action: 'view' });
+    const selectedId = listed.data.endpoints.find((endpoint: any) => endpoint.host === 'nova.test').id;
+    const built = await w.api(ownerCookie, '/api/auto-build', {
+      name: 'batch-vip',
+      subscriptionCount: 3,
+      paths: 4,
+      ironCount: 2,
+      speedPreset: 'god',
+      endpointIds: [selectedId],
+      useCleanCatalog: true,
+      dynamicPool: true,
+      rotationMinutes: 1,
+      useCloudflareAi: true,
+      aiApplied: true,
+      aiRecommendation: 'forged',
+    });
+    expect(built.status).toBe(200);
+    expect(built.data.subscriptionCount).toBe(3);
+    expect(built.data.selectedEndpoints).toEqual([selectedId]);
+    expect(built.data.subscriptions).toHaveLength(3);
+    expect(new Set(built.data.subscriptions.map((x: any) => x.token)).size).toBe(3);
+    expect(built.data.users.every((u: any) => u.routes.length === 4)).toBe(true);
+    expect(built.data.cleanIpsUsed.length).toBeGreaterThan(10);
+    expect(built.data.rollingPool).toEqual(expect.objectContaining({ enabled: true, activeWindow: 4, rotationMinutes: 1 }));
+    expect(built.data.users.every((u: any) => u.dynamicPool && u.rotationMinutes === 1)).toBe(true);
+    expect(built.data.aiAssistance).toEqual({ requested: true, applied: false, recommendation: '' });
+    expect(built.data.users.every((u: any) => u.routes.some((r: any) => r.frontIp))).toBe(true);
+    expect(built.data.users.flatMap((u: any) => u.routes).filter((r: any) => r.frontIp).every((r: any) => r.sni === 'nova.test')).toBe(true);
+    expect(built.data.iron).toHaveLength(2);
+    const stats = await w.api(ownerCookie, '/api/stats', {});
+    expect(stats.data.lastProbeAt).toBeGreaterThan(0);
+    for (const sub of built.data.subscriptions) {
+      const res = await w.mf.dispatchFetch(sub.subUrl.replace('https://nova.test', w.base));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
+      expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
+      expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
+      expect(res.headers.get('x-aminck-version')).toBe('1.3.0');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.22-ai-low-ping.4');
+      expect(res.headers.get('cache-control')).toContain('no-store');
+      expect(res.headers.get('etag')).toContain('W/');
+      expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
+      const raw = await w.mf.dispatchFetch(sub.rawUrl.replace('https://nova.test', w.base));
+      expect(raw.status).toBe(200);
+      expect(await raw.text()).toContain('vless://');
+    }
+  });
+
+  it('rejects malformed or private clean-IP candidates', async () => {
+    const malformed = await w.api(ownerCookie, '/api/auto-build', { name: 'bad-ip', paths: 3, cleanIps: '999.1.1.1' });
+    expect(malformed.status).toBe(400);
+    expect(malformed.data.error).toContain('IP');
+    const privateIp = await w.api(ownerCookie, '/api/auto-build', { name: 'private-ip', paths: 3, cleanIps: '127.0.0.1' });
+    expect(privateIp.status).toBe(400);
+    const nonCloudflare = await w.api(ownerCookie, '/api/auto-build', { name: 'wrong-network', paths: 3, cleanIps: '8.8.8.8' });
+    expect(nonCloudflare.status).toBe(400);
+  });
+
+  it('rejects malformed restore files without replacing current data', async () => {
+    const before = await w.api(ownerCookie, '/api/users', {});
+    const rejected = await w.api(ownerCookie, '/api/restore', { backup: { users: [] } });
+    expect(rejected.status).toBe(400);
+    const after = await w.api(ownerCookie, '/api/users', {});
+    expect(after.data.users).toHaveLength(before.data.users.length);
+  });
+
+  it('exports and restores subscribers while preserving token and UUID', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'portable-recovery-user',
+      paths: 3,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile', 'minecraft-java'],
+      ironMode: true,
+      domesticDirect: false,
+      speedPreset: 'latency',
+      dynamicPool: true,
+      rotationMinutes: 1,
+      useCleanCatalog: true,
+    });
+    const original = created.data.user;
+    const backup = await w.api(ownerCookie, '/api/backup', {});
+    expect(backup.status).toBe(200);
+    expect(backup.data.app).toBe('AMINNOVA');
+    await w.api(ownerCookie, '/api/user-delete', { id: original.id });
+    expect((await w.mf.dispatchFetch(`${w.base}/sub/${original.token}`)).status).toBe(404);
+
+    // Version-1 exports used this product marker; migration must remain possible.
+    const legacyCompatible = { ...backup.data, app: 'AMINCK GOD Edition', version: 'AMINCK GOD Edition' };
+    const restored = await w.api(ownerCookie, '/api/restore', { backup: legacyCompatible });
+    expect(restored.status).toBe(200);
+    expect(restored.data.restoredUsers).toBeGreaterThan(0);
+    const list = await w.api(ownerCookie, '/api/users', { q: 'portable-recovery-user' });
+    expect(list.data.users[0].token).toBe(original.token);
+    expect(list.data.users[0].uuid).toBe(original.uuid);
+    expect(list.data.users[0].usageMode).toBe('gaming');
+    expect(list.data.users[0].gameIds).toEqual(['cod-mobile', 'minecraft-java']);
+    expect(list.data.users[0].ironMode).toBe(true);
+    expect(list.data.users[0].domesticDirect).toBe(false);
+    expect(list.data.users[0].speedPreset).toBe('latency');
+    expect(list.data.users[0].dynamicPool).toBe(true);
+    expect(list.data.users[0].rotationMinutes).toBe(1);
+    expect(list.data.users[0].poolCleanIps.length).toBeGreaterThan(10);
+    expect(list.data.users[0].routes.every((r: any) => r.host === 'nova.test')).toBe(true);
+    expect((await w.mf.dispatchFetch(`${w.base}/sub/${original.token}`)).status).toBe(200);
+  });
+
+  it('builds a requested route count without persisting when save is false', async () => {
+    const created = await w.api(ownerCookie, '/api/user-create', {
+      name: 'preview-build-user',
+      paths: 2,
+    });
+    const preview = await w.api(ownerCookie, '/api/config-build', {
+      id: created.data.user.id,
+      paths: 7,
+      formats: ['raw'],
+      save: false,
+    });
+    expect(preview.status).toBe(200);
+    expect(preview.data.configs[0].paths).toBe(7);
+    expect(preview.data.saved).toBe(false);
+    const listed = await w.api(ownerCookie, '/api/users', { q: 'preview-build-user' });
+    expect(listed.data.users[0].routes).toHaveLength(2);
   });
 });
