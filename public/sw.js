@@ -1,6 +1,6 @@
 /* AMINNOVA privacy-safe PWA service worker */
 'use strict';
-var CACHE = 'aminnova-shell-v7-giant-gaming';
+var CACHE = 'aminnova-shell-v8-ai-low-ping';
 var SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 var PRIVATE_PREFIXES = ['/api/', '/sub/', '/ws', '/healthz', '/connect', '/e'];
 function isPrivatePath(path) { return PRIVATE_PREFIXES.some(function (prefix) { return path.indexOf(prefix) === 0; }); }

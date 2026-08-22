@@ -30,6 +30,8 @@ describe('optional Workers AI advice validation', () => {
   it('accepts only the fixed profile enums from model output', () => {
     expect(parseAiProfileAdvice({ response: '```json\n{"speedPreset":"balanced","profileMode":"auto"}\n```' }))
       .toEqual({ speedPreset: 'balanced', profileMode: 'auto' });
+    expect(parseAiProfileAdvice({ response: '{"speedPreset":"latency","profileMode":"auto"}' }))
+      .toEqual({ speedPreset: 'latency', profileMode: 'auto' });
     expect(parseAiProfileAdvice({ response: '{"speedPreset":"fast","profileMode":"auto"}' })).toBeNull();
     expect(parseAiProfileAdvice({ response: '{"speedPreset":"god","profileMode":"unsafe"}' })).toBeNull();
   });

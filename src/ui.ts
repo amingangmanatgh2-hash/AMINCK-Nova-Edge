@@ -289,6 +289,11 @@ html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme
 .performance-strip b { display: block; color: var(--brand2); font-size: 17px; }
 .app-stage { background: radial-gradient(circle at 15% 10%, rgba(34,211,238,.14), transparent 35%), radial-gradient(circle at 90% 90%, rgba(236,72,153,.12), transparent 32%), var(--card); }
 .warning-honest { border-color: rgba(245,158,11,.52); color: var(--warn); }
+.ai-studio { position: relative; overflow: hidden; border-color: rgba(124,58,237,.55); background: linear-gradient(145deg,rgba(124,58,237,.14),rgba(34,211,238,.07)),var(--card); }
+.ai-studio::after { content: ''; position: absolute; width: 180px; height: 180px; inset: -90px auto auto -70px; border-radius: 50%; background: rgba(124,58,237,.16); filter: blur(25px); pointer-events: none; }
+.ai-prompt { width: 100%; min-height: 92px; resize: vertical; position: relative; z-index: 1; }
+.ai-result { white-space: pre-wrap; line-height: 1.9; }
+.latency-meter { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 800; }
 @keyframes liquidFloat { from { transform: translate3d(0,0,0) scale(.94); } to { transform: translate3d(5vw,4vh,0) scale(1.08); } }
 @keyframes logoPulse { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(2deg); } }
 @keyframes progressGlow { to { filter: hue-rotate(360deg); } }
@@ -417,7 +422,7 @@ export const UI_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 
 export const UI_SW_JS = `/* AMINNOVA privacy-safe PWA service worker */
 'use strict';
-var CACHE = 'aminnova-shell-v7-giant-gaming';
+var CACHE = 'aminnova-shell-v8-ai-low-ping';
 var SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 var PRIVATE_PREFIXES = ['/api/', '/sub/', '/ws', '/healthz', '/connect', '/e'];
 function isPrivatePath(path) { return PRIVATE_PREFIXES.some(function (prefix) { return path.indexOf(prefix) === 0; }); }
@@ -691,7 +696,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   }
   function subscriptionOptions(sel) {
     var h = '';
-    [1, 2, 3, 5, 10].forEach(function (n) {
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(function (n) {
       h += '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + ' ساب</option>';
     });
     return h;
@@ -823,14 +828,16 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var html = '<div class="grid stats-grid">';
     html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
-    html += '<div class="pill"><b>' + (STATE.caps.length || '۵۵۰+') + '</b><span>قابلیت مستند</span></div>';
+    html += '<div class="pill"><b>' + (STATE.caps.length || '۵۶۰') + '</b><span>قابلیت مستند</span></div>';
     html += '<div class="pill"><b>∞ Pool</b><span>چرخش پنجره فعال</span></div></div>';
     html += '<div class="card hero-panel" style="margin-top:16px"><div class="section-title"><div><div class="eyebrow">Smart Subscription Studio</div><h2>ساخت اتومات حرفه‌ای AMINNOVA</h2></div>' + icon('spark') + '</div>';
     html += '<p class="muted">Probe واقعی Edge، مسیر مستقیم + Anycast، خروجی‌های چندکلاینت و Smart Pool چرخان. هیچ سرویس اینترنتی نمی‌تواند نبود قطعی روی همه ISPها را تضمین کند؛ Failover احتمال قطعی را کم می‌کند.</p>';
     html += '<div class="alert deployment-doctor">' + icon('shield') + '<b>دامنه فعال:</b> <span class="mono">' + esc(location.hostname) + '</span> · Release <span class="mono">' + esc((STATE.launch && STATE.launch.release) || 'نامشخص') + '</span><br><span class="muted">اگر کانفیگ به دامنه حذف‌شده قبلی اشاره کند، همیشه Timeout می‌شود. حالت نجات فقط دامنه همین پنل را استفاده می‌کند.</span></div>';
     html += '<div class="row"><button class="btn primary" id="safe-preset" type="button">' + icon('shield') + 'حالت نجات DIRECT SAFE</button><button class="btn" id="heavy-preset" type="button">' + icon('iron') + 'MAX Giant پیشرفته</button></div>';
     html += '<div class="mode-deck"><label class="mode-card"><input type="radio" name="usage-mode" id="usage-normal" value="normal" checked><b>' + icon('cloud') + 'ساب معمولی پرقدرت</b><span class="muted">سازگاری بیشتر، Direct Safe و انتخاب خودکار مسیر سالم.</span></label>';
-    html += '<label class="mode-card"><input type="radio" name="usage-mode" id="usage-gaming" value="gaming"><b>' + icon('scan') + 'Gaming Route Studio</b><span class="muted">Rule دامنه‌های رسمی بازی/ناشر در Clash، sing-box و Xray؛ بدون ادعای Ping تضمینی.</span></label></div>';
+    html += '<label class="mode-card"><input type="radio" name="usage-mode" id="usage-gaming" value="gaming"><b>' + icon('scan') + 'Gaming Route Studio</b><span class="muted">LOW PING انتخاب سریع‌تر Route اندازه‌گیری‌شده؛ Rule دامنه رسمی بدون ادعای Ping تضمینی.</span></label></div>';
+    html += '<div class="card ai-studio"><div class="section-title"><div><div class="eyebrow">Cloudflare AI + Safe Local Fallback</div><h2>دستیار ساخت کانفیگ با متن فارسی</h2></div>' + icon('spark') + '</div><p class="muted">مثال: «برای کالاف ۳۰ کانفیگ کم‌پینگ آهنین بساز، نت ملی مستقیم بماند». AI فقط فیلدهای امن و Game IDهای Catalogue را می‌سازد؛ اگر AI ابری در دسترس نباشد موتور فارسی داخلی ادامه می‌دهد. با Binding فعال، متن همین Prompt به Workers AI حساب شما می‌رود؛ رمز و Token ساب ارسال نمی‌شود.</p><textarea id="ai-prompt" class="ai-prompt" maxlength="1000" placeholder="دقیق بنویس چه ساب، چه بازی، چند کانفیگ و چه اولویتی می‌خواهی…"></textarea><div class="row"><button class="btn" id="ai-design" type="button">' + icon('spark') + 'فقط طراحی</button><button class="btn primary" id="ai-build" type="button">' + icon('cloud') + 'طراحی و ساخت با AI</button></div><div id="ai-result" class="alert ai-result">هنوز درخواستی به دستیار نداده‌اید.</div></div>';
+    html += '<label class="check"><input id="domestic-direct" type="checkbox" checked> ' + icon('shield') + '<b>Domestic Direct / تداوم شبکه داخلی</b> · دامنه‌های .ir و GeoIP ایران در Clash/Xray مستقیم می‌مانند</label><p class="muted">این Split Tunnel می‌تواند سایت‌های قابل‌شناسایی داخلی را از تونل بین‌المللی جدا کند؛ قطع ISP، مقصد یا تشخیص‌ناپذیری دامنه را رفع یا تضمین نمی‌کند. Raw/Base64 Rule جدا ندارد.</p>';
     html += '<label class="check"><input id="iron-sub" type="checkbox"> ' + icon('iron') + '<b>کل Subscription آهنین باشد</b> · همه Routeها با برچسب IRON و گروه Auto/Fallback</label>';
     html += '<div class="game-picker" id="game-picker"><div class="section-title"><div><div class="eyebrow">Gaming TCP Content Routing</div><h2>انتخاب بازی‌ها</h2></div><span class="badge" id="game-count">۰ انتخاب</span></div>';
     html += '<div class="alert warning-honest">Ping زیر ۹۰، IP خارجی ثابت یا UDP بازی قابل تضمین نیست. این بخش فقط Login، Launcher، Store و Content دامنه‌های رسمی را روی بهترین Route موجود می‌فرستد؛ فاصله واقعی تا سرور بازی تغییر نمی‌کند.</div>';
@@ -853,9 +860,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<div class="card install-banner"><label class="check"><input id="dynamic-pool" type="checkbox"> ' + icon('infinity') + ' Smart Pool نامحدود زمانی</label>';
     html += '<div class="grid"><div><label>تعویض پنجره کاندیدها (دقیقه)</label><input id="rotation-minutes" type="number" min="1" max="60" value="5" style="width:100%"></div><div><label>پنجره فعال هم‌زمان</label><div class="muted">تا ۲۰۰۰؛ برای موبایل ۲۰۰ یا کمتر پیشنهاد می‌شود</div></div></div>';
     html += '<p class="muted">∞ یعنی نسل‌های نامحدود در Refreshهای متوالی، نه بی‌نهایت خط در یک پاسخ. URL و Path معتبر می‌مانند تا چرخش باعث قطع عمدی نشود. کلاینت باید ساب را Refresh کند؛ Clash/sing-box بین مسیرهای حاضر خودکار تست می‌کنند.</p></div>';
-    html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> کمک اختیاری Cloudflare Workers AI برای انتخاب Profile</label>';
-    html += '<p class="muted">AI فقط از عددهای Probe بین Profileهای معتبر انتخاب می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
-    html += '<div class="grid"><div><label>حالت اتصال</label><select id="build-speed" style="width:100%"><option value="stable" selected>Stable · پیشنهادی موبایل</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD · پیشرفته</option></select></div>';
+    html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> پالایش دوباره Profile با AI بعد از Probe واقعی Endpointها</label>';
+    html += '<p class="muted">این مرحله فقط از عددهای Probe استفاده می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
+    html += '<div class="grid"><div><label>حالت اتصال</label><select id="build-speed" style="width:100%"><option value="stable" selected>Stable · دوام</option><option value="balanced">Balanced</option><option value="turbo">Turbo · Throughput</option><option value="god">GOD · قدرت</option><option value="latency">LOW PING · انتخاب سریع‌ترین Route</option></select></div>';
     html += '<div><label>مدیریت مسیر</label><select id="build-mode" style="width:100%"><option value="auto" selected>Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select></div></div>';
     html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
     html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰۰)</label><input id="paths" type="number" min="1" max="2000" value="3" style="width:100%"></div></div>';
@@ -877,7 +884,9 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
       var badge = $('#game-count'); if (badge) badge.textContent = count + ' انتخاب';
     }
     function toggleGamePicker() {
-      var picker = $('#game-picker'); if (picker) picker.classList.toggle('open', !!($('#usage-gaming') && $('#usage-gaming').checked));
+      var gaming = !!($('#usage-gaming') && $('#usage-gaming').checked);
+      var picker = $('#game-picker'); if (picker) picker.classList.toggle('open', gaming);
+      if (gaming && $('#build-speed') && $('#build-speed').value === 'stable') $('#build-speed').value = 'latency';
     }
     if ($('#usage-normal')) $('#usage-normal').onchange = toggleGamePicker;
     if ($('#usage-gaming')) $('#usage-gaming').onchange = toggleGamePicker;
@@ -895,9 +904,47 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     if ($('#games-none')) $('#games-none').onclick = function () {
       document.querySelectorAll('[data-game-id]').forEach(function (input) { input.checked = false; }); updateGameCount();
     };
+    function applyAiPlan(plan) {
+      if (!plan) return;
+      if (!$('#n').value) $('#n').value = plan.name || 'AMINCK-AI';
+      $('#paths').value = String(plan.paths || 10);
+      $('#sub-count').value = String(plan.subscriptionCount || 1);
+      $('#iron-sub').checked = !!plan.ironMode;
+      $('#iron-n').value = String(plan.ironCount || 0);
+      $('#domestic-direct').checked = plan.domesticDirect !== false;
+      $('#build-speed').value = plan.speedPreset || 'balanced';
+      $('#build-mode').value = plan.profileMode || 'auto';
+      $('#dynamic-pool').checked = !!plan.dynamicPool;
+      $('#rotation-minutes').value = String(plan.rotationMinutes || 5);
+      $('#clean-auto').checked = !!plan.useCleanCatalog;
+      $('#cf-ai').checked = false;
+      $('#usage-gaming').checked = plan.usageMode === 'gaming';
+      $('#usage-normal').checked = plan.usageMode !== 'gaming';
+      var selected = plan.gameIds || [];
+      document.querySelectorAll('[data-game-id]').forEach(function (input) { input.checked = selected.indexOf(input.getAttribute('data-game-id')) >= 0; });
+      toggleGamePicker(); updateGameCount();
+    }
+    function runAiBuilder(buildNow) {
+      var prompt = ($('#ai-prompt').value || '').trim();
+      if (prompt.length < 3) { toast('اول نیازت را برای AI بنویس'); return; }
+      var design = $('#ai-design'); var build = $('#ai-build');
+      design.disabled = true; build.disabled = true;
+      $('#ai-result').textContent = 'در حال تحلیل امن درخواست…';
+      api('POST', '/api/ai-plan', { prompt: prompt }).then(function (d) {
+        var plan = d.plan || {}; applyAiPlan(plan);
+        var gameNames = (plan.gameIds || []).map(function (id) { var game = STATE.games.find(function (item) { return item.id === id; }); return game ? game.title : id; });
+        var warnings = (plan.warnings || []).map(function (warning) { return '• ' + esc(warning); }).join('<br>');
+        $('#ai-result').innerHTML = '<b>' + (d.cloudflareAiUsed ? 'Cloudflare AI' : 'موتور فارسی امن') + '</b> · ' + esc(plan.explanation || d.message || '') + '<br><span class="latency-meter">Profile: ' + esc(plan.speedPreset || '—') + ' / ' + esc(plan.profileMode || '—') + '</span> · Route: ' + esc(plan.paths || 0) + ' · Game: ' + esc(gameNames.join('، ') || '—') + (warnings ? '<br>' + warnings : '');
+        if (buildNow && plan.ready) setTimeout(function () { $('#auto').click(); }, 0);
+        else if (buildNow && !plan.ready) toast('AI برای Gaming به نام حداقل یک بازی نیاز دارد');
+      }).catch(function (e) { $('#ai-result').textContent = e.message; toast(e.message); })
+        .finally(function () { design.disabled = false; build.disabled = false; });
+    }
+    if ($('#ai-design')) $('#ai-design').onclick = function () { runAiBuilder(false); };
+    if ($('#ai-build')) $('#ai-build').onclick = function () { runAiBuilder(true); };
     var safe = $('#safe-preset');
     if (safe) safe.onclick = function () {
-      $('#paths').value = '1'; $('#iron-n').value = '0'; $('#dynamic-pool').checked = false; $('#clean-auto').checked = false; $('#iron-sub').checked = false;
+      $('#paths').value = '1'; $('#iron-n').value = '0'; $('#dynamic-pool').checked = false; $('#clean-auto').checked = false; $('#iron-sub').checked = false; $('#domestic-direct').checked = true;
       $('#usage-normal').checked = true; $('#usage-gaming').checked = false; $('#game-picker').classList.remove('open');
       $('#cf-ai').checked = false; $('#build-speed').value = 'stable'; $('#build-mode').value = 'auto'; $('#clean-manual').value = '';
       var matchedCurrent = false;
@@ -931,6 +978,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         usageMode: $('#usage-gaming').checked ? 'gaming' : 'normal',
         gameIds: Array.prototype.slice.call(document.querySelectorAll('[data-game-id]:checked')).map(function (input) { return input.getAttribute('data-game-id'); }),
         ironMode: $('#iron-sub').checked,
+        domesticDirect: $('#domestic-direct').checked,
         configNameTemplate: $('#tpl').value,
         endpointIds: Array.prototype.slice.call(document.querySelectorAll('[data-build-endpoint]:checked')).map(function (input) { return input.getAttribute('data-build-endpoint'); }),
         useCleanCatalog: !!($('#clean-auto') && $('#clean-auto').checked),
@@ -1007,7 +1055,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
   function viewSell() {
     var html = '<div class="card"><h2>مشترک‌ها و ویرایش</h2><table><thead><tr><th>نام</th><th>مسیر</th><th></th></tr></thead><tbody>';
     STATE.users.forEach(function (u) {
-      html += '<tr><td>' + esc(u.name) + (u.dynamicPool ? ' <span class="badge">∞ ' + esc(u.rotationMinutes || 1) + 'm</span>' : '') + (u.ironMode ? ' <span class="badge">IRON</span>' : '') + (u.usageMode === 'gaming' ? ' <span class="badge">GAMING</span>' : '') + '</td><td>' + (u.routes ? u.routes.length : 0) + '</td>';
+      html += '<tr><td>' + esc(u.name) + (u.dynamicPool ? ' <span class="badge">∞ ' + esc(u.rotationMinutes || 1) + 'm</span>' : '') + (u.ironMode ? ' <span class="badge">IRON</span>' : '') + (u.usageMode === 'gaming' ? ' <span class="badge">GAMING</span>' : '') + (u.domesticDirect !== false ? ' <span class="badge">IR DIRECT</span>' : '') + '</td><td>' + (u.routes ? u.routes.length : 0) + '</td>';
       html += '<td><button class="btn" data-copy="' + esc(u.token) + '">کپی ساب</button> ';
       html += '<button class="btn" data-edit="' + esc(u.id) + '">ویرایش</button></td></tr>';
     });
@@ -1030,6 +1078,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     h += '<label>قالب نام</label><input id="et" value="' + esc(u.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
     h += '<label>تعداد مسیر فعال (۱ تا ۲۰۰۰)</label><input id="ep" type="number" min="1" max="2000" value="' + esc(u.routes ? u.routes.length : 3) + '">';
     h += '<div class="grid"><div><label>نوع مصرف</label><select id="eusage"><option value="normal">معمولی</option><option value="gaming">Gaming Rules</option></select></div><div><label class="check"><input id="eiron" type="checkbox"' + (u.ironMode ? ' checked' : '') + '> کل ساب IRON</label></div></div>';
+    h += '<div class="grid"><div><label>پروفایل سرعت</label><select id="espeed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option><option value="latency">LOW PING</option></select></div><div><label class="check"><input id="edomestic" type="checkbox"' + (u.domesticDirect !== false ? ' checked' : '') + '> .ir / ایران مستقیم</label></div></div>';
     h += '<div id="edit-games" class="game-picker' + (u.usageMode === 'gaming' ? ' open' : '') + '"><div class="row"><b>بازی‌های این ساب</b><button class="btn" id="edit-games-all" type="button">همه</button><button class="btn" id="edit-games-none" type="button">پاک‌کردن</button></div><div class="game-list">';
     STATE.games.forEach(function (game) { h += '<label class="game-item"><input type="checkbox" data-edit-game="' + esc(game.id) + '"' + ((u.gameIds || []).indexOf(game.id) >= 0 ? ' checked' : '') + '><span>' + esc(game.title) + '</span></label>'; });
     h += '</div></div>';
@@ -1044,6 +1093,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     }
     if ($('#edit-games-all')) $('#edit-games-all').onclick = function () { document.querySelectorAll('[data-edit-game]').forEach(function (input) { input.checked = true; }); };
     if ($('#edit-games-none')) $('#edit-games-none').onclick = function () { document.querySelectorAll('[data-edit-game]').forEach(function (input) { input.checked = false; }); };
+    if ($('#espeed')) $('#espeed').value = u.speedPreset || 'stable';
     if ($('#eb')) $('#eb').value = String(u.limitBytes || 0);
     if ($('#es')) $('#es').value = String(u.limitSeconds || 0);
     if ($('#ec')) $('#ec').value = String(u.maxConnections || 0);
@@ -1060,13 +1110,14 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
         usageMode: $('#eusage').value,
         gameIds: editGameIds,
         ironMode: $('#eiron').checked,
+        domesticDirect: $('#edomestic').checked,
         dynamicPool: $('#edyn').checked,
         rotationMinutes: Number($('#erot').value || 1),
         limitBytes: numOrZero('eb'),
         limitSeconds: numOrZero('es'),
         maxConnections: numOrZero('ec'),
         limitRequests: numOrZero('er'),
-        speedPreset: u.speedPreset || 'stable'
+        speedPreset: $('#espeed').value
       }).then(function () { toast('ذخیره شد', true); return loadUsers().then(paint); })
         .catch(function (e) { toast(e.message); });
     };
@@ -1222,7 +1273,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<label>قالب نام</label><input id="st-template" value="' + esc(s.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
     html += '<div class="grid"><div><label>تعداد پیش‌فرض</label><input id="st-paths" type="number" min="1" max="2000" value="' + esc(s.defaultPaths || 3) + '"></div>';
     html += '<div><label>آپدیت ساب (ساعت)</label><input id="st-up" type="number" min="1" max="720" value="' + esc(s.updateIntervalHours || 24) + '"></div></div>';
-    html += '<div class="row" style="margin-top:12px"><select id="st-speed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option></select>';
+    html += '<div class="row" style="margin-top:12px"><select id="st-speed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option><option value="latency">LOW PING</option></select>';
     html += '<select id="st-mode"><option value="auto">Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select>';
     html += '<select id="st-fp"><option value="chrome">Chrome</option><option value="firefox">Firefox</option><option value="safari">Safari</option><option value="edge">Edge</option><option value="random">Random</option></select></div>';
     html += '<h2 style="margin-top:18px">پورت‌های دامنه Worker</h2><div class="row">';

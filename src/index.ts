@@ -24,6 +24,7 @@ import type { VlessTarget } from './protocol';
 import { parseVlessHeader } from './protocol';
 import { isPrivateLiteral } from './utils';
 import { defaultRuntimeHooks, probeAll } from './probe';
+import { aiGameIdReference, deterministicAiBuildPlan, parseAiBuildPlan } from './ai';
 import {
   UI_APP_CSS,
   UI_APP_JS,
@@ -35,8 +36,8 @@ import {
 
 export { AMINCKStore };
 
-const AMINNOVA_RELEASE = '2026.08.21-giant-gaming.3';
-const AMINNOVA_VERSION = '1.2.0';
+const AMINNOVA_RELEASE = '2026.08.22-ai-low-ping.4';
+const AMINNOVA_VERSION = '1.3.0';
 const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
 let UPDATE_CACHE: { expiresAt: number; value: Record<string, unknown> } | null = null;
 
@@ -128,7 +129,7 @@ export default {
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 type AiProfileAdvice = {
-  speedPreset: 'stable' | 'balanced' | 'turbo' | 'god';
+  speedPreset: 'stable' | 'balanced' | 'turbo' | 'god' | 'latency';
   profileMode: 'auto' | 'fallback' | 'balance';
 };
 
@@ -141,11 +142,62 @@ export function parseAiProfileAdvice(value: unknown): AiProfileAdvice | null {
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[0]) as Partial<AiProfileAdvice>;
-    if (!['stable', 'balanced', 'turbo', 'god'].includes(String(parsed.speedPreset))) return null;
+    if (!['stable', 'balanced', 'turbo', 'god', 'latency'].includes(String(parsed.speedPreset))) return null;
     if (!['auto', 'fallback', 'balance'].includes(String(parsed.profileMode))) return null;
     return parsed as AiProfileAdvice;
   } catch {
     return null;
+  }
+}
+
+async function createAiBuildPlan(prompt: string, env: Env): Promise<Record<string, unknown>> {
+  const fallback = deterministicAiBuildPlan(prompt);
+  if (!env.AI) {
+    return {
+      ok: true,
+      plan: fallback,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'Binding هوش مصنوعی در دسترس نیست؛ موتور امن فارسی همان طرح را به‌صورت محلی ساخت.',
+    };
+  }
+  try {
+    const instruction = [
+      'You are the constrained AMINNOVA subscription planner. Return one JSON object only.',
+      'Allowed fields: paths, subscriptionCount, usageMode, gameIds, ironMode, ironCount, domesticDirect, speedPreset, profileMode, dynamicPool, rotationMinutes, useCleanCatalog.',
+      'speedPreset must be stable|balanced|turbo|god|latency; profileMode auto|fallback|balance; usageMode normal|gaming.',
+      'Use latency for lowest measured route selection, fallback for interruption resistance, and domesticDirect for explicitly requested Iranian/national-network continuity.',
+      'Never promise a ping, location, universal access, censorship bypass, or uptime. Never return URLs, domains, secrets, code, or extra keys.',
+      `Valid game ids: ${aiGameIdReference()}`,
+    ].join('\n');
+    const result = await Promise.race([
+      env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+        messages: [
+          { role: 'system', content: instruction },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 450,
+        temperature: 0,
+      }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 5000)),
+    ]);
+    const parsed = parseAiBuildPlan(result, fallback);
+    if (!parsed) throw new Error('ai-invalid-plan');
+    return {
+      ok: true,
+      plan: parsed,
+      cloudflareAiUsed: true,
+      deterministicFallback: false,
+      message: 'Cloudflare AI طرح را ساخت و Backend همه فیلدها و Game IDها را دوباره محدود و اعتبارسنجی کرد.',
+    };
+  } catch {
+    return {
+      ok: true,
+      plan: fallback,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'AI ابری پاسخ معتبر نداد؛ موتور امن فارسی بدون متوقف‌کردن ساخت، طرح محدودشده را آماده کرد.',
+    };
   }
 }
 
@@ -203,6 +255,21 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
   const rest = path.slice('/api'.length) || '/';
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
 
+  if (path === '/api/ai-plan' && request.method === 'POST') {
+    if (!sessionId) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meResponse = await callDo(env, '/api/me', { sessionId });
+    if (!meResponse.ok) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meData = await meResponse.json() as { me?: { permissions?: string[] } };
+    if (!meData.me?.permissions?.includes('configs:build')) {
+      return withHeaders(json({ error: 'forbidden', message: 'دسترسی ساخت کانفیگ لازم است' }, 403), {});
+    }
+    const prompt = String(body.prompt ?? '').trim().slice(0, 1000);
+    if (prompt.length < 3) {
+      return withHeaders(json({ error: 'bad-prompt', message: 'درخواست خود را حداقل در سه کاراکتر توضیح دهید' }, 400), {});
+    }
+    return withHeaders(json(await createAiBuildPlan(prompt, env)), {});
+  }
+
   // Auto Build must always measure endpoints immediately before choosing them,
   // including direct API calls (not only clicks coming from our browser UI).
   // Only measured-healthy endpoints are passed as a preference; if none pass,
@@ -239,10 +306,10 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
       try {
         const prompt = [
           'You select conservative AMINNOVA client profile settings from measured data.',
-          'Return only JSON with speedPreset (stable|balanced|turbo|god) and profileMode (auto|fallback|balance).',
+          'Return only JSON with speedPreset (stable|balanced|turbo|god|latency) and profileMode (auto|fallback|balance).',
           `routeCount=${Math.max(1, Math.min(MAX_PATHS, Number(body.paths ?? 20) || 20))}`,
           `healthyEndpointLatenciesMs=${healthyForAdvice.map((item) => item.latencyMs).join(',') || 'none'}`,
-          'Prefer fallback/stable when measurements are sparse or slow; otherwise prefer auto/balanced or turbo. Never claim guaranteed connectivity.',
+          'Use latency/auto for Gaming or lowest measured delay; prefer fallback/stable when measurements are sparse or interruption resistance is requested. Never claim guaranteed connectivity or ping.',
         ].join('\n');
         const inference = env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
           messages: [{ role: 'user', content: prompt }],

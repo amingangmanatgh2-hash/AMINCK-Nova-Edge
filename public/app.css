@@ -280,6 +280,11 @@ html[data-theme="light"] input, html[data-theme="light"] select, html[data-theme
 .performance-strip b { display: block; color: var(--brand2); font-size: 17px; }
 .app-stage { background: radial-gradient(circle at 15% 10%, rgba(34,211,238,.14), transparent 35%), radial-gradient(circle at 90% 90%, rgba(236,72,153,.12), transparent 32%), var(--card); }
 .warning-honest { border-color: rgba(245,158,11,.52); color: var(--warn); }
+.ai-studio { position: relative; overflow: hidden; border-color: rgba(124,58,237,.55); background: linear-gradient(145deg,rgba(124,58,237,.14),rgba(34,211,238,.07)),var(--card); }
+.ai-studio::after { content: ''; position: absolute; width: 180px; height: 180px; inset: -90px auto auto -70px; border-radius: 50%; background: rgba(124,58,237,.16); filter: blur(25px); pointer-events: none; }
+.ai-prompt { width: 100%; min-height: 92px; resize: vertical; position: relative; z-index: 1; }
+.ai-result { white-space: pre-wrap; line-height: 1.9; }
+.latency-meter { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-weight: 800; }
 @keyframes liquidFloat { from { transform: translate3d(0,0,0) scale(.94); } to { transform: translate3d(5vw,4vh,0) scale(1.08); } }
 @keyframes logoPulse { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(2deg); } }
 @keyframes progressGlow { to { filter: hue-rotate(360deg); } }

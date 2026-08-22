@@ -491,7 +491,7 @@ export function buildClashYaml(ctx: BuildContext): string {
     'port: 10809',
     'allow-lan: false',
     'mode: rule',
-    'log-level: info',
+    'log-level: warning',
     'ipv6: false',
     'unified-delay: true',
     'find-process-mode: off',
@@ -499,6 +499,7 @@ export function buildClashYaml(ctx: BuildContext): string {
     'profile:',
     '  store-selected: true',
     '  store-fake-ip: false',
+    ...(speed.tcpConcurrent ? ['tcp-concurrent: true'] : []),
     '',
     'proxies:',
   );
@@ -593,12 +594,32 @@ export function buildClashYaml(ctx: BuildContext): string {
       `    url: ${yamlStr(health)}`,
       // A lower check interval only helps select among available routes; it
       // cannot reduce the physical RTT between the player and game server.
-      `    interval: ${Math.max(20, Math.min(45, speed.healthInterval))}`,
-      `    tolerance: ${Math.min(80, speed.tolerance)}`,
+      `    interval: ${Math.max(10, Math.min(30, speed.healthInterval))}`,
+      `    tolerance: ${Math.min(30, speed.tolerance)}`,
       `    proxies: ${yamlList(names)}`,
     );
   }
-  lines.push('', 'rules:');
+  lines.push(
+    '',
+    'rules:',
+    // Keep LAN/private destinations on-device. The secure Worker rejects them
+    // as outbound targets anyway, and tunnelling them would break local access.
+    '  - DOMAIN-SUFFIX,local,DIRECT',
+    '  - DOMAIN-SUFFIX,lan,DIRECT',
+    '  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+    '  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+    '  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+    '  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve',
+    '  - IP-CIDR6,fc00::/7,DIRECT,no-resolve',
+    '  - IP-CIDR6,fe80::/10,DIRECT,no-resolve',
+    '  - IP-CIDR6,::1/128,DIRECT,no-resolve',
+  );
+  if (ctx.user.domesticDirect) {
+    // Split tunnelling happens in the client, so .ir / Iran GeoIP can keep using
+    // the user's direct ISP path even when an international Worker is degraded.
+    // This cannot preserve connectivity if the ISP or destination itself fails.
+    lines.push('  - DOMAIN-SUFFIX,ir,DIRECT', '  - GEOIP,IR,DIRECT,no-resolve');
+  }
   for (const domain of gameDomains) lines.push(`  - DOMAIN-SUFFIX,${domain},AMINCK-GAMING`);
   lines.push(
     '  - DOMAIN-SUFFIX,youtube.com,AMINCK-YOUTUBE',
@@ -720,6 +741,7 @@ export function buildSingBoxJson(ctx: BuildContext): string {
         { ip_cidr: PRIVATE_V4_CIDRS, outbound: 'direct' },
         { ip_cidr: PRIVATE_V6_CIDRS, outbound: 'direct' },
         { domain_suffix: ['local', 'lan', 'localhost'], outbound: 'direct' },
+        ...(ctx.user.domesticDirect ? [{ domain_suffix: ['ir'], outbound: 'direct' }] : []),
         ...(gameDomains.length > 0 ? [{ domain_suffix: gameDomains, outbound: 'NOVA-AUTO' }] : []),
       ],
     },
@@ -938,6 +960,12 @@ export function buildXrayJson(ctx: BuildContext): string {
         : [],
       rules: [
         { type: 'field', ip: ['geoip:private'], outboundTag: 'direct' },
+        ...(ctx.user.domesticDirect
+          ? [
+              { type: 'field', domain: ['geosite:ir'], outboundTag: 'direct' },
+              { type: 'field', ip: ['geoip:ir'], outboundTag: 'direct' },
+            ]
+          : []),
         ...(gameDomains.length > 0 && names.length > 0
           ? [{ type: 'field', domain: gameDomains.map((domain) => `domain:${domain}`), balancerTag: 'AMINCK-IRON-AUTO' }]
           : []),

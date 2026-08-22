@@ -23,8 +23,8 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
-    expect(data.version).toBe('1.2.0');
-    expect(data.release).toBe('2026.08.21-giant-gaming.3');
+    expect(data.version).toBe('1.3.0');
+    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
     expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
@@ -38,8 +38,8 @@ describe('health & headers', () => {
     const res = await w.mf.dispatchFetch(`${w.base}/api/update-check`);
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.currentVersion).toBe('1.2.0');
-    expect(data.release).toBe('2026.08.21-giant-gaming.3');
+    expect(data.currentVersion).toBe('1.3.0');
+    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
     expect(data.autoUpdate).toBe(false);
     expect(data.source).toContain('raw.githubusercontent.com');
     expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
@@ -138,6 +138,7 @@ describe('subscription users (unlimited semantics)', () => {
     expect(u.limitSeconds).toBe(0);
     expect(u.maxConnections).toBe(0);
     expect(u.expiresAt).toBe(0);
+    expect(u.domesticDirect).toBe(true);
     expect(u.routes.length).toBe(3);
     expect(u.uuid).toMatch(/^[0-9a-f-]{36}$/);
     expect(u.token).toMatch(/^[0-9a-f]{64}$/);
@@ -605,6 +606,49 @@ describe('Gaming and whole-subscription Iron APIs', () => {
     expect(singboxJson.route.rules.some((rule: any) =>
       rule.outbound === 'NOVA-AUTO' && rule.domain_suffix?.includes('minecraft.net'))).toBe(true);
   });
+
+  it('permission-gates conversational planning and falls back without an AI binding', async () => {
+    const anonymous = await w.api('', '/api/ai-plan', { prompt: 'برای کالاف 20 کانفیگ کم پینگ بساز' });
+    expect(anonymous.status).toBe(401);
+
+    const planned = await w.api(ownerCookie, '/api/ai-plan', {
+      prompt: 'برای کالاف 20 کانفیگ کمترین پینگ آهنین بساز و نت ملی مستقیم بماند',
+    });
+    expect(planned.status).toBe(200);
+    expect(planned.data.cloudflareAiUsed).toBe(false);
+    expect(planned.data.deterministicFallback).toBe(true);
+    expect(planned.data.plan).toEqual(expect.objectContaining({
+      paths: 20,
+      usageMode: 'gaming',
+      speedPreset: 'latency',
+      profileMode: 'auto',
+      ironMode: true,
+      domesticDirect: true,
+      ready: true,
+    }));
+    expect(planned.data.plan.gameIds).toContain('cod-mobile');
+  });
+
+  it('persists LOW PING and Domestic Direct through the validated Auto Build path', async () => {
+    const built = await w.api(ownerCookie, '/api/auto-build', {
+      name: 'ai-low-ping',
+      paths: 7,
+      usageMode: 'gaming',
+      gameIds: ['cod-mobile'],
+      speedPreset: 'latency',
+      profileMode: 'auto',
+      domesticDirect: true,
+      ironMode: true,
+    });
+    expect(built.status).toBe(200);
+    const user = built.data.users[0];
+    expect(user).toEqual(expect.objectContaining({
+      speedPreset: 'latency', profileMode: 'auto', domesticDirect: true, ironMode: true,
+    }));
+    expect(user.gameIds).toEqual(['cod-mobile']);
+    const clash = await w.mf.dispatchFetch(`${w.base}/sub/${user.token}/clash`);
+    expect(await clash.text()).toContain('DOMAIN-SUFFIX,ir,DIRECT');
+  });
 });
 
 describe('stats dashboard', () => {
@@ -844,8 +888,8 @@ describe('AMINNOVA reliability regressions', () => {
       expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
       expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
       expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
-      expect(res.headers.get('x-aminck-version')).toBe('1.2.0');
-      expect(res.headers.get('x-aminck-release')).toBe('2026.08.21-giant-gaming.3');
+      expect(res.headers.get('x-aminck-version')).toBe('1.3.0');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.22-ai-low-ping.4');
       expect(res.headers.get('cache-control')).toContain('no-store');
       expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
@@ -880,6 +924,8 @@ describe('AMINNOVA reliability regressions', () => {
       usageMode: 'gaming',
       gameIds: ['cod-mobile', 'minecraft-java'],
       ironMode: true,
+      domesticDirect: false,
+      speedPreset: 'latency',
       dynamicPool: true,
       rotationMinutes: 1,
       useCleanCatalog: true,
@@ -902,6 +948,8 @@ describe('AMINNOVA reliability regressions', () => {
     expect(list.data.users[0].usageMode).toBe('gaming');
     expect(list.data.users[0].gameIds).toEqual(['cod-mobile', 'minecraft-java']);
     expect(list.data.users[0].ironMode).toBe(true);
+    expect(list.data.users[0].domesticDirect).toBe(false);
+    expect(list.data.users[0].speedPreset).toBe('latency');
     expect(list.data.users[0].dynamicPool).toBe(true);
     expect(list.data.users[0].rotationMinutes).toBe(1);
     expect(list.data.users[0].poolCleanIps.length).toBeGreaterThan(10);

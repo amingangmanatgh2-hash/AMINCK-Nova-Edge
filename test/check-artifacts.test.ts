@@ -57,7 +57,12 @@ describe('artifact checks (runtime smoke steps)', () => {
     expect(UI_APP_JS).toContain('games-all');
     expect(UI_APP_JS).toContain('iron-sub');
     expect(UI_APP_JS).toContain('/api/update-check');
+    expect(UI_APP_JS).toContain('/api/ai-plan');
+    expect(UI_APP_JS).toContain('ai-build');
+    expect(UI_APP_JS).toContain('domestic-direct');
+    expect(UI_APP_JS).toContain('value="latency"');
     expect(UI_APP_JS).toContain('max="2000"');
+    expect(UI_SW_JS).toContain('aminnova-shell-v8-ai-low-ping');
     // the committed assets are also valid JS
     execFileSync(process.execPath, ['--check', 'public/app.js'], { stdio: 'pipe', cwd: process.cwd() });
     execFileSync(process.execPath, ['--check', 'public/sw.js'], { stdio: 'pipe', cwd: process.cwd() });

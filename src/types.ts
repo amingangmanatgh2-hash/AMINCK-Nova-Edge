@@ -54,7 +54,7 @@ export const MAX_AUDIT_EVENTS = 1000;
 // Speed presets (all values are real knobs honoured by the generated configs)
 // ---------------------------------------------------------------------------
 
-export type SpeedPreset = 'stable' | 'balanced' | 'turbo' | 'god';
+export type SpeedPreset = 'stable' | 'balanced' | 'turbo' | 'god' | 'latency';
 
 export interface SpeedSpec {
   label: string;
@@ -116,11 +116,24 @@ export const SPEED_PRESETS: Record<SpeedPreset, SpeedSpec> = {
     // More retries increase time-to-first-byte when an endpoint is dead.
     // Two quick attempts are a better stability/latency trade-off at the edge.
     tcpRetries: 2,
-    healthInterval: 30,
-    tolerance: 50,
+    healthInterval: 25,
+    tolerance: 35,
     tcpConcurrent: true,
     dnsFailover: true,
-    probeTimeoutMs: 4000,
+    probeTimeoutMs: 3500,
+    downAfterFails: 1,
+  },
+  latency: {
+    label: 'LOW PING',
+    // Small optional early-data is faster to parse than oversized WS headers.
+    // Hostname-direct compatibility anchors still force this value to zero.
+    earlyData: 1536,
+    tcpRetries: 1,
+    healthInterval: 15,
+    tolerance: 20,
+    tcpConcurrent: true,
+    dnsFailover: true,
+    probeTimeoutMs: 2500,
     downAfterFails: 1,
   },
 };
@@ -299,6 +312,8 @@ export interface User {
   gameIds?: string[];
   /** Label the whole subscription as IRON and use aggregate-safe groups. */
   ironMode?: boolean;
+  /** Keep .ir / Iran GeoIP traffic direct in rule-capable clients when requested. */
+  domesticDirect?: boolean;
   fingerprint?: Fingerprint | null;
   /** Per-user config name template; falls back to settings.configNameTemplate. */
   configNameTemplate?: string | null;
@@ -444,6 +459,7 @@ export interface BuildRequest {
   fingerprint?: Fingerprint;
   configNameTemplate?: string;
   endpointIds?: string[]; // optional subset of endpoints to use
+  domesticDirect?: boolean; // direct .ir / Iran GeoIP rules in capable clients
   dynamicPool?: boolean; // rotating active window; never emits an unbounded response
   rotationMinutes?: number; // 1..60
 }

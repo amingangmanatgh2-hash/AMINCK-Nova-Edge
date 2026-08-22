@@ -46,7 +46,9 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 
 - Every API operation checks permissions in the backend (the Durable Object):
   `users:view|create|edit|delete`, `configs:build`, `settings:manage`,
-  `endpoints:probe`, `backup:export`, `admins:manage`, `audit:view`.
+  `endpoints:probe`, `backup:export`, `admins:manage`, `audit:view`. The
+  conversational `/api/ai-plan` endpoint first validates the server-side
+  session and requires `configs:build` before it can consume inference quota.
 - Power levels (`Limited 5 / Normal 100 / Strong 500 / Ultra 2000`) are enforced
   in the backend on every config build — a Limited admin cannot exceed 5 paths
   even with hand-crafted API requests. Giant profiles above 200 are explicit
@@ -83,6 +85,12 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 - Gaming selections are allow-listed catalogue ids. Only official publisher
   hostname suffixes compiled into the release are emitted; untrusted API values
   cannot inject Clash/sing-box/Xray rules. Arbitrary game UDP remains blocked.
+- AI plans are not executable configuration. Prompts are capped at 1,000
+  characters; model output is reduced to fixed enums, numeric ceilings,
+  booleans and catalogue game ids before the existing Auto Build validation
+  path sees it. Model-supplied URLs, domains, SNI/Host values, secrets, code and
+  unknown fields are discarded. Invalid, unavailable or timed-out inference
+  falls back to the deterministic parser.
 - Endpoint location labels are operator-provided display metadata for real
   deployments. The Worker never derives a country claim from an Anycast IP.
 
@@ -93,6 +101,13 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
 - No third-party CDN, analytics, or tracking is used by the panel.
+- When an authenticated user invokes the conversational studio and the `AI`
+  binding is available, only that prompt plus the fixed planner instruction and
+  public game-id list are sent to Cloudflare Workers AI in the operator's
+  account. Passwords, session cookies, subscription tokens, UUIDs and backups
+  are not appended. Inference may consume account quota and follows
+  Cloudflare's applicable data handling terms. With no binding/model/quota,
+  planning remains local to the Worker through the deterministic parser.
 
 ### PWA and rolling subscriptions
 
@@ -113,6 +128,12 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
   `DIRECT SAFE` compatibility route. Socket-open deadlines and concurrent DoH
   failover prevent indefinite pending sessions, but cannot override
   Cloudflare's destination restrictions.
+- Rule-capable outputs keep LAN/private traffic direct. When Domestic Direct is
+  enabled, Clash also emits `.ir` and Iran GeoIP direct rules, sing-box emits
+  `.ir` direct routing, and Xray Iron emits `geosite:ir`/`geoip:ir` rules.
+  This split routing occurs in the client and cannot restore traffic during an
+  ISP, DNS, domestic-routing or nationwide outage. Raw/Base64 URIs cannot carry
+  these policy rules.
 - If all configured DoH providers are temporarily unavailable, special-use and
   local hostnames are rejected before Workers Sockets native DNS is used as a
   bounded availability fallback. Cloudflare still blocks private-network and
@@ -122,10 +143,12 @@ We aim to acknowledge reports within 72 hours and ship a fix as soon as possible
 
 - The scanner reports HTTPS response-header latency measured from the
   Cloudflare edge — it is **not** the user device's ping, and the UI says so.
-- Gaming rules can select among deployed routes but cannot shorten physical
-  distance to a game server. No sub-90 ms ping, foreign geolocation, universal
-  DPI bypass, all-service access, speed, uptime, or uninterrupted-session
-  guarantee is claimed.
+- Gaming rules and LOW PING can select the lowest measured healthy candidate
+  among deployed routes and shorten failure-detection settings, but cannot
+  shorten physical distance to a game server. A faster health interval is not
+  the game's RTT. No sub-90 ms ping, foreign geolocation, universal DPI bypass,
+  all-service access, speed, uptime, or uninterrupted-session guarantee is
+  claimed.
 
 ## Dependency policy
 

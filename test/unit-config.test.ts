@@ -235,6 +235,37 @@ describe('config builder — output formats', () => {
       rule.domain_suffix?.includes('callofduty.com'))).toBe(false);
   });
 
+  it('places domestic destinations before tunnel rules when Domestic Direct is enabled', () => {
+    const user = userFixture({ domesticDirect: true, usageMode: 'gaming', gameIds: ['cod-mobile'] });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).toContain('IP-CIDR,192.168.0.0/16,DIRECT,no-resolve');
+    expect(clash).toContain('IP-CIDR6,fc00::/7,DIRECT,no-resolve');
+    expect(clash).toContain('DOMAIN-SUFFIX,ir,DIRECT');
+    expect(clash).toContain('GEOIP,IR,DIRECT,no-resolve');
+    expect(clash.indexOf('DOMAIN-SUFFIX,ir,DIRECT')).toBeLessThan(clash.indexOf('DOMAIN-SUFFIX,callofduty.com'));
+
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules[3]).toEqual(expect.objectContaining({ domain_suffix: ['ir'], outbound: 'direct' }));
+
+    const xray = JSON.parse(buildIronPack(ctx(user), 1)[0]!.json);
+    expect(xray.routing.rules[1]).toEqual(expect.objectContaining({
+      domain: ['geosite:ir'], outboundTag: 'direct',
+    }));
+    expect(xray.routing.rules[2]).toEqual(expect.objectContaining({
+      ip: ['geoip:ir'], outboundTag: 'direct',
+    }));
+  });
+
+  it('does not emit domestic direct rules when the user disables continuity mode', () => {
+    const user = userFixture({ domesticDirect: false });
+    const clash = buildFormats(ctx(user), ['clash'])[0]!.payload;
+    expect(clash).not.toContain('DOMAIN-SUFFIX,ir,DIRECT');
+    expect(clash).not.toContain('GEOIP,IR,DIRECT');
+    expect(clash).toContain('IP-CIDR,10.0.0.0/8,DIRECT,no-resolve');
+    const singbox = JSON.parse(buildFormats(ctx(user), ['singbox'])[0]!.payload);
+    expect(singbox.route.rules.some((rule: { geoip?: string[] }) => rule.geoip?.includes('ir'))).toBe(false);
+  });
+
   it('god preset enables tcp-concurrent, stable does not', () => {
     const user = userFixture({ speedPreset: 'god' });
     const clashGod = buildFormats(ctx(user), ['clash'])[0]!.payload;
@@ -244,9 +275,13 @@ describe('config builder — output formats', () => {
     expect(clashStable).not.toContain('tcp-concurrent:');
     // GOD has larger early data + EDGE PANEL GOD knobs
     expect(SPEED_PRESETS.god.earlyData).toBe(4096);
-    expect(SPEED_PRESETS.god.healthInterval).toBe(30);
-    expect(SPEED_PRESETS.god.tolerance).toBe(50);
+    expect(SPEED_PRESETS.god.healthInterval).toBe(25);
+    expect(SPEED_PRESETS.god.tolerance).toBe(35);
     expect(SPEED_PRESETS.god.tcpRetries).toBe(2);
+    expect(SPEED_PRESETS.latency.healthInterval).toBe(15);
+    expect(SPEED_PRESETS.latency.tolerance).toBe(20);
+    expect(SPEED_PRESETS.latency.tcpRetries).toBe(1);
+    expect(SPEED_PRESETS.latency.tcpConcurrent).toBe(true);
     expect(SPEED_PRESETS.stable.earlyData).toBe(1024);
   });
 

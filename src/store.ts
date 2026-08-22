@@ -331,10 +331,15 @@ export class AMINCKStore {
       // after a Durable Object restart, making every persisted /sub token 404.
       const entries = await this.state.storage.get<User>(ids.map((id) => K.user(id)));
       this.usersCache = [...entries.values()]
-        .map((u) => ({
+        .map((u): User => ({
           ...u,
           limitRequests: Number(u.limitRequests) >= 0 ? Number(u.limitRequests) : 0,
           requestCount: Number(u.requestCount) >= 0 ? Number(u.requestCount) : 0,
+          speedPreset: String(u.speedPreset) in SPEED_PRESETS ? u.speedPreset : this.settingsCache!.speedPreset,
+          usageMode: u.usageMode === 'gaming' ? 'gaming' : 'normal',
+          gameIds: u.usageMode === 'gaming' ? sanitizeGameIds(u.gameIds) : [],
+          ironMode: u.ironMode === true,
+          domesticDirect: u.domesticDirect !== false,
           dynamicPool: u.dynamicPool === true,
           rotationMinutes: clamp(Math.floor(Number(u.rotationMinutes)) || 1, 1, 60),
           poolCleanIps: Array.isArray(u.poolCleanIps)
@@ -1060,6 +1065,7 @@ export class AMINCKStore {
         usageMode: u.usageMode === 'gaming' ? 'gaming' : 'normal',
         gameIds: u.usageMode === 'gaming' ? sanitizeGameIds(u.gameIds) : [],
         ironMode: u.ironMode === true,
+        domesticDirect: u.domesticDirect !== false,
         fingerprint: ['chrome', 'firefox', 'safari', 'edge', 'random'].includes(String(u.fingerprint))
           ? (String(u.fingerprint) as User['fingerprint'])
           : null,
@@ -1264,6 +1270,7 @@ export class AMINCKStore {
       user.gameIds = nextGameIds;
     }
     if (body.ironMode !== undefined) user.ironMode = body.ironMode === true;
+    if (body.domesticDirect !== undefined) user.domesticDirect = body.domesticDirect !== false;
     if (body.dynamicPool !== undefined) user.dynamicPool = body.dynamicPool === true;
     if (body.rotationMinutes !== undefined) {
       user.rotationMinutes = clamp(Math.floor(Number(body.rotationMinutes)) || 1, 1, 60);
@@ -1308,6 +1315,7 @@ export class AMINCKStore {
       usageMode: body.usageMode === 'gaming' ? 'gaming' : 'normal',
       gameIds: body.usageMode === 'gaming' ? sanitizeGameIds(body.gameIds) : [],
       ironMode: body.ironMode === true,
+      domesticDirect: body.domesticDirect !== false,
       fingerprint: null,
       configNameTemplate: String(body.configNameTemplate ?? '').trim() || null,
       dynamicPool: body.dynamicPool === true,

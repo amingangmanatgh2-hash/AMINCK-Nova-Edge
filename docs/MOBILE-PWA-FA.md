@@ -9,6 +9,15 @@
 
 اپ نصب‌شده همان پنل امن Cloudflare است؛ دیتابیس یا Secret جداگانه روی گوشی ذخیره نمی‌کند. Service Worker فقط HTML/CSS/JS/Manifest/Icon عمومی را Cache می‌کند و مسیرهای `/api`، `/sub`، `/healthz`، `/connect` و `/e…` را کنار می‌گذارد.
 
+## ساخت با دستیار AI
+
+1. در داشبورد، داخل «دستیار ساخت کانفیگ با متن فارسی» نیاز خود را بنویسید؛ تعداد ساب/کانفیگ، بازی، Iron، کم‌پینگ یا پایداری، Smart Pool و Domestic Direct را می‌توانید در یک جمله بیاورید.
+2. «فقط طراحی» فرم را پر می‌کند تا قبل از ساخت بررسی کنید. «طراحی و ساخت با AI» همان طرح را بعد از اعتبارسنجی وارد Probe + Auto Build می‌کند.
+3. طرح فقط از فیلدهای امن پنل و Game IDهای Catalogue استفاده می‌کند. AI نمی‌تواند Host/SNI، کد یا گزینه دلخواه تزریق کند.
+4. اگر Workers AI در دسترس نباشد، Parser داخلی فارسی/انگلیسی کار را بدون خطا ادامه می‌دهد. اگر Binding فعال باشد، متن Prompt برای inference به Workers AI حساب Cloudflare ارسال می‌شود؛ Token ساب، رمز، Secret و Backup ارسال نمی‌شوند.
+
+نمونه: `برای کالاف ۳۰ کانفیگ LOW PING آهنین بساز، سه ساب و نت ملی مستقیم بماند`.
+
 ## ساخت Smart Pool
 
 1. در داشبورد Endpointهای متعلق به همین Worker را انتخاب کنید.
@@ -23,10 +32,17 @@ Smart Pool پاسخ نامتناهی تولید نمی‌کند. در هر در�
 ## Normal، Gaming و Iron
 
 - **Normal** برای استفاده عمومی و بیشترین سازگاری شروع مناسب‌تری است.
+- **LOW PING** Route سالم با کمترین زمان اندازه‌گیری‌شده را با URL-test سریع‌تر انتخاب و خرابی را Fail-fast می‌کند. این حالت فاصله فیزیکی یا Peering ISP را عوض نمی‌کند و Ping مشخصی را تضمین نمی‌کند.
 - **Gaming** دارای جست‌وجو و «انتخاب همه» برای ۱۷۴ بازی، از جمله Call of Duty و Minecraft است. این حالت دامنه‌های رسمی Login/Launcher/Store/Content را در Clash و sing-box به گروه `url-test` می‌دهد و در Xray Iron نیز Rule متناظر می‌سازد.
 - **Whole-subscription Iron** تمام Routeهای همان ساب را با `IRON` نام‌گذاری می‌کند؛ با انتخاب ۲۰۰ Route می‌توان یک ساب ۲۰۰ کانفیگ Iron داشت. این گزینه با «۱ تا ۵ Iron Pack» فرق دارد: Packها فایل JSON تجمیعی جداگانه‌اند.
 - Raw/Base64 فقط مجموعه URI است و Rule دامنه مستقل حمل نمی‌کند؛ نام `GAMING`/`IRON` را دارد اما Policy Gaming کامل را باید با Clash، sing-box یا Xray Iron Import کرد.
 - Worker ترافیک UDP دلخواه Gameplay را عبور نمی‌دهد و UDP فقط برای DNS/53 است. Ping زیر ۹۰ ms، موقعیت خارجی، عبور همگانی DPI یا دسترسی همه سرویس‌ها تضمین نمی‌شود.
+
+## Domestic Direct روی موبایل
+
+این گزینه پیش‌فرض روشن است. در Clash/Mihomo مسیرهای LAN/Private همیشه Direct هستند و `.ir`/GeoIP ایران نیز هنگام فعال بودن گزینه پیش از تونل Direct می‌شوند. sing-box برای Private/Local و `.ir` Rule مستقیم دارد؛ Xray Iron از دیتابیس `geosite:ir`/`geoip:ir` کلاینت استفاده می‌کند. Raw/Base64 این Ruleها را حمل نمی‌کند.
+
+اگر فقط Worker بین‌المللی خراب شود، ترافیک داخلی واجد شرایط همچنان از اینترنت مستقیم گوشی عبور می‌کند. اما این حالت نمی‌تواند Airplane Mode، قطع ISP، اختلال DNS/Route داخلی، خرابی مقصد یا خاموشی سراسری شبکه را جبران کند. هیچ دامنه ایرانی به‌عنوان SNI/Host جعلی برای ترافیک خارجی استفاده نمی‌شود.
 
 ## Multi-Endpoint واقعی
 
@@ -59,7 +75,7 @@ Smart Pool پاسخ نامتناهی تولید نمی‌کند. در هر در�
 
 نسخه Timeout Fix جهت `WebSocketPair` را اصلاح کرده است؛ در نسخه قدیمی `101 Switching Protocols` موفق بود اما Frameهای VLESS به سمت Worker تحویل نمی‌شدند. بنابراین فقط Refresh‌کردن Subscription روی Backend قدیمی کافی نیست و Worker باید دوباره Deploy شود.
 
-1. `/healthz` دامنه Deploy را باز کنید و مطمئن شوید `version` برابر `1.2.0` و `release` برابر `2026.08.21-giant-gaming.3` است.
+1. `/healthz` دامنه Deploy را باز کنید و مطمئن شوید `version` برابر `1.3.0` و `release` برابر `2026.08.22-ai-low-ping.4` است.
 2. اگر کانفیگ‌ها هنوز دامنه Deploy قبلی را دارند، بالای پنل دکمه **«تعمیر همه کانفیگ‌ها روی دامنه فعلی»** را بزنید. UUID و Token حفظ می‌شود ولی Routeها به دامنه فعال بازسازی می‌شوند.
 3. Subscription را در کلاینت Refresh کنید و Route دارای برچسب **DIRECT SAFE** را آزمایش کنید. تمام Routeهای مستقیم بدون Early Data، Padding و Fragment صادر می‌شوند.
 4. نتیجه تست داخل داشبورد باید وضعیت `WSS + VLESS + TCP` را نشان دهد؛ بازشدن WebSocket به‌تنهایی نشانه کارکرد تونل نیست.
@@ -70,7 +86,7 @@ Smart Pool پاسخ نامتناهی تولید نمی‌کند. در هر در�
 ## Update Center اپ
 
 - «آپدیت Shell اپ» از Service Worker می‌خواهد HTML/CSS/JS عمومی را دوباره بررسی کند.
-- «بررسی GitHub / Deploy» نسخه `1.2.0` داخل Worker را با `package.json` شاخه عمومی مقایسه می‌کند و نتیجه موفق را پنج دقیقه Cache می‌کند.
+- «بررسی GitHub / Deploy» نسخه `1.3.0` داخل Worker را با `package.json` شاخه عمومی مقایسه می‌کند و نتیجه موفق را پنج دقیقه Cache می‌کند.
 - اگر نسخه جدید باشد، دکمه Deploy رسمی باز می‌شود. پنل Cloudflare API Token نمی‌گیرد و بدون Git Integration، Deploy Button، Wrangler Login یا مجوز حساب نمی‌تواند کد Worker را خودکار جایگزین کند.
 - در صورت اختلال GitHub، اتصال‌ها و ساخت ساب از کار نمی‌افتند؛ فقط بررسی نسخه پیام خطای قابل‌فهم نشان می‌دهد.
 
