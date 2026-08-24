@@ -26,6 +26,15 @@ import { isPrivateLiteral } from './utils';
 import { defaultRuntimeHooks, probeAll } from './probe';
 import { aiGameIdReference, deterministicAiBuildPlan, parseAiBuildPlan } from './ai';
 import {
+  ARENA_SERVICES,
+  arenaModelInstruction,
+  arenaServiceSpec,
+  arenaSummaryFromModel,
+  deterministicArenaRun,
+  isArenaServiceId,
+  sanitizeArenaContext,
+} from './arena';
+import {
   UI_APP_CSS,
   UI_APP_JS,
   UI_ICON_SVG,
@@ -36,8 +45,8 @@ import {
 
 export { AMINCKStore };
 
-const AMINNOVA_RELEASE = '2026.08.22-ai-low-ping.4';
-const AMINNOVA_VERSION = '1.3.0';
+const AMINNOVA_RELEASE = '2026.08.23-arena-ai-services.5';
+const AMINNOVA_VERSION = '1.4.0';
 const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
 let UPDATE_CACHE: { expiresAt: number; value: Record<string, unknown> } | null = null;
 
@@ -201,6 +210,66 @@ async function createAiBuildPlan(prompt: string, env: Env): Promise<Record<strin
   }
 }
 
+/**
+ * Run one AMINNOVA Arena service. The deterministic engine always produces
+ * the result; when a Workers AI binding is available the model may only
+ * rephrase the Persian summary, and only if the scrubbed output survives
+ * validation. Timeouts/quota/model errors fail open to the local engine.
+ */
+async function runArenaService(
+  serviceId: 'build-plan' | 'profile-coach' | 'endpoint-analyst' | 'security-review',
+  prompt: string,
+  rawContext: unknown,
+  env: Env,
+): Promise<Record<string, unknown>> {
+  const context = sanitizeArenaContext(rawContext);
+  const result = deterministicArenaRun(serviceId, { prompt, context });
+  const spec = arenaServiceSpec(serviceId);
+  if (!env.AI) {
+    return {
+      ok: true,
+      arena: 'AMINNOVA Arena',
+      service: spec,
+      result,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'Binding هوش مصنوعی در دسترس نیست؛ موتور تعیین‌پذیر امن AMINNOVA نتیجه معتبر را ساخت.',
+    };
+  }
+  try {
+    const inference = env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
+      messages: [{ role: 'user', content: arenaModelInstruction(spec, result) }],
+      max_tokens: 220,
+      temperature: 0,
+    });
+    const modelOut = await Promise.race([
+      inference,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 4000)),
+    ]);
+    const rewritten = arenaSummaryFromModel(modelOut);
+    if (!rewritten) throw new Error('ai-invalid-summary');
+    return {
+      ok: true,
+      arena: 'AMINNOVA Arena',
+      service: spec,
+      result: { ...result, summary: rewritten },
+      cloudflareAiUsed: true,
+      deterministicFallback: false,
+      message: 'Cloudflare AI فقط متن خلاصه را بازنویسی کرد؛ اعداد و یافته‌ها از موتور تعیین‌پذیر امن است.',
+    };
+  } catch {
+    return {
+      ok: true,
+      arena: 'AMINNOVA Arena',
+      service: spec,
+      result,
+      cloudflareAiUsed: false,
+      deterministicFallback: true,
+      message: 'AI ابری پاسخ قابل‌قبول نداد؛ نتیجه موتور تعیین‌پذیر امن بدون وقفه برگردانده شد.',
+    };
+  }
+}
+
 async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host: string): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -268,6 +337,44 @@ async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host
       return withHeaders(json({ error: 'bad-prompt', message: 'درخواست خود را حداقل در سه کاراکتر توضیح دهید' }, 400), {});
     }
     return withHeaders(json(await createAiBuildPlan(prompt, env)), {});
+  }
+
+  // AMINNOVA Arena — the constrained AI services hub. Session + configs:build
+  // only; the deterministic engines are authoritative and the optional model
+  // call may only rephrase the summary after scrubbing.
+  if (path === '/api/arena') {
+    if (!sessionId) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meResponse = await callDo(env, '/api/me', { sessionId });
+    if (!meResponse.ok) return withHeaders(json({ error: 'unauthorized' }, 401), {});
+    const meData = await meResponse.json() as { me?: { permissions?: string[] } };
+    if (!meData.me?.permissions?.includes('configs:build')) {
+      return withHeaders(json({ error: 'forbidden', message: 'دسترسی ساخت کانفیگ لازم است' }, 403), {});
+    }
+    if (request.method === 'GET') {
+      return withHeaders(json({
+        ok: true,
+        arena: 'AMINNOVA Arena',
+        version: AMINNOVA_VERSION,
+        release: AMINNOVA_RELEASE,
+        services: ARENA_SERVICES,
+      }), {});
+    }
+    if (request.method !== 'POST') {
+      return withHeaders(json({ error: 'method-not-allowed' }, 405), {});
+    }
+    if (!isArenaServiceId(body.service)) {
+      return withHeaders(json({
+        error: 'bad-service',
+        message: 'سرویس Arena ناشناخته است؛ یکی از سرویس‌های کاتالوگ را انتخاب کنید',
+        services: ARENA_SERVICES.map((spec) => spec.id),
+      }, 400), {});
+    }
+    const spec = arenaServiceSpec(body.service);
+    const prompt = String(body.prompt ?? '').slice(0, 1000);
+    if (spec.needsPrompt && prompt.trim().length < 3) {
+      return withHeaders(json({ error: 'bad-prompt', message: `سرویس «${spec.title}» به توضیح حداقل سه‌کاراکتری نیاز دارد` }, 400), {});
+    }
+    return withHeaders(json(await runArenaService(spec.id, prompt, body.context, env)), {});
   }
 
   // Auto Build must always measure endpoints immediately before choosing them,
@@ -852,7 +959,7 @@ async function runCronProbe(env: Env): Promise<void> {
 // helpers
 // ---------------------------------------------------------------------------
 
-const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
+const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
 const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
 
 function launchInfo(): Record<string, unknown> {
@@ -870,7 +977,7 @@ function launchInfo(): Record<string, unknown> {
 
 async function checkForSourceUpdate(): Promise<Record<string, unknown>> {
   if (UPDATE_CACHE && UPDATE_CACHE.expiresAt > Date.now()) return UPDATE_CACHE.value;
-  const source = 'https://raw.githubusercontent.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/arena/01a01b70-aminck-nova-edge/package.json';
+  const source = 'https://raw.githubusercontent.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/refs/heads/main/package.json';
   try {
     const response = await fetch(source, {
       headers: { accept: 'application/json', 'user-agent': 'AMINNOVA-Update-Check' },

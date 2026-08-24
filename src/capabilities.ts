@@ -18,7 +18,8 @@ export type CapabilityCategory =
   | 'owner'
   | 'ui'
   | 'deploy'
-  | 'settings';
+  | 'settings'
+  | 'ai';
 
 export interface Capability {
   id: string;
@@ -433,6 +434,19 @@ export const CAPABILITIES: Capability[] = [
   c('config', 'cfg-ai-deterministic-fallback', 'Fallback داخلی دستیار AI', 'اگر Binding، مدل، سهمیه یا پاسخ Cloudflare AI در دسترس نباشد، Parser امن فارسی بدون توقف فرم ساخت را با فیلدهای معتبر آماده می‌کند.'),
   c('ui', 'ui-ai-plan-and-build', 'طراحی و ساخت یک‌کلیکی AI', 'کاربر می‌تواند طرح AI را فقط بررسی کند یا با دکمه طراحی و ساخت، فیلدهای اعتبارسنجی‌شده را روی Auto Build اعمال و ساب را ایجاد کند.'),
   c('security', 'security-ai-plan-constraints', 'محدودسازی خروجی AI', 'دستیار فقط برای نشست دارای configs:build اجرا می‌شود، Prompt را محدود می‌کند و خروجی مدل را به Enumها، سقف Route و Game IDهای Catalogue تقلیل می‌دهد.'),
+  // ------------------------------------------------------------------------ ai
+  c('ai', 'ai-arena-hub', 'میان‌افزار AMINNOVA Arena', 'مسیر POST /api/arena چهار سرویس هوش مصنوعی امن را پشت نشست HttpOnly و Permission ساخت کانفیگ یکپارچه می‌کند.'),
+  c('ai', 'ai-arena-catalogue', 'کاتالوگ سرویس‌های Arena', 'GET /api/arena فهرست چهار سرویس با عنوان، توضیح و نیازمندی Prompt را به نشست معتبر برمی‌گرداند.'),
+  c('ai', 'ai-build-plan-service', 'سرویس طراح طرح ساخت', 'سرویس build-plan در Arena همان Parser امن فارسی دستیار ساخت را با گزارش یافته‌ها و متریک‌های تعداد Route، ساب و بازی اجرا می‌کند.'),
+  c('ai', 'ai-profile-coach', 'مربی پروفایل اندازه‌گیری', 'سرویس profile-coach فقط از تأخیرهای واقعی Probe حداکثر پنجاه Endpoint سالم، ترکیب محافظه‌کار Speed Preset و Profile Mode را پیشنهاد می‌دهد.'),
+  c('ai', 'ai-endpoint-analyst', 'تحلیل‌گر سلامت Endpoint', 'سرویس endpoint-analyst نتایج Probe را به گزارش فارسی سالم، خراب، کهنگی، بهترین تأخیر و پراکندگی تبدیل می‌کند.'),
+  c('ai', 'ai-security-review', 'داور امنیت تنظیمات', 'سرویس security-review تنظیمات پنل را با امتیاز صفر تا صد داوری می‌کند و ریسک‌های DoH غیر HTTPS، Loop در Health Check و پورت نامعتبر را بدون افشای مقادیر گزارش می‌دهد.'),
+  c('ai', 'ai-context-whitelist', 'Whitelist ورودی Context', 'بدنه Arena فقط کلیدهای مجاز هر سرویس را با سقف طول، بازه عددی و فرمت معتبر قبول می‌کند و بقیه ورودی را نادیده می‌گیرد.'),
+  c('ai', 'ai-output-scrub', 'پالایش خروجی مدل', 'خلاصه بازنویسی‌شده مدل پیش از نمایش از URL، آدرس IP، UUID و رشته‌های شبه‌Token پاکسازی می‌شود و متن کوتاه یا خالی پذیرفته نیست.'),
+  c('ai', 'ai-deterministic-first', 'اولویت موتور تعیین‌پذیر', 'نتیجه معتبر هر سرویس Arena همیشه از موتور داخلی ساخته می‌شود و مدل ابری فقط مجاز است خلاصه متن را بازنویسی کند.'),
+  c('ai', 'ai-timeout-failopen', 'Timeout و Fail-open مدل', 'فراخوانی Workers AI سقف چهار ثانیه دارد و در نبود Binding، سهمیه، مدل یا پاسخ معتبر، سرویس بدون وقفه با موتور داخلی پاسخ می‌دهد.'),
+  c('ai', 'ai-arena-privacy', 'حریم خصوصی Arena', 'رمز مالک، Cookie نشست، Token و UUID ساب در Prompt یا Context به مدل ارسال نمی‌شود؛ Context از Whitelist فیلدهای غیرحساس عبور می‌کند.'),
+  c('ai', 'ai-arena-ui', 'کارت Arena در داشبورد', 'رابط فارسی Arena انتخاب سرویس، ورود Prompt و نمایش خلاصه، یافته‌ها، امتیاز و پیشنهاد را همراه وضعیت موتور داخلی یا ابری ارائه می‌کند.'),
   ...GAME_CATALOG.map((game) => c(
     'config',
     `game-route-${game.id}`,
