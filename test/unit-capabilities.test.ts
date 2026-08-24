@@ -8,8 +8,8 @@ import {
 
 describe('capability manifest', () => {
   it('contains at least 500 implemented capabilities and catalogue controls', () => {
-    expect(totalCapabilities()).toBe(560);
-    expect(CAPABILITIES.length).toBe(560);
+    expect(totalCapabilities()).toBe(572);
+    expect(CAPABILITIES.length).toBe(572);
   });
 
   it('contains at least 50 owner/administrator management capabilities', () => {

@@ -1,8 +1,8 @@
 {
   "name": "aminnova",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
-  "description": "AMINNOVA — Persian RTL subscription panel and VLESS over WebSocket gateway for Cloudflare Workers, with Durable Objects, endpoint probes, multi-format configs and seller controls.",
+  "description": "AMINNOVA — Persian RTL subscription panel and VLESS over WebSocket gateway for Cloudflare Workers, with Durable Objects, endpoint probes, multi-format configs, seller controls and the AMINNOVA Arena constrained AI services.",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

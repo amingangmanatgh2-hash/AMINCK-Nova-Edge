@@ -422,7 +422,7 @@ export const UI_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
 
 export const UI_SW_JS = `/* AMINNOVA privacy-safe PWA service worker */
 'use strict';
-var CACHE = 'aminnova-shell-v8-ai-low-ping';
+var CACHE = 'aminnova-shell-v9-arena-ai';
 var SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 var PRIVATE_PREFIXES = ['/api/', '/sub/', '/ws', '/healthz', '/connect', '/e'];
 function isPrivatePath(path) { return PRIVATE_PREFIXES.some(function (prefix) { return path.indexOf(prefix) === 0; }); }
@@ -721,8 +721,8 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var L = STATE.launch || {};
     var depA = $('#btn-deploy');
     var repoA = $('#btn-repo');
-    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
-    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
+    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
+    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge';
     var mb = $('#cf-menu-btn');
     if (mb) mb.onclick = function () {
       var box = $('#cf-menu');
@@ -828,7 +828,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     var html = '<div class="grid stats-grid">';
     html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
     html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
-    html += '<div class="pill"><b>' + (STATE.caps.length || '۵۶۰') + '</b><span>قابلیت مستند</span></div>';
+    html += '<div class="pill"><b>' + (STATE.caps.length || '۵۷۲') + '</b><span>قابلیت مستند</span></div>';
     html += '<div class="pill"><b>∞ Pool</b><span>چرخش پنجره فعال</span></div></div>';
     html += '<div class="card hero-panel" style="margin-top:16px"><div class="section-title"><div><div class="eyebrow">Smart Subscription Studio</div><h2>ساخت اتومات حرفه‌ای AMINNOVA</h2></div>' + icon('spark') + '</div>';
     html += '<p class="muted">Probe واقعی Edge، مسیر مستقیم + Anycast، خروجی‌های چندکلاینت و Smart Pool چرخان. هیچ سرویس اینترنتی نمی‌تواند نبود قطعی روی همه ISPها را تضمین کند؛ Failover احتمال قطعی را کم می‌کند.</p>';
@@ -837,6 +837,7 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     html += '<div class="mode-deck"><label class="mode-card"><input type="radio" name="usage-mode" id="usage-normal" value="normal" checked><b>' + icon('cloud') + 'ساب معمولی پرقدرت</b><span class="muted">سازگاری بیشتر، Direct Safe و انتخاب خودکار مسیر سالم.</span></label>';
     html += '<label class="mode-card"><input type="radio" name="usage-mode" id="usage-gaming" value="gaming"><b>' + icon('scan') + 'Gaming Route Studio</b><span class="muted">LOW PING انتخاب سریع‌تر Route اندازه‌گیری‌شده؛ Rule دامنه رسمی بدون ادعای Ping تضمینی.</span></label></div>';
     html += '<div class="card ai-studio"><div class="section-title"><div><div class="eyebrow">Cloudflare AI + Safe Local Fallback</div><h2>دستیار ساخت کانفیگ با متن فارسی</h2></div>' + icon('spark') + '</div><p class="muted">مثال: «برای کالاف ۳۰ کانفیگ کم‌پینگ آهنین بساز، نت ملی مستقیم بماند». AI فقط فیلدهای امن و Game IDهای Catalogue را می‌سازد؛ اگر AI ابری در دسترس نباشد موتور فارسی داخلی ادامه می‌دهد. با Binding فعال، متن همین Prompt به Workers AI حساب شما می‌رود؛ رمز و Token ساب ارسال نمی‌شود.</p><textarea id="ai-prompt" class="ai-prompt" maxlength="1000" placeholder="دقیق بنویس چه ساب، چه بازی، چند کانفیگ و چه اولویتی می‌خواهی…"></textarea><div class="row"><button class="btn" id="ai-design" type="button">' + icon('spark') + 'فقط طراحی</button><button class="btn primary" id="ai-build" type="button">' + icon('cloud') + 'طراحی و ساخت با AI</button></div><div id="ai-result" class="alert ai-result">هنوز درخواستی به دستیار نداده‌اید.</div></div>';
+    html += '<div class="card ai-studio"><div class="section-title"><div><div class="eyebrow">AMINNOVA Arena · AI Services</div><h2>سرویس‌های هوش مصنوعی Arena</h2></div>' + icon('spark') + '</div><p class="muted">چهار سرویس امن در یک میان‌افزار: طراح طرح ساخت، مربی پروفایل از روی Probe واقعی، تحلیل‌گر سلامت Endpoint و داور امنیت تنظیمات. نتیجه همیشه از موتور تعیین‌پذیر داخل Worker ساخته می‌شود؛ Cloudflare AI فقط در صورت دسترسی، متن خلاصه را پس از پاکسازی بازنویسی می‌کند و هرگز Token، UUID یا رمز دریافت نمی‌کند.</p><div class="row" style="margin-bottom:8px"><select id="arena-service" style="flex:1 1 220px"><option value="build-plan">طراح طرح ساخت</option><option value="profile-coach">مربی پروفایل</option><option value="endpoint-analyst">تحلیل‌گر Endpoint</option><option value="security-review">داور امنیت تنظیمات</option></select><button class="btn primary" id="arena-run" type="button">' + icon('spark') + 'اجرای سرویس</button></div><textarea id="arena-prompt" class="ai-prompt" maxlength="1000" placeholder="برای طراح طرح ساخت بنویس؛ بقیه سرویس‌ها از داده واقعی پنل استفاده می‌کنند…"></textarea><div id="arena-result" class="alert ai-result">سرویس Arena هنوز اجرا نشده است.</div></div>';
     html += '<label class="check"><input id="domestic-direct" type="checkbox" checked> ' + icon('shield') + '<b>Domestic Direct / تداوم شبکه داخلی</b> · دامنه‌های .ir و GeoIP ایران در Clash/Xray مستقیم می‌مانند</label><p class="muted">این Split Tunnel می‌تواند سایت‌های قابل‌شناسایی داخلی را از تونل بین‌المللی جدا کند؛ قطع ISP، مقصد یا تشخیص‌ناپذیری دامنه را رفع یا تضمین نمی‌کند. Raw/Base64 Rule جدا ندارد.</p>';
     html += '<label class="check"><input id="iron-sub" type="checkbox"> ' + icon('iron') + '<b>کل Subscription آهنین باشد</b> · همه Routeها با برچسب IRON و گروه Auto/Fallback</label>';
     html += '<div class="game-picker" id="game-picker"><div class="section-title"><div><div class="eyebrow">Gaming TCP Content Routing</div><h2>انتخاب بازی‌ها</h2></div><span class="badge" id="game-count">۰ انتخاب</span></div>';
@@ -942,6 +943,41 @@ export const UI_APP_JS = `/*NOVA-UI-START*/
     }
     if ($('#ai-design')) $('#ai-design').onclick = function () { runAiBuilder(false); };
     if ($('#ai-build')) $('#ai-build').onclick = function () { runAiBuilder(true); };
+    function runArena() {
+      var service = $('#arena-service').value;
+      var prompt = ($('#arena-prompt').value || '').trim();
+      var context = {};
+      if (service === 'build-plan' && prompt.length < 3) { toast('برای طراح طرح، درخواست را بنویس'); return; }
+      if (service === 'profile-coach') {
+        var lat = [];
+        Object.keys(STATE.probe || {}).forEach(function (key) {
+          var item = STATE.probe[key];
+          if (item && item.ok && isFinite(Number(item.latencyMs))) lat.push(Math.round(Number(item.latencyMs)));
+        });
+        context = { latencies: lat, goal: ($('#usage-gaming') && $('#usage-gaming').checked) ? 'gaming' : 'normal' };
+      } else if (service === 'endpoint-analyst') {
+        context = { results: STATE.probe || {} };
+      } else if (service === 'security-review') {
+        context = { settings: STATE.settings || {}, workerHost: location.hostname };
+      }
+      var button = $('#arena-run');
+      button.disabled = true;
+      $('#arena-result').textContent = 'موتور تعیین‌پذیر Arena در حال اجرا…';
+      api('POST', '/api/arena', { service: service, prompt: prompt, context: context }).then(function (d) {
+        var r = d.result || {};
+        var lines = (r.findings || []).map(function (line) { return '• ' + esc(line); }).join('<br>');
+        var warns = (r.warnings || []).map(function (line) { return '⚠ ' + esc(line); }).join('<br>');
+        var head = '<b>' + esc(r.title || service) + '</b> · ' + (d.cloudflareAiUsed ? 'Cloudflare AI (بازنویسی خلاصه)' : 'موتور تعیین‌پذیر امن');
+        var extra = '';
+        if (typeof r.score === 'number') extra += '<br><span class="latency-meter">امتیاز امنیت: ' + esc(String(r.score)) + '/۱۰۰</span>';
+        if (r.advice) extra += '<br>پیشنهاد: <span class="mono">' + esc(r.advice.speedPreset + ' / ' + r.advice.profileMode) + '</span>';
+        if (r.metrics && typeof r.metrics.bestMs === 'number' && r.metrics.bestMs > 0) extra += ' · بهترین: ' + esc(String(r.metrics.bestMs)) + 'ms';
+        $('#arena-result').innerHTML = head + '<br>' + esc(r.summary || d.message || '') + extra + (lines ? '<br>' + lines : '') + (warns ? '<br>' + warns : '');
+        if (d.cloudflareAiUsed) toast('خلاصه با Cloudflare AI بازنویسی شد', true);
+      }).catch(function (e) { $('#arena-result').textContent = e.message; toast(e.message); })
+        .finally(function () { button.disabled = false; });
+    }
+    if ($('#arena-run')) $('#arena-run').onclick = runArena;
     var safe = $('#safe-preset');
     if (safe) safe.onclick = function () {
       $('#paths').value = '1'; $('#iron-n').value = '0'; $('#dynamic-pool').checked = false; $('#clean-auto').checked = false; $('#iron-sub').checked = false; $('#domestic-direct').checked = true;

@@ -4,7 +4,7 @@
 
 > **شفافیت فنی:** هیچ پروژه‌ای نمی‌تواند سرعت، پایداری، عبور از DPI، Ping زیر ۹۰ ms یا کارکرد روی «نت ملی» را برای همهٔ اپراتورها تضمین کند. LOW PING فقط کم‌تأخیرترین Route سالمِ قابل‌اندازه‌گیری را بین Deployهای واقعی شما انتخاب می‌کند. Domestic Direct نیز فقط مقصدهای خصوصی و قابل‌شناسایی `.ir`/GeoIP ایران را در کلاینت‌های Rule-capable مستقیم می‌کند و نمی‌تواند خاموشی ISP یا شبکه سراسری را برطرف کند. AMINNOVA به‌جای دامنه/SNI جعلی از hostname واقعی Worker یا دامنه‌های متعلق به خود اپراتور استفاده می‌کند. Probe Worker تأخیر HTTPS از Edge کلودفلر است، نه Ping اینترنت گوشی کاربر.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FAMINCK-Nova-Edge%2Ftree%2Farena%2F01a01b70-aminck-nova-edge)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FAMINCK-Nova-Edge)
 
 ## امکانات اصلی
 
@@ -28,6 +28,9 @@
 - مخزن کاندیدهای Cloudflare Anycast و ورودی دستی محدود به بازه‌های IPv4 رسمی Cloudflare؛ direct و IPها ساخته می‌شوند تا `url-test`/`leastPing` روی ISP واقعی انتخاب کند
 - تست WSS پس از ساخت از داخل همان مرورگر برای تفکیک سلامت Edge از وضعیت واقعی ISP کاربر
 - کمک اختیاری binding رسمی Cloudflare Workers AI برای انتخاب Profile از روی اعداد Probe؛ با Fail-open کامل و بدون وابستگی ساخت به AI
+- **AMINNOVA Arena** — میان‌افزار یکپارچه چهار سرویس AI امن در `POST /api/arena`: طراح طرح ساخت، مربی پروفایل از روی Probe واقعی، تحلیل‌گر سلامت Endpoint و داور امنیت تنظیمات با امتیاز صفر تا صد
+- نتیجه همه سرویس‌های Arena همیشه از موتور تعیین‌پذیر داخل Worker می‌آید؛ Cloudflare AI فقط در صورت دسترسی، خلاصه متن را پس از پاکسازی از URL/IP/UUID/Token بازنویسی می‌کند
+- Whitelist سخت‌گیرانه Context و پالایش خروجی مدل؛ رمز مالک، Cookie نشست، Token و UUID ساب هرگز به AI ارسال نمی‌شود
 - Host Alias فقط برای دامنه‌ای که مالک آن هستید و به همین Worker Route شده است
 - Multi-port اختیاری برای Custom Domain؛ پیش‌فرض امن و پایدار `443`
 - مسیر تصادفی، Path Jitter و Padding؛ Fragment hint به‌صورت اختیاری و پیش‌فرض خاموش
@@ -41,7 +44,7 @@
 - Session تصادفی ۲۵۶ بیتی، PBKDF2، Lockout، Same-Origin و Security Headerها
 - PWA نصب‌پذیر روی Android/iOS/Desktop با Manifest، Service Worker امن، Share و مانیتور Rotation
 - Update Center داخلی برای مقایسه نسخه Deploy با Source عمومی GitHub و لینک نصب امن Cloudflare؛ پنل توکن Deploy دریافت نمی‌کند و خوداستقرار جعلی ندارد
-- مانیفست قابل جست‌وجو با **۵۶۰ کنترل، قابلیت و Preset پیاده‌سازی‌شده**
+- مانیفست قابل جست‌وجو با **۵۷۲ کنترل، قابلیت و Preset پیاده‌سازی‌شده**
 
 ## نصب سریع و امن
 
@@ -64,7 +67,7 @@
 ### روش ۲: Wrangler
 
 ```bash
-git clone --branch arena/01a01b70-aminck-nova-edge --single-branch https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git aminnova
+git clone --branch main --single-branch https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git aminnova
 cd aminnova
 npm ci
 npx wrangler login
@@ -217,6 +220,12 @@ curl -X POST https://YOUR_WORKER/api/ai-plan \
 
 این روش قطعی صفر را تضمین نمی‌کند. برای دسترس‌پذیری جدی از Custom Domain خودتان، Backup، Deploy دوم و DNS Failover خارج از حساب اصلی استفاده کنید.
 
+## Release 1.4.0 — AMINNOVA Arena / AI Services
+
+Release `2026.08.23-arena-ai-services.5` میان‌افزار **AMINNOVA Arena** را با چهار سرویس AI امن و Fail-open اضافه می‌کند: طراح طرح ساخت، مربی پروفایل اندازه‌گیری، تحلیل‌گر سلامت Endpoint و داور امنیت تنظیمات با امتیاز صفر تا صد؛ همراه کارت فارسی Arena در داشبورد، Whitelist ورودی Context، پاکسازی خروجی مدل، مانیفست ۵۷۲ موردی و Cache جدید PWA. جزئیات در [یادداشت انتشار ۱.۴.۰](docs/RELEASE-1.4.0-FA.md) آمده است.
+
+تفکیک Normal/Gaming و تنظیمات GOD/LOW PING نسخه‌های قبل بدون تغییر حفظ شده‌اند: دو بخش مستقل ساب معمولی و Gaming Route Studio با قواعد دامنه رسمی، پنج Preset سرعت Stable/Balanced/Turbo/GOD/LOW PING و تنظیمات کامل در تب «تنظیمات».
+
 ## Release 1.3.0 — AI Builder / LOW PING / Domestic Direct
 
 Release `2026.08.22-ai-low-ping.4` استودیوی مکالمه‌ای ساخت، Fallback تعیین‌پذیر بدون مدل، Preset کم‌تأخیر، تنظیم دوباره GOD، تداوم مستقیم مقصدهای Private/ایرانی در خروجی‌های Rule-capable، ویرایش و Backup/Restore این گزینه‌ها و مانیفست ۵۶۰ موردی را اضافه می‌کند. جزئیات در [یادداشت انتشار ۱.۳.۰](docs/RELEASE-1.3.0-FA.md) آمده است.
@@ -235,7 +244,7 @@ Release `2026.08.21-rescue-mobile.2` مجموعهٔ قبلی Timeout Fix را ک
 - دکمه **«تعمیر همه کانفیگ‌ها روی دامنه فعلی»** UUID و Token را نگه می‌دارد اما تمام مشترک‌ها را در حالت Stable و DIRECT SAFE به همین Deploy متصل می‌کند. پس از آن Subscription کلاینت باید Refresh شود.
 - تست داخل پنل فقط موفقیت `101 WebSocket` را گزارش نمی‌کند؛ Packet واقعی VLESS و درخواست TCP ارسال و وضعیت پاسخ داده می‌شود.
 
-در `/healthz`، فیلد `version` و هدرهای `x-aminck-release` / `x-aminck-version` نسخه Deploy را بررسی کنید. در نسخه جاری باید `version` برابر `1.3.0` و Release برابر `2026.08.22-ai-low-ping.4` باشد. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Refresh اشتراک به‌تنهایی Backend را ارتقا نمی‌دهد.
+در `/healthz`، فیلد `version` و هدرهای `x-aminck-release` / `x-aminck-version` نسخه Deploy را بررسی کنید. در نسخه جاری باید `version` برابر `1.4.0` و Release برابر `2026.08.23-arena-ai-services.5` باشد. اگر این شناسه دیده نمی‌شود، Worker هنوز کد قدیمی را اجرا می‌کند و Refresh اشتراک به‌تنهایی Backend را ارتقا نمی‌دهد.
 
 محدودیت پلتفرم: طبق [ملاحظات رسمی Cloudflare TCP Sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/#considerations)، مقصد نهایی‌ای که خودش روی IPهای Cloudflare میزبانی می‌شود ممکن است با Workers TCP Sockets قابل اتصال نباشد. این محدودیت با جعل SNI یا افزودن تعداد Route حل نمی‌شود؛ برای چنین مقصدی Gateway مستقل و متعلق به اپراتور لازم است.
 

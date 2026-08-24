@@ -23,8 +23,8 @@ describe('health & headers', () => {
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
     expect(data.ok).toBe(true);
-    expect(data.version).toBe('1.3.0');
-    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
+    expect(data.version).toBe('1.4.0');
+    expect(data.release).toBe('2026.08.23-arena-ai-services.5');
     expect(res.headers.get('x-aminck-release')).toBe(data.release);
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
     expect(res.headers.get('x-frame-options')).toBe('DENY');
@@ -38,8 +38,8 @@ describe('health & headers', () => {
     const res = await w.mf.dispatchFetch(`${w.base}/api/update-check`);
     expect(res.status).toBe(200);
     const data = await res.json() as any;
-    expect(data.currentVersion).toBe('1.3.0');
-    expect(data.release).toBe('2026.08.22-ai-low-ping.4');
+    expect(data.currentVersion).toBe('1.4.0');
+    expect(data.release).toBe('2026.08.23-arena-ai-services.5');
     expect(data.autoUpdate).toBe(false);
     expect(data.source).toContain('raw.githubusercontent.com');
     expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
@@ -793,7 +793,7 @@ describe('AMINNOVA reliability regressions', () => {
     const res = await w.mf.dispatchFetch(`${w.base}/api/launch`);
     expect(res.status).toBe(200);
     const data = (await res.json()) as any;
-    expect(data.repo).toContain('AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge');
+    expect(data.repo).toBe('https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge');
     expect(data.deployUrl).toContain('deploy.workers.cloudflare.com');
     expect(data.tokenUrl).toBeUndefined();
     expect(JSON.stringify(data)).not.toContain('api-tokens');
@@ -888,8 +888,8 @@ describe('AMINNOVA reliability regressions', () => {
       expect(res.headers.get('x-aminck-pool-mode')).toBe('rolling');
       expect(res.headers.get('x-aminck-rotation-minutes')).toBe('1');
       expect(res.headers.get('x-aminck-refresh-seconds')).toBe('60');
-      expect(res.headers.get('x-aminck-version')).toBe('1.3.0');
-      expect(res.headers.get('x-aminck-release')).toBe('2026.08.22-ai-low-ping.4');
+      expect(res.headers.get('x-aminck-version')).toBe('1.4.0');
+      expect(res.headers.get('x-aminck-release')).toBe('2026.08.23-arena-ai-services.5');
       expect(res.headers.get('cache-control')).toContain('no-store');
       expect(res.headers.get('etag')).toContain('W/');
       expect(sub.rawUrl).toContain(`/sub/${sub.token}/raw`);
@@ -973,5 +973,92 @@ describe('AMINNOVA reliability regressions', () => {
     expect(preview.data.saved).toBe(false);
     const listed = await w.api(ownerCookie, '/api/users', { q: 'preview-build-user' });
     expect(listed.data.users[0].routes).toHaveLength(2);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+
+describe('AMINNOVA Arena AI services API', () => {
+  it('guards the Arena catalogue and returns the constrained deterministic build plan', async () => {
+    // Auth and catalogue guards
+    const anonymous = await w.api('', '/api/arena', { service: 'endpoint-analyst' });
+    expect(anonymous.status).toBe(401);
+    const unknown = await w.api(ownerCookie, '/api/arena', { service: 'hack-everything' });
+    expect(unknown.status).toBe(400);
+    expect(unknown.data.error).toBe('bad-service');
+    expect(unknown.data.services).toEqual(['build-plan', 'profile-coach', 'endpoint-analyst', 'security-review']);
+
+    // build-plan: prompt required, then a ready deterministic gaming plan
+    const badPrompt = await w.api(ownerCookie, '/api/arena', { service: 'build-plan', prompt: '' });
+    expect(badPrompt.status).toBe(400);
+    expect(badPrompt.data.error).toBe('bad-prompt');
+    const plan = await w.api(ownerCookie, '/api/arena', {
+      service: 'build-plan',
+      prompt: 'برای کالاف ۲۰ کانفیگ کم پینگ بساز',
+    });
+    expect(plan.status).toBe(200);
+    expect(plan.data.arena).toBe('AMINNOVA Arena');
+    expect(plan.data.cloudflareAiUsed).toBe(false);
+    expect(plan.data.deterministicFallback).toBe(true);
+    expect(plan.data.result.plan.usageMode).toBe('gaming');
+    expect(plan.data.result.plan.gameIds).toContain('cod-mobile');
+    expect(plan.data.result.plan.paths).toBe(20);
+    expect(plan.data.result.metrics.paths).toBe(20);
+  });
+
+  it('runs profile-coach, endpoint-analyst and security-review fail-open', async () => {
+    // profile-coach: conservative LOW PING advice from measured latencies
+    const coach = await w.api(ownerCookie, '/api/arena', {
+      service: 'profile-coach',
+      context: { goal: 'gaming', latencies: [35, 120, 48] },
+    });
+    expect(coach.status).toBe(200);
+    expect(coach.data.result.advice).toEqual({ speedPreset: 'latency', profileMode: 'auto' });
+    expect(coach.data.result.metrics.endpoints).toBe(3);
+    expect(coach.data.result.metrics.bestMs).toBe(35);
+
+    // endpoint-analyst: fleet health, best latency and spread/stale metrics
+    const now = Date.now();
+    const analyst = await w.api(ownerCookie, '/api/arena', {
+      service: 'endpoint-analyst',
+      context: {
+        now,
+        results: {
+          'ep-a': { ok: true, latencyMs: 40, checkedAt: now },
+          'ep-b': { ok: false, error: 'timeout', checkedAt: 0 },
+          'ep-c': { ok: true, latencyMs: 420, checkedAt: now - 60 * 60_000 },
+        },
+      },
+    });
+    expect(analyst.status).toBe(200);
+    expect(analyst.data.result.metrics.total).toBe(3);
+    expect(analyst.data.result.metrics.healthy).toBe(2);
+    expect(analyst.data.result.metrics.failed).toBe(1);
+    expect(analyst.data.result.metrics.stale).toBe(1);
+    expect(analyst.data.result.metrics.bestMs).toBe(40);
+    expect(analyst.data.result.metrics.spreadMs).toBe(380);
+
+    // security-review: risky settings lose points; secret-looking input is never echoed
+    const secretLike = 'abcd1234abcd1234abcd1234abcd1234';
+    const review = await w.api(ownerCookie, '/api/arena', {
+      service: 'security-review',
+      context: {
+        workerHost: 'nova.test',
+        settings: {
+          doh: `http://insecure-dns.example/${secretLike}`,
+          healthUrl: 'https://nova.test/healthz',
+          tlsPorts: [443, 999],
+          hostAliases: ['someone-else.example'],
+          supportUrl: 'http://support.example',
+          antiDetect: { fragment: true },
+        },
+      },
+    });
+    expect(review.status).toBe(200);
+    expect(review.data.result.score).toBeLessThan(70);
+    expect(review.data.result.score).toBeGreaterThan(0);
+    expect(review.data.result.findings.length).toBeGreaterThanOrEqual(3);
+    expect(JSON.stringify(review.data)).not.toContain(secretLike);
   });
 });
