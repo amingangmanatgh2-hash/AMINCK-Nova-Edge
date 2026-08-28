@@ -109,6 +109,10 @@ class PixelState {
         showRecents = !showRecents
     }
 
+    fun flipToBack() {
+        face = Face.BACK
+    }
+
     fun back() {
         when {
             showRecents -> showRecents = false

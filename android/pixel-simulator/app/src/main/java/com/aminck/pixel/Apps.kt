@@ -454,7 +454,7 @@ fun CameraApp(state: PixelState) {
                     contentAlignment = Alignment.Center
                 ) { Text(if (mode == "Video") "●" else "", color = Color.White, fontSize = 24.sp) }
                 Box(
-                    Modifier.size(44.dp).clip(CircleShape).background(Container2).clickableNoRipple { state.face = Face.BACK },
+                    Modifier.size(44.dp).clip(CircleShape).background(Container2).clickableNoRipple { state.flipToBack() },
                     contentAlignment = Alignment.Center
                 ) { Icon(Icons.Filled.Cameraswitch, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
             }
