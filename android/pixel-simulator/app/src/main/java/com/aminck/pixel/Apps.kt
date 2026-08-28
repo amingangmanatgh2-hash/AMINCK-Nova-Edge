@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -156,7 +157,10 @@ fun GeminiApp(state: PixelState) {
 
         Spacer(Modifier.height(10.dp))
         Row(
-            Modifier.padding(horizontal = 12.dp).horizontalScrollDisable(),
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf("What’s the weather?", "Tell me about Tensor G5", "Take a great photo", "Battery tips").forEach {
@@ -242,8 +246,6 @@ fun LiveWave(color: Color) {
         }
     }
 }
-
-private fun Modifier.horizontalScrollDisable() = this
 
 /* ----------------------------- PIXEL STUDIO ---------------------------- */
 
