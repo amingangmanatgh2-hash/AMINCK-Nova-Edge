@@ -1,0 +1,116 @@
+name: Android APK Build & Release
+
+on:
+  push:
+    tags:
+      - 'pixel-sim-v*'
+      - 'novamind-v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create GitHub Releases and upload APKs'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Pixel 10 Simulator APK
+        working-directory: android/pixel-simulator
+        run: gradle --no-daemon assembleDebug
+
+      - name: Build NovaMind Local AI APK
+        working-directory: android/novamind-local-ai
+        run: gradle --no-daemon assembleDebug
+
+      - name: Rename APKs
+        run: |
+          cp android/pixel-simulator/app/build/outputs/apk/debug/app-debug.apk \
+             Pixel10ProMax-Simulator-v1.0.0.apk
+          cp android/novamind-local-ai/app/build/outputs/apk/debug/app-debug.apk \
+             NovaMind-LocalAI-v1.0.0.apk
+          ls -lh *.apk
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apks
+          path: '*.apk'
+          if-no-files-found: error
+
+      - name: Release — Pixel 10 Pro Max Simulator
+        if: (github.event_name == 'workflow_dispatch' && inputs.publish) || startsWith(github.ref, 'refs/tags/pixel-sim-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/notes-pixel.md <<'EOF'
+          # Google Pixel 10 Pro Max — Interactive Simulator 📱
+
+          A hyper-modern, fully interactive **Pixel Experience** simulator built with
+          **Jetpack Compose + Kotlin**.
+
+          ### Install
+          Download `Pixel10ProMax-Simulator-v1.0.0.apk` below and open it on your
+          Android phone (allow "install from unknown sources").
+
+          ### Features
+          - **Titanium hardware frame** with the Top Camera Island pill (42MP Tensor Vision + Face Unlock) and a flippable **3D Back Inspector** (Pixel Camera Visor + Tensor G5 specs)
+          - **Geometric Balance design**: #1A1C1E dark background, #2D2E30 containers, pastel #D3E4FF At-a-Glance card, geometric squircle icons, capsule Google search, floating dock
+          - **Interactive apps**: Gemini Live, Pixel Studio (AI canvas + Magic Eraser), Camera (Night Sight / Portrait / 5x zoom / Pro / shutter), Recorder (Live Transcribe), Weather, Phone, Messages, Photos, Music, Notes, Calculator, Clock, Settings
+          - **System**: lock screen with big Pixel clock + fingerprint scanner, Quick Settings shade with brightness slider & toggles, gesture nav bar and Recents switcher
+
+          Built from source in this repository (`android/pixel-simulator`).
+          EOF
+          gh release create "pixel-sim-v1.0.0" \
+            --title "Pixel 10 Pro Max Simulator v1.0.0" \
+            --notes-file /tmp/notes-pixel.md \
+            Pixel10ProMax-Simulator-v1.0.0.apk \
+            || gh release upload "pixel-sim-v1.0.0" Pixel10ProMax-Simulator-v1.0.0.apk --clobber
+
+      - name: Release — NovaMind Local AI
+        if: (github.event_name == 'workflow_dispatch' && inputs.publish) || startsWith(github.ref, 'refs/tags/novamind-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/notes-nova.md <<'EOF'
+          # NovaMind — 100% Offline Local AI 🧠
+
+          A standalone on-device AI app, built with **Jetpack Compose + Kotlin**.
+          **No INTERNET permission is requested** — chat, speech and image filters
+          all run on the phone.
+
+          ### Install
+          Download `NovaMind-LocalAI-v1.0.0.apk` below and open it on Android.
+
+          ### Features
+          - **LocalMind chat**: on-device intent engine, knowledge base, math evaluator, passwords, ciphers, jokes — zero network
+          - **Offline Vision Lab**: pick a photo and apply Grayscale / Sepia / Invert / Brighten / Blur — pixel math computed on the CPU
+          - **Voice Brain**: on-device SpeechRecognizer (offline mode) → LocalMind → TextToSpeech spoken answer
+          - **Local Tools**: dice, coin, password generator, Vigenère cipher, text analyzer
+
+          Source in this repository (`android/novamind-local-ai`).
+          EOF
+          gh release create "novamind-v1.0.0" \
+            --title "NovaMind Local AI v1.0.0" \
+            --notes-file /tmp/notes-nova.md \
+            NovaMind-LocalAI-v1.0.0.apk \
+            || gh release upload "novamind-v1.0.0" NovaMind-LocalAI-v1.0.0.apk --clobber
