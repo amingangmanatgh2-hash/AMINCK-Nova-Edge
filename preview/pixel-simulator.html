@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="fa" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel 10 Pro Max — Interactive Simulator</title>
+<style>
+:root{
+  --bg:#1A1C1E; --container:#2D2E30; --container2:#353638; --border:#4A4C4E;
+  --text-hi:#E9EAEC; --text-med:#B9BCBE; --text-low:#7F8285;
+  --pastel:#D3E4FF; --pastel-ink:#001C3B; --weather-badge:#004A77;
+  --blue:#8AB4F8; --green:#81C995; --yellow:#FDD663; --red:#F28B82;
+  --purple:#C58AF9; --teal:#78D0EC; --orange:#F8A96C;
+  --accent:#8AB4F8;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  font-family:'Google Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:radial-gradient(circle at 50% 30%,#24272B,#101214 70%);
+  color:var(--text-hi); display:flex; flex-direction:column; align-items:center;
+  min-height:100vh; padding:18px 12px; overflow-x:hidden;
+}
+.stage{position:relative;display:flex;flex-direction:column;align-items:center;}
+.ambient{position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(circle at 80% 15%,rgba(138,180,248,.07),transparent 40%),
+    radial-gradient(circle at 15% 85%,rgba(197,138,249,.07),transparent 40%);
+}
+/* view toggle */
+.view-toggle{position:relative;z-index:5;display:flex;gap:4px;background:var(--container);
+  border:1px solid var(--border);border-radius:50px;padding:4px;margin-bottom:16px;}
+.view-toggle button{display:flex;align-items:center;gap:6px;border:0;background:transparent;
+  color:var(--text-med);font-weight:600;font-size:13px;padding:8px 16px;border-radius:50px;cursor:pointer;}
+.view-toggle button.active{background:var(--accent);color:#0B1522;}
+/* phone */
+.phone-wrap{position:relative;z-index:2;width:340px;height:708px;perspective:1600px;}
+.phone{width:100%;height:100%;position:relative;transform-style:preserve-3d;transition:transform .9s cubic-bezier(.2,.7,.2,1);}
+.phone.back{transform:rotateY(180deg);}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border-radius:54px;padding:7px;
+  background:linear-gradient(160deg,#C9CDD1,#8E9398 30%,#B9BDC1 60%,#74797E);
+  box-shadow:0 40px 80px rgba(0,0,0,.6),inset 0 0 0 2px rgba(255,255,255,.15);
+}
+.face.back-face{transform:rotateY(180deg);}
+.screen{width:100%;height:100%;border-radius:47px;background:var(--bg);overflow:hidden;position:relative;
+  padding:4px;}
+.screen-inner{width:100%;height:100%;border-radius:43px;overflow:hidden;position:relative;background:var(--bg);}
+/* status bar */
+.statusbar{position:absolute;top:0;left:0;right:0;height:38px;display:flex;justify-content:space-between;
+  align-items:center;padding:14px 22px 0;font-size:12px;font-weight:500;z-index:40;pointer-events:none;}
+.statusbar .sb-right{display:flex;align-items:center;gap:7px;}
+.statusbar svg{width:15px;height:15px;fill:var(--text-hi);}
+/* camera island */
+.island{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:96px;height:24px;
+  background:#050607;border:1px solid #202225;border-radius:50px;z-index:45;display:flex;align-items:center;
+  justify-content:space-between;padding:0 14px;}
+.island .lens{width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8AB4F8,#1B3A5C 45%,#101418);}
+.island .sensor{width:7px;height:7px;border-radius:50%;background:#2A2D31;}
+/* generic scroll */
+.scroll{overflow-y:auto;height:100%;scrollbar-width:none;}
+.scroll::-webkit-scrollbar{display:none;}
+.btn{cursor:pointer;border:0;font-family:inherit;}
+/* lock screen */
+.lock{position:absolute;inset:0;background:linear-gradient(180deg,#0E1626,#1A1C1E 55%,#111315);display:flex;
+  flex-direction:column;align-items:center;z-index:30;}
+.lock .l-time{font-size:74px;font-weight:100;margin-top:92px;letter-spacing:-2px;}
+.lock .l-date{font-size:15px;color:var(--text-med);font-weight:500;}
+.lock .l-notif{margin-top:34px;width:86%;background:rgba(45,46,48,.92);border:1px solid var(--border);
+  border-radius:20px;padding:14px;display:flex;align-items:center;gap:10px;}
+.l-notif .bubble{width:34px;height:34px;border-radius:50%;background:var(--purple);display:flex;
+  align-items:center;justify-content:center;flex-shrink:0;}
+.l-notif .bubble svg{width:18px;height:18px;fill:#fff;}
+.l-notif h4{font-size:12px;}.l-notif p{font-size:11px;color:var(--text-med);}
+.fp{margin-top:auto;margin-bottom:72px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.fp .ring{width:60px;height:60px;border-radius:50%;border:2px solid var(--blue);
+  background:rgba(138,180,248,.18);display:flex;align-items:center;justify-content:center;cursor:pointer;
+  animation:pulse 1.6s ease-in-out infinite;}
+.fp .ring svg{width:32px;height:32px;fill:var(--blue);}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(138,180,248,.35);}50%{box-shadow:0 0 0 14px rgba(138,180,248,0);}}
+.fp p{font-size:12px;color:var(--text-med);}
+.fp .swipe{font-size:11px;color:var(--text-low);display:flex;align-items:center;cursor:pointer;}
+/* home */
+.home{position:absolute;inset:0;padding:56px 16px 70px;}
+.at-glance{background:var(--pastel);border-radius:26px;padding:16px;display:flex;align-items:center;gap:10px;}
+.at-glance .gl{flex:1;color:var(--pastel-ink);}
+.at-glance .gl .tag{font-size:11px;font-weight:700;}
+.at-glance .gl .day{font-size:15px;font-weight:600;margin:2px 0;}
+.at-glance .gl .sub{font-size:11px;color:#33506E;}
+.wbadge{background:var(--weather-badge);border-radius:16px;padding:8px 12px;color:#fff;display:flex;
+  align-items:center;gap:5px;font-weight:700;font-size:15px;}
+.wbadge svg{width:18px;height:18px;fill:#fff;}
+.appgrid{margin-top:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px 0;}
+.appcell{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;}
+.appcell .name{font-size:10.5px;font-weight:500;color:var(--text-hi);}
+.icon{width:54px;height:54px;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;
+  border:1px solid rgba(255,255,255,.12);transition:transform .12s;}
+.appcell:active .icon{transform:scale(.9);}
+.icon svg{width:26px;height:26px;fill:currentColor;}
+.icon .glyph{width:26px;height:26px;}
+.sq{border-radius:18px;} .circ{border-radius:50%;} .caps{border-radius:50px;} .diam{border-radius:14px;}
+/* search */
+.searchbar{margin-top:24px;background:var(--container);border:1px solid var(--border);border-radius:50px;
+  padding:13px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;}
+.searchbar .g{color:var(--blue);font-weight:900;font-size:18px;}
+.searchbar .ph{color:var(--text-low);font-size:13px;flex:1;}
+.searchbar svg{width:17px;height:17px;fill:var(--text-med);}
+/* dock */
+.dock{position:absolute;bottom:44px;left:16px;right:16px;background:rgba(37,39,41,.96);border:1px solid var(--border);
+  border-radius:30px;padding:12px 0;display:flex;justify-content:space-evenly;backdrop-filter:blur(8px);z-index:20;}
+/* gesture bar */
+.gesture{position:absolute;bottom:0;left:0;right:0;height:34px;z-index:42;display:flex;align-items:flex-end;
+  justify-content:center;padding-bottom:8px;}
+.gesture .pill{width:132px;height:5px;border-radius:50px;background:rgba(255,255,255,.85);}
+.gesture .zones{position:absolute;inset:0;display:flex;}
+.gesture .zones div{flex:1;cursor:pointer;}
+/* app screen */
+.appscreen{position:absolute;inset:0;background:var(--bg);z-index:35;display:flex;flex-direction:column;}
+.apphandle{height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.apphandle .bar{width:36px;height:4px;border-radius:50px;background:var(--border);}
+.appheader{display:flex;align-items:center;gap:10px;padding:4px 14px 8px;flex-shrink:0;}
+.appheader .hic{width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;color:#fff;}
+.appheader .hic svg{width:22px;height:22px;fill:currentColor;}
+.appheader h2{font-size:19px;font-weight:700;flex:1;}
+.appheader .home-btn{width:32px;height:32px;border-radius:50%;background:var(--container);display:flex;
+  align-items:center;justify-content:center;cursor:pointer;}
+.appheader .home-btn svg{width:16px;height:16px;fill:var(--text-med);}
+.appbody{flex:1;overflow-y:auto;scrollbar-width:none;padding-bottom:60px;}
+.appbody::-webkit-scrollbar{display:none;}
+.card{background:var(--container);border:1px solid var(--border);border-radius:16px;margin:0 14px 8px;padding:14px;}
+.chip{background:var(--container2);border:1px solid var(--border);border-radius:50px;padding:8px 14px;
+  font-size:12px;color:var(--text-med);cursor:pointer;white-space:nowrap;}
+.chip.on{background:var(--blue);color:#0B1522;border-color:var(--blue);font-weight:600;}
+.row{display:flex;align-items:center;}
+.label-sm{font-size:10px;font-weight:700;color:var(--text-low);letter-spacing:.5px;padding:8px 18px 4px;}
+/* shade */
+.shade{position:absolute;inset:0;background:rgba(16,18,20,.72);z-index:60;}
+.shade-panel{background:var(--container);border-radius:0 0 30px 30px;padding:18px;}
+.qs-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0;}
+.qs{display:flex;align-items:center;gap:8px;background:var(--container2);border:1px solid var(--border);
+  border-radius:20px;padding:12px;cursor:pointer;font-size:12px;color:var(--text-med);font-weight:500;}
+.qs svg{width:18px;height:18px;fill:var(--text-med);}
+.qs.on{background:rgba(138,180,248,.22);border-color:rgba(138,180,248,.6);color:var(--text-hi);}
+.qs.on svg{fill:var(--blue);}
+.slider-row{display:flex;align-items:center;gap:8px;background:var(--container2);border-radius:50px;padding:6px 14px;}
+.slider-row svg{width:18px;height:18px;fill:var(--text-med);}
+input[type=range]{-webkit-appearance:none;flex:1;height:4px;border-radius:50px;background:var(--border);}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--blue);cursor:pointer;}
+.notif{display:flex;gap:10px;align-items:center;background:var(--container2);border-radius:16px;padding:12px;margin-bottom:6px;}
+.notif .ni{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.notif .ni svg{width:16px;height:16px;fill:currentColor;}
+.notif h5{font-size:12px;}.notif p{font-size:11px;color:var(--text-med);}
+/* recents */
+.recents{position:absolute;inset:0;background:rgba(13,14,16,.94);z-index:58;padding:60px 16px;overflow-y:auto;}
+.recents h3{text-align:center;font-size:13px;color:var(--text-med);margin-bottom:16px;}
+.rcard{display:flex;align-items:center;gap:14px;background:var(--container);border:1px solid var(--border);
+  border-radius:24px;padding:14px;margin-bottom:10px;cursor:pointer;}
+.rcard .t{flex:1;font-size:15px;font-weight:600;}
+.rcard .x{color:var(--text-low);cursor:pointer;padding:6px;}
+.rcard .x svg{width:18px;height:18px;fill:var(--text-low);}
+/* back face */
+.back-inspector{width:100%;height:100%;border-radius:43px;overflow:hidden;position:relative;
+  background:linear-gradient(180deg,#17191C,#222428 50%,#141619);padding:20px;color:var(--text-hi);}
+.visor{background:linear-gradient(90deg,#3A3E43,#232629,#44484D);border:1px solid #55595E;border-radius:34px;
+  height:150px;display:flex;align-items:center;justify-content:space-evenly;position:relative;}
+.lens3{display:flex;flex-direction:column;align-items:center;gap:5px;}
+.lens3 .ring{width:72px;height:72px;border-radius:50%;background:#0D0F11;border:2px solid #6A6F75;
+  display:flex;align-items:center;justify-content:center;}
+.lens3 .ring .core{width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#8AB4F8,#274C77 45%,#1A2230);}
+.lens3 .mp{font-size:10px;font-weight:700;}.lens3 .sub{font-size:8px;color:var(--text-low);}
+.flash{position:absolute;top:8px;right:8px;width:16px;height:16px;border-radius:50%;background:#FDD663;}
+.speccard{background:var(--container);border:1px solid rgba(74,76,78,.5);border-radius:14px;padding:10px 14px;margin-top:8px;}
+.speccard .k{font-size:9px;font-weight:700;color:var(--text-low);}
+.speccard .v{font-size:12px;font-weight:500;margin-top:2px;}
+.brand{display:flex;align-items:center;gap:8px;margin-top:auto;}
+.brand .G{font-size:30px;font-weight:900;color:#fff;}
+.brand h4{font-size:15px;}.brand p{font-size:11px;color:var(--text-low);}
+.back-inspector .col{display:flex;flex-direction:column;height:100%;}
+/* toggle switch */
+.switch{width:44px;height:24px;border-radius:50px;background:var(--container2);position:relative;cursor:pointer;flex-shrink:0;transition:.2s;border:1px solid var(--border);}
+.switch .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--text-low);transition:.2s;}
+.switch.on{background:var(--teal);}
+.switch.on .knob{left:22px;background:#0B1522;}
+/* setting rows */
+.setrow{display:flex;align-items:center;gap:12px;background:var(--container);border-radius:16px;padding:14px;margin:0 14px 8px;}
+.setrow .si{width:36px;height:36px;border-radius:10px;background:var(--container2);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.setrow .si svg{width:19px;height:19px;fill:var(--blue);}
+.setrow .st{flex:1;}.setrow .st h5{font-size:14px;font-weight:500;}.setrow .st p{font-size:11px;color:var(--text-low);}
+.color-dots{display:flex;gap:12px;padding:8px 16px;}
+.color-dots .cd{width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.color-dots .cd.sel{border:3px solid #fff;}
+.color-dots .cd svg{width:18px;height:18px;fill:#0B1522;}
+/* camera */
+.cam{position:absolute;inset:0;background:#000;z-index:35;display:flex;flex-direction:column;}
+.cam .vf{flex:1;position:relative;overflow:hidden;background:linear-gradient(180deg,#13203A,#0A0E16 60%,#1A1226);}
+.cam .grid{position:absolute;inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)),linear-gradient(rgba(255,255,255,.12),rgba(255,255,255,.12)),linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,255,255,.12)),linear-gradient(90deg,rgba(255,255,255,.12),rgba(255,255,255,.12));
+  background-size:100% 1px,100% 1px,1px 100%,1px 100%;
+  background-position:0 33.3%,0 66.6%,33.3% 0,66.6% 0;
+  background-repeat:no-repeat;
+}
+.cam .modes{display:flex;justify-content:space-evenly;padding:14px 8px 4px;font-size:11px;color:rgba(255,255,255,.6);}
+.cam .modes span{cursor:pointer;}.cam .modes span.on{color:var(--yellow);font-weight:700;}
+.cam .controls{display:flex;align-items:center;justify-content:space-between;padding:18px 30px 26px;}
+.shutter{width:72px;height:72px;border-radius:50%;border:4px solid #fff;padding:6px;cursor:pointer;background:transparent;}
+.shutter .in{width:100%;height:100%;border-radius:50%;background:#fff;}
+.cam .ctrl{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.cam .ctrl.sq{border-radius:12px;}
+.cam .ctrl svg{width:20px;height:20px;fill:#fff;}
+.zoom-pills{display:flex;justify-content:center;gap:6px;margin-top:8px;}
+.zoom-pills .zp{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:pointer;}
+.zoom-pills .zp.on{background:var(--yellow);color:#000;}
+.cam-top{display:flex;justify-content:space-between;padding:48px 16px 0;align-items:center;}
+.cam-top .ct{width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;}
+.cam-top .ct svg{width:18px;height:18px;fill:#fff;}
+.cam-top .mode-name{font-size:13px;font-weight:700;color:#fff;}
+/* messages bubbles */
+.bubble-chat{max-width:78%;padding:9px 13px;border-radius:16px;font-size:13px;line-height:1.4;margin-bottom:6px;word-wrap:break-word;}
+.bubble-chat.in{background:var(--container);color:var(--text-hi);border-bottom-left-radius:4px;}
+.bubble-chat.out{background:var(--blue);color:#0B1522;border-bottom-right-radius:4px;margin-left:auto;}
+.chat-row{display:flex;padding:0 14px;margin-bottom:3px;}
+.chat-row.out{justify-content:flex-end;}
+/* calculator */
+.calc-display{background:var(--container);border-radius:18px;padding:18px;margin:0 18px 14px;text-align:right;}
+.calc-display .expr{color:var(--text-med);font-size:18px;min-height:22px;}
+.calc-display .res{color:var(--text-hi);font-size:42px;font-weight:100;}
+.calc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:0 18px;}
+.calc-key{height:56px;border-radius:16px;background:var(--container);color:var(--text-hi);font-size:22px;
+  font-weight:500;display:flex;align-items:center;justify-content:center;cursor:pointer;border:0;font-family:inherit;}
+.calc-key.op{background:var(--blue);color:#0B1522;}
+.calc-key.top{background:var(--container2);color:var(--red);}
+/* music */
+.album{margin:18px 24px;height:200px;border-radius:28px;display:flex;align-items:center;justify-content:center;
+  background:conic-gradient(from 0deg,var(--orange),var(--purple),var(--teal),var(--orange));}
+.album svg{width:72px;height:72px;fill:rgba(255,255,255,.85);}
+.music-ctrl{display:flex;align-items:center;justify-content:center;gap:28px;margin-top:18px;}
+.music-ctrl svg{width:34px;height:34px;fill:var(--text-hi);cursor:pointer;}
+.play-btn{width:68px;height:68px;border-radius:50%;background:var(--orange);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.play-btn svg{width:34px;height:34px;fill:#2A1500;}
+/* phone dialer */
+.dial-num{text-align:center;font-size:34px;font-weight:100;padding:16px;color:var(--text-hi);min-height:60px;}
+.dial-grid{display:grid;grid-template-columns:repeat(3,66px);gap:10px;justify-content:center;}
+.dial-key{width:66px;height:66px;border-radius:50%;background:var(--container);border:1px solid var(--border);
+  color:var(--text-hi);font-size:24px;font-weight:500;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.dial-actions{display:flex;justify-content:space-between;align-items:center;padding:20px 40px;}
+.call-btn{width:62px;height:62px;border-radius:50%;background:var(--green);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.call-btn svg{width:26px;height:26px;fill:#fff;}
+.hang{width:66px;height:66px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.hang svg{width:28px;height:28px;fill:#fff;}
+/* photos grid */
+.photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 12px;}
+.photo{height:150px;border-radius:18px;cursor:pointer;position:relative;overflow:hidden;}
+.photo .pt{position:absolute;bottom:6px;left:8px;font-size:10px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);}
+/* studio canvas */
+.studio-canvas{margin:0 14px;height:260px;border-radius:24px;background:#101214;border:1px solid var(--border);
+  position:relative;overflow:hidden;}
+.studio-canvas canvas{width:100%;height:100%;display:block;}
+.studio-tag{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);border-radius:50px;padding:5px 10px;font-size:10px;color:#fff;}
+.studio-btns{display:flex;gap:10px;padding:14px;}
+.studio-btn{flex:1;background:var(--container);border:1px solid var(--border);border-radius:16px;padding:12px;
+  display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text-hi);font-size:12px;font-weight:500;cursor:pointer;}
+.studio-btn svg{width:16px;height:16px;fill:var(--blue);}
+/* recorder */
+.rec-card{margin:0 14px;background:var(--container);border:1px solid var(--border);border-radius:22px;padding:18px;}
+.rec-time{font-size:40px;font-weight:100;}
+.rec-sub{font-size:12px;color:var(--text-low);}
+.rec-sub.live{color:var(--red);}
+.rec-ctrl{display:flex;align-items:center;gap:10px;margin-top:14px;}
+.rec-btn{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.rec-btn.main{background:var(--red);}.rec-btn.sec{background:var(--container2);}
+.rec-btn svg{width:24px;height:24px;fill:#fff;}.rec-btn.sec svg{fill:var(--text-med);}
+.wave{height:40px;margin:12px 0;display:flex;align-items:center;gap:2px;}
+.wave span{flex:1;background:var(--red);border-radius:2px;}
+/* gemini */
+.gem-msg{max-width:80%;padding:10px 14px;border-radius:18px;font-size:13px;line-height:1.45;margin-bottom:8px;word-wrap:break-word;}
+.gem-msg.ai{background:var(--container);color:var(--text-hi);}
+.gem-msg.me{background:var(--purple);color:#fff;margin-left:auto;}
+.suggest-row{display:flex;gap:8px;overflow-x:auto;padding:4px 14px 8px;scrollbar-width:none;}
+.suggest-row::-webkit-scrollbar{display:none;}
+.gem-input{display:flex;align-items:center;gap:8px;padding:12px 14px;}
+.gem-input .field{flex:1;background:var(--container);border:1px solid var(--border);border-radius:50px;padding:12px 16px;color:var(--text-hi);font-size:13px;outline:none;}
+.gem-send{width:46px;height:46px;border-radius:50%;background:var(--purple);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.gem-send svg{width:20px;height:20px;fill:#fff;}
+/* notes */
+.notes-area{margin:0 14px;background:var(--container);border:1px solid var(--border);border-radius:20px;padding:16px;
+  width:calc(100% - 28px);height:280px;color:var(--text-hi);font-size:14px;line-height:1.6;outline:none;resize:none;font-family:inherit;}
+/* weather */
+.weather-hero{margin:0 14px;background:linear-gradient(180deg,#0B3C5D,#1E6FA8);border-radius:26px;padding:18px;
+  display:flex;flex-direction:column;align-items:center;color:#fff;}
+.weather-hero .city{font-size:14px;font-weight:500;}
+.weather-hero .deg{font-size:64px;font-weight:100;}
+.weather-hero svg{width:40px;height:40px;fill:#FFE082;}
+.wmini-row{display:flex;gap:18px;margin-top:10px;}
+.wmini{text-align:center;}.wmini b{font-size:13px;display:block;}.wmini span{font-size:9px;opacity:.7;}
+.hourly{display:flex;justify-content:space-between;margin:0 14px;background:var(--container);border-radius:18px;padding:12px;}
+.hour{text-align:center;}.hour svg{width:18px;height:18px;fill:var(--yellow);}.hour b{font-size:13px;display:block;}.hour span{font-size:11px;color:var(--text-med);}
+.forecast-row{display:flex;align-items:center;gap:10px;background:var(--container);border-radius:14px;padding:12px;margin:0 14px 6px;}
+.forecast-row .day{width:46px;font-size:13px;}
+.forecast-row svg{width:20px;height:20px;fill:var(--teal);}
+.forecast-row .tmp{margin-left:auto;font-size:13px;color:var(--text-med);}
+.hint{color:var(--text-low);font-size:10px;padding:6px 18px;}
+.flash{animation:flash .4s;}
+@keyframes flash{0%{background:rgba(255,255,255,.9);}100%{background:transparent;}}
+.battery-bar{height:8px;border-radius:50px;background:var(--container2);margin-top:10px;overflow:hidden;}
+.battery-bar i{display:block;height:100%;background:var(--green);border-radius:50px;}
+.foot{position:relative;z-index:2;margin-top:14px;color:var(--text-low);font-size:11px;text-align:center;}
+.foot b{color:var(--text-med);}
+</style>
+</head>
+<body>
+<div class="ambient"></div>
+<div class="stage">
+  <div class="view-toggle">
+    <button id="tab-front" class="active" onclick="setFace('front')">▣ Front</button>
+    <button id="tab-back" onclick="setFace('back')">⟲ Back 3D</button>
+  </div>
+  <div class="phone-wrap">
+    <div class="phone" id="phone">
+      <div class="face front-face">
+        <div class="screen">
+          <div class="screen-inner" id="front-root"></div>
+        </div>
+      </div>
+      <div class="face back-face">
+        <div class="screen">
+          <div class="screen-inner"><div id="back-root" class="back-inspector"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Interactive <b>Pixel 10 Pro Max</b> · Pixel Experience · Jetpack Compose design (web preview) — tap around!</div>
+</div>
+
+<script>
+/* ============ ICONS (inline SVG) ============ */
+const I = {
+  sun:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></g></svg>',
+  cloud:'<svg viewBox="0 0 24 24"><path d="M19 18H6a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.7-1.5A3.5 3.5 0 0 1 19 18z"/></svg>',
+  cloudy:'<svg viewBox="0 0 24 24"><path d="M19 18H6a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.7-1.5A3.5 3.5 0 0 1 19 18z"/></svg>',
+  rain:'<svg viewBox="0 0 24 24"><path d="M19 15H6a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.7-1.5A3.5 3.5 0 0 1 19 15zM8 18l-1 3M12 18l-1 3M16 18l-1 3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>',
+  spark:'<svg viewBox="0 0 24 24"><path d="M12 2c.6 5.4 4.6 9.4 10 10-5.4.6-9.4 4.6-10 10-.6-5.4-4.6-9.4-10-10C7.4 11.4 11.4 7.4 12 2z"/></svg>',
+  wand:'<svg viewBox="0 0 24 24"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6L12 3zM19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14zM5 15l.6 1.6L7 17l-1.4.4L5 19l-.6-1.6L3 17l1.4-.4L5 15z"/></svg>',
+  camera:'<svg viewBox="0 0 24 24"><path d="M9 4l-1.5 2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L15 4H9zm3 4.5A5.5 5.5 0 1 1 12 20a5.5 5.5 0 0 1 0-11zm0 2.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>',
+  mic:'<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0h-2a5 5 0 0 1-10 0H5zm6 10v-3.1A7 7 0 0 1 5 11H3a9 9 0 0 0 8 8.9V21h2v-1.1A9 9 0 0 0 21 11h-2a7 7 0 0 1-6 6.9V21h-2z"/></svg>',
+  phone:'<svg viewBox="0 0 24 24"><path d="M6.6 10.8a15 15 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.24 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.4 11.4 0 0 0 .57 3.6 1 1 0 0 1-.25 1L6.6 10.8z"/></svg>',
+  chat:'<svg viewBox="0 0 24 24"><path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 0-2z"/></svg>',
+  photos:'<svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6zm2 10 3.5-4.5 2.5 3 3.5-4.5L20 16H6zM9 9.5A1.5 1.5 0 1 0 9 6.5a1.5 1.5 0 0 0 0 3z"/></svg>',
+  note:'<svg viewBox="0 0 24 24"><path d="M5 3h14a1 1 0 0 1 1 1v16l-4-3-3 3-3-3-3 3V4a1 1 0 0 1 1-1zm3 5h8v2H8V8zm0 4h8v2h-8v-2z"/></svg>',
+  calc:'<svg viewBox="0 0 24 24"><path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm1 3v3h10V5H7zm1 6h2v2H8v-2zm4 0h2v2h-2v-2zm-4 4h2v2H8v-2zm4 0h2v2h-2v-2z"/></svg>',
+  clock:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10V6h-2v8h6v-2h-4z"/></svg>',
+  gear:'<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 4l-2-1.5.3-2.5-2.5-.4-1-2.3-2.4 1L12 4.5 10.6 6.3l-2.4-1-1 2.3-2.5.4.3 2.5L3 12l2 1.5-.3 2.5 2.5.4 1 2.3 2.4-1L12 19.5l1.4-1.8 2.4 1 1-2.3 2.5-.4-.3-2.5L21 12z"/></svg>',
+  wifi:'<svg viewBox="0 0 24 24"><path d="M12 4C7 4 2.5 6 0 9l2 2c2.5-2.5 6-4 10-4s7.5 1.5 10 4l2-2C21.5 6 17 4 12 4zm0 6c-2.5 0-5 1-6.5 2.5L7.5 14c1.2-1.2 2.8-2 4.5-2s3.3.8 4.5 2l2-1.5C17 11 14.5 10 12 10zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>',
+  signal:'<svg viewBox="0 0 24 24"><path d="M2 20h3v-4H2v4zm5 0h3v-8H7v8zm5 0h3v-12h-3v12zm5 0h3V4h-3v16z"/></svg>',
+  battery:'<svg viewBox="0 0 24 24"><path d="M2 8h17a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H2a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zm2 2v4h13v-4H4zm19 1v2h1v-2h-1z"/></svg>',
+  home:'<svg viewBox="0 0 24 24"><path d="M12 3l9 8h-3v9h-4v-6H10v6H6v-9H3l9-8z"/></svg>',
+  close:'<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  back:'<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  person:'<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.5-6 8-6s8 2 8 6"/></svg>',
+  finger:'<svg viewBox="0 0 24 24"><path d="M12 2a8 8 0 0 0-8 8v3h2v-3a6 6 0 1 1 12 0v4l-2.5 6h2.2L20 14.7V10a8 8 0 0 0-8-8zM8 13v3a4 4 0 0 0 6.7 2.9l-1.3-1.5A2 2 0 0 1 10 16v-5a2 2 0 1 1 4 0v3h2v-3a4 4 0 0 0-8 0zm4 3l-2 4h2.2l1.1-2.5L12 16z"/></svg>',
+  up:'<svg viewBox="0 0 24 24"><path d="M12 5l7 8h-4v6h-6v-6H5l7-8z"/></svg>',
+  search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  camAlt:'<svg viewBox="0 0 24 24"><path d="M9 4l-1.5 2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.5L15 4H9zm3 4.5A5.5 5.5 0 1 1 12 20a5.5 5.5 0 0 1 0-11z"/></svg>',
+  send:'<svg viewBox="0 0 24 24"><path d="M3 3l18 9-18 9 3-9-3-9zm5 10l-2 6 12-6-10-3v3z"/></svg>',
+  bluetooth:'<svg viewBox="0 0 24 24"><path d="M12 2l5 5-4 4 4 4-5 5V2zm0 5l2 2-2 2V7zm0 8l2-2-2-2v4z"/></svg>',
+  dnd:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 12h10" stroke="currentColor" stroke-width="2"/></svg>',
+  torch:'<svg viewBox="0 0 24 24"><path d="M8 2h8v4l-2 3v11H10V9L8 6V2zm2 12h4v2h-4v-2z"/></svg>',
+  plane:'<svg viewBox="0 0 24 24"><path d="M21 16l-8-5V4a2 2 0 0 0-4 0v7l-8 5v2l8-2.5V20l-2 1.5V22l4-1 4 1v-.5L13 20v-4.5l8 2.5v-2z"/></svg>',
+  dark:'<svg viewBox="0 0 24 24"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg>',
+  saver:'<svg viewBox="0 0 24 24"><path d="M6 4h12a2 2 0 0 1 2 2v3a3 3 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 1 2-2z"/></svg>',
+  loc:'<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>',
+  brightH:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  brightL:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg>',
+  music:'<svg viewBox="0 0 24 24"><path d="M19 3v12.5a3.5 3.5 0 1 1-2-3.2V7h-7v10.5a3.5 3.5 0 1 1-2-3.2V3h11z"/></svg>',
+  play:'<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause:'<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+  prev:'<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM20 6v12L9 12z"/></svg>',
+  next:'<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM4 6l11 6L4 18z"/></svg>',
+  del:'<svg viewBox="0 0 24 24"><path d="M8 5h13v2H11l9 9-1.5 1.5L9.5 8.5 5 13V5h3z" transform="scale(-1,1) translate(-24,0)"/><path d="M22 3v18" stroke="currentColor" stroke-width="2" stroke-linecap="round" transform="translate(-3,0)"/></svg>',
+  callEnd:'<svg viewBox="0 0 24 24"><path d="M12 9c2.5 0 5 1 7 2.5V21l-3-2-3 2-3-2-3 2v-9.5C7 10 9.5 9 12 9z" transform="rotate(180 12 12)"/></svg>',
+  mute:'<svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0h-2a5 5 0 0 1-10 0H5zm6 10v-3.1A7 7 0 0 1 5 11H3a9 9 0 0 0 8 8.9V21h2z"/></svg>',
+  spk:'<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4zm12.5 3a3.5 3.5 0 0 0-2-3.2v6.4a3.5 3.5 0 0 0 2-3.2z"/></svg>',
+  switchCam:'<svg viewBox="0 0 24 24"><path d="M20 4h-3.2L15 2H9L7.2 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 13a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm3-5a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>',
+  flash:'<svg viewBox="0 0 24 24"><path d="M7 2v9H3l9 11v-8h4l-4-12H7z"/></svg>',
+  tune:'<svg viewBox="0 0 24 24"><path d="M3 6h11v2H3zM17 6h4v2h-4zM10 16h11v2H10zM3 16h4v2H3z"/><circle cx="16" cy="7" r="2.5"/><circle cx="9" cy="17" r="2.5"/></svg>',
+  stop:'<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  rec:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>',
+  trash:'<svg viewBox="0 0 24 24"><path d="M6 7h12l-1 14H7L6 7zm3-4h6l1 2H8l1-2zM4 7h16v2H4z"/></svg>',
+  save:'<svg viewBox="0 0 24 24"><path d="M5 3h12l2 2v16H5V3zm3 2v5h7V5H8zm4 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></svg>',
+  erase:'<svg viewBox="0 0 24 24"><path d="M16 3l5 5-9 9H7l-4-4 9-9zm-9 16h12v2H7z"/></svg>',
+  check:'<svg viewBox="0 0 24 24"><path d="M9 16.2l-4-4L3.6 13.6 9 19 21 7l-1.4-1.4z"/></svg>',
+  lock:'<svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  shield:'<svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z"/></svg>',
+  chip:'<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" stroke="currentColor" stroke-width="2"/></svg>',
+  phone2:'<svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 19h2" stroke="currentColor" stroke-width="2"/></svg>',
+  android:'<svg viewBox="0 0 24 24"><path d="M6 9v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9H6zm-1 0a1.5 1.5 0 1 0 0 3V9zm14 0v3a1.5 1.5 0 1 0 0-3zM9 3.5L7.5 1M15 3.5L16.5 1" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><circle cx="10" cy="12" r="1" fill="currentColor"/><circle cx="14" cy="12" r="1" fill="currentColor"/></svg>',
+  storage:'<svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v3a2 2 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a2 2 0 0 0 0-6V6zm3 1h10v2H7V7z"/></svg>',
+  share:'<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6" stroke="currentColor" stroke-width="1.6"/></svg>',
+  fav:'<svg viewBox="0 0 24 24"><path d="M12 21s-8-5.5-8-11a4.5 4.5 0 0 1 8-3 4.5 4.5 0 0 1 8 3c0 5.5-8 11-8 11z" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  photoLib:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="10" r="1.5"/><path d="M5 17l4-4 3 3 3-3 4 4" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  addPhoto:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="11" r="1.5"/><path d="M5 18l4-4 3 3 3-3 4 4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v4M10 4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  vol:'<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9H4z"/></svg>',
+  dice:'<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="8" r="1.5"/><circle cx="16" cy="8" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="8" cy="16" r="1.5"/><circle cx="16" cy="16" r="1.5"/></svg>',
+  coin:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v10M9.5 9.5a2.5 2 0 1 1 4 1.5c-1 .8-4 .5-4 2.5a2.5 2 0 0 0 4 1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+  key:'<svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12h9M18 12v3M15 12v2" stroke="currentColor" stroke-width="2"/></svg>',
+  term:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 9l3 3-3 3M13 15h4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  cloudOff:'<svg viewBox="0 0 24 24"><path d="M8 18h9a4 4 0 0 0 .5-8A5.5 5.5 0 0 0 8 7.5M5 5l14 14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  chevronR:'<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+};
+
+/* ============ STATE ============ */
+const S = {
+  face:'front', screen:'locked', app:null, shade:false, recents:false,
+  brightness:62, wifi:true, bt:true, dnd:false, torch:false, plane:false,
+  dark:true, saver:false, loc:true, battery:87,
+  recentList:[], notes:"Shopping list\n- Pixel 10 Pro Max case\n- Titanium polish cloth\n- USB-C cable",
+  alarms:[{t:'07:00',l:'Wake up',on:true},{t:'08:30',l:'Morning run',on:false}],
+  gallery:[
+    {t:'Night skyline',c:['#0B1026','#1E3A8A','#8AB4F8']},
+    {t:'Sunset trail',c:['#7C2D12','#F8A96C','#FDD663']},
+    {t:'Forest mist',c:['#0F2A1D','#81C995','#D3E4FF']},
+    {t:'Ocean waves',c:['#06283D','#78D0EC','#DFF6FF']},
+    {t:'Neon city',c:['#2A0A3E','#C58AF9','#F28B82']},
+    {t:'Desert dunes',c:['#78350F','#FBBF24','#FDE68A']},
+  ]
+};
+
+const APPS = [
+  {id:'gemini',name:'Gemini Live',glyph:'spark',color:'#C58AF9',shape:'diam'},
+  {id:'studio',name:'Pixel Studio',glyph:'wand',color:'#8AB4F8',shape:'diam'},
+  {id:'camera',name:'Camera',glyph:'camera',color:'#3C4043',shape:'sq'},
+  {id:'recorder',name:'Recorder',glyph:'mic',color:'#4A2C2A',shape:'caps'},
+  {id:'weather',name:'Weather',glyph:'cloud',color:'#78D0EC',shape:'circ'},
+  {id:'phone',name:'Phone',glyph:'phone',color:'#81C995',shape:'sq'},
+  {id:'messages',name:'Messages',glyph:'chat',color:'#8AB4F8',shape:'caps'},
+  {id:'photos',name:'Photos',glyph:'photoLib',color:'#3B2E50',shape:'diam'},
+  {id:'music',name:'Music',glyph:'music',color:'#F8A96C',shape:'circ'},
+  {id:'notes',name:'Notes',glyph:'note',color:'#FDD663',shape:'diam',dark:true},
+  {id:'calc',name:'Calculator',glyph:'calc',color:'#2E3A46',shape:'sq'},
+  {id:'clock',name:'Clock',glyph:'clock',color:'#78D0EC',shape:'circ'},
+  {id:'settings',name:'Settings',glyph:'gear',color:'#3A3D40',shape:'sq'},
+];
+const appById = id => APPS.find(a=>a.id===id);
+
+function openApp(id){ const a=appById(id); if(id==='messages'){} S.shade=false; S.recents=false; S.app=id; S.screen='unlocked';
+  if(S.recentList[S.recentList.length-1]!==id){ S.recentList=S.recentList.filter(x=>x!==id); S.recentList.push(id); if(S.recentList.length>6)S.recentList.shift(); } render(); }
+function goHome(){ S.app=null; S.shade=false; S.recents=false; S.screen='unlocked'; render(); }
+function unlock(){ S.screen='unlocked'; S.app=null; S.shade=false; S.recents=false; render(); }
+function lock(){ S.screen='locked'; S.app=null; S.shade=false; S.recents=false; render(); }
+function backAction(){ if(S.recents){S.recents=false;} else if(S.shade){S.shade=false;} else if(S.app){S.app=null;} render(); }
+function openShade(){ S.shade=true; S.recents=false; render(); }
+
+/* ============ RENDER ROOT ============ */
+function render(){
+  const root=document.getElementById('front-root');
+  let html='';
+  if(S.screen==='locked') html=lockHTML();
+  else { html= S.app ? appHTML(S.app) : homeHTML(); }
+  if(S.screen==='unlocked' && S.shade) html+=shadeHTML();
+  if(S.recents) html+=recentsHTML();
+  html+=statusbarHTML();
+  if(S.screen==='unlocked' && !S.shade && !S.recents) html+=gestureHTML();
+  html+=islandHTML();
+  root.innerHTML=html;
+  // hook dynamic bits
+  afterRender();
+}
+
+function statusbarHTML(){
+  const t=new Date();
+  const hh=String(t.getHours()).padStart(2,'0'), mm=String(t.getMinutes()).padStart(2,'0');
+  const net = S.plane ? '<span style="color:#FDD663">✈</span>' : I.signal+I.wifi;
+  const batColor = S.saver?'#FDD663':(S.battery<20?'#F28B82':'#81C995');
+  return `<div class="statusbar"><span>${hh}:${mm}</span>
+    <span class="sb-right">${net}<span style="color:${batColor}">${I.battery}</span><span style="color:var(--text-med);font-size:11px">${S.battery}%</span></span></div>`;
+}
+function islandHTML(){
+  return `<div class="island"><div class="lens"></div><div class="sensor"></div></div>`;
+}
+function gestureHTML(){
+  return `<div class="gesture" style="display:${S.screen==='unlocked'?'flex':'none'}">
+    <div class="zones">
+      <div onclick="backAction()"></div>
+      <div onclick="${S.app||S.recents?'goHome()':''}"></div>
+      <div onclick="toggleRecents()"></div>
+    </div>
+    <div class="pill"></div>
+  </div>`;
+}
+function toggleRecents(){ S.recents=!S.recents; S.shade=false; render(); }
+
+/* ============ LOCK ============ */
+function lockHTML(){
+  const t=new Date();
+  const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dateStr=`${days[t.getDay()]}, ${t.getDate()} ${mon[t.getMonth()]}`;
+  const hh=String(t.getHours()).padStart(2,'0'), mm=String(t.getMinutes()).padStart(2,'0');
+  return `<div class="lock" onclick="if(event.target===this)unlock()">
+    <div class="l-time">${hh}:${mm}</div>
+    <div class="l-date">${dateStr}</div>
+    <div class="l-notif"><div class="bubble">${I.spark}</div><div><h4>Gemini Live</h4><p>Your day looks clear — 21° at 3pm.</p></div></div>
+    <div class="fp">
+      <div class="ring" onclick="event.stopPropagation();unlock()">${I.finger}</div>
+      <p>Touch &amp; hold to unlock</p>
+      <div class="swipe" onclick="unlock()">${I.up}<span style="margin-left:4px">or tap to open</span></div>
+    </div>
+  </div>`;
+}
+
+/* ============ HOME ============ */
+function iconHTML(a,size){
+  const dark = a.dark ? 'color:#4A3B00' : '';
+  return `<div class="icon ${a.shape}" style="background:${a.color};${dark}width:${size||54}px;height:${size||54}px">${I[a.glyph]}</div>`;
+}
+function homeHTML(){
+  const t=new Date(); const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dateStr=`${days[t.getDay()]}, ${mon[t.getMonth()]} ${t.getDate()}`;
+  const gridApps = APPS.filter(a=>!['phone','messages','camera','gemini'].includes(a.id));
+  let cells='';
+  for(let i=0;i<gridApps.length;i+=3){
+    cells+='<div style="display:flex;justify-content:space-between">';
+    for(let j=0;j<3;j++){
+      const a=gridApps[i+j];
+      if(a) cells+=`<div class="appcell" onclick="openApp('${a.id}')">${iconHTML(a)}<div class="name">${a.name}</div></div>`;
+      else cells+='<div style="width:86px"></div>';
+    }
+    cells+='</div>';
+  }
+  const dock=['phone','messages','camera','gemini'].map(id=>{
+    const a=appById(id); return `<div onclick="openApp('${id}')">${iconHTML(a,52)}</div>`;
+  }).join('');
+  return `<div class="scroll" style="padding-top:0">
+    <div class="home" style="position:relative;height:100%;overflow-y:auto;padding-top:46px">
+      <div class="at-glance">
+        <div class="gl"><div class="tag">At a Glance</div><div class="day">${dateStr}</div><div class="sub">No alarms · Traffic is light</div></div>
+        <div class="wbadge">${I.sun}<span>21°</span></div>
+      </div>
+      <div class="appgrid">${cells}</div>
+      <div class="searchbar" onclick="openApp('gemini')">
+        <span class="g">G</span><span class="ph">Ask Gemini or search Pixel…</span>${I.mic}${I.camAlt}
+      </div>
+      <div style="height:70px"></div>
+    </div>
+    <div class="dock">${dock}</div>
+  </div>`;
+}
+
+/* ============ APP ROUTER ============ */
+function appShell(id,body){
+  const a=appById(id);
+  const dark = a.dark?'color:#4A3B00':'';
+  return `<div class="appscreen">
+    <div class="apphandle" onclick="openShade()"><div class="bar"></div></div>
+    <div class="appheader">
+      <div class="hic" style="background:${a.color};${dark}">${I[a.glyph]}</div>
+      <h2>${a.name}</h2>
+      <div class="home-btn" onclick="goHome()">${I.home}</div>
+    </div>
+    <div class="appbody">${body}</div>
+  </div>`;
+}
+function appHTML(id){
+  switch(id){
+    case 'gemini': return appShell('gemini',geminiHTML());
+    case 'studio': return appShell('studio',studioHTML());
+    case 'camera': return cameraHTML();
+    case 'recorder': return appShell('recorder',recorderHTML());
+    case 'weather': return appShell('weather',weatherHTML());
+    case 'phone': return appShell('phone',phoneHTML());
+    case 'messages': return appShell('messages',messagesHTML());
+    case 'photos': return appShell('photos',photosHTML());
+    case 'music': return appShell('music',musicHTML());
+    case 'notes': return appShell('notes',notesHTML());
+    case 'calc': return appShell('calc',calcHTML());
+    case 'clock': return appShell('clock',clockHTML());
+    case 'settings': return appShell('settings',settingsHTML());
+  }
+}
+
+/* ---- GEMINI ---- */
+let gemMsgs=[{ai:true,t:"Hi, I'm Gemini Live — your on-device AI. Ask me anything, or tap a suggestion."}];
+function geminiReply(q){
+  const s=q.toLowerCase();
+  if(s.includes('weather')||s.includes('آب')) return "It's 21° and sunny in Frankfurt — perfect light for the 42MP Tensor Vision camera.";
+  if(s.includes('tensor')||s.includes('g5')) return "Tensor G5 is built on 3nm Titan architecture with on-device Gemini Nano — everything runs privately on your Pixel.";
+  if(s.includes('photo')||s.includes('camera')) return "Try Night Sight for low light, Portrait for that titanium bokeh, or 5x Super Res Zoom.";
+  if(s.includes('battery')) return `Your 5,800 mAh battery is at ${S.battery}% — Battery Saver can extend it. Check Settings.`;
+  if(s.includes('hello')||s.includes('hi')||s.includes('سلام')||s.includes('salam')) return "Hey! I'm Gemini Live — ask me to summarize, translate, plan, or just chat. I run fully on-device.";
+  if(s.includes('music')) return "You're 42 seconds into “Midnight Drive”. Say the word and I'll queue something upbeat.";
+  return "On-device Gemini Nano processed that in 0.4s. Your Pixel 10 Pro Max pairs titanium hardware with Pixel Experience intelligence — explore Camera, Studio, or Settings?";
+}
+function geminiHTML(){
+  const msgs=gemMsgs.map(m=>`<div class="chat-row ${m.ai?'':'out'}"><div class="gem-msg ${m.ai?'ai':'me'}">${m.t}</div></div>`).join('');
+  return `<div style="padding-top:6px">${msgs}
+    <div class="suggest-row">
+      ${["What's the weather?","Tell me about Tensor G5","Take a great photo","Battery tips"].map(s=>`<div class="chip" onclick="gemSend('${s}')">${s}</div>`).join('')}
+    </div>
+    <div class="gem-input">
+      <input class="field" id="gem-field" placeholder="Message Gemini…" onkeydown="if(event.key==='Enter')gemSend(document.getElementById('gem-field').value)">
+      <div class="gem-send" onclick="gemSend(document.getElementById('gem-field').value)">${I.send}</div>
+    </div></div>`;
+}
+function gemSend(q){
+  q=(q||'').trim(); if(!q)return;
+  gemMsgs.push({ai:false,t:q}); gemMsgs.push({ai:true,t:geminiReply(q)});
+  render(); const f=document.getElementById('gem-field'); if(f)f.value='';
+  const b=document.querySelector('.appbody'); if(b)b.scrollTop=b.scrollHeight;
+}
+
+/* ---- STUDIO ---- */
+let studioSeed=42, studioStyle='Geometric', studioErase=false;
+function studioHTML(){
+  const styles=['Geometric','Pastel','Neon','Mono'];
+  return `<div class="studio-canvas"><canvas id="studio-cv" width="300" height="260"></canvas>
+    <div class="studio-tag">AI Canvas · seed #${studioSeed} · ${studioStyle}</div></div>
+  <div style="display:flex;gap:8px;padding:14px 14px 0">
+    ${styles.map(s=>`<div class="chip ${s===studioStyle?'on':''}" onclick="studioSet('${s}')">${s}</div>`).join('')}
+  </div>
+  <div class="studio-btns">
+    <div class="studio-btn" onclick="studioGen()">${I.wand}Generate</div>
+    <div class="studio-btn" onclick="studioErase=!studioErase;studioDraw()">${I.erase}Magic Eraser</div>
+    <div class="studio-btn" onclick="studioGen()">${I.save}Save</div>
+  </div>
+  <div class="hint">${studioErase?'Magic Eraser removed the highlighted object — on-device diffusion fills the gap.':'Tap Generate for new geometric art, or Magic Eraser to remove an object.'}</div>`;
+}
+function studioSet(s){studioStyle=s;studioErase=false;render();}
+function studioGen(){studioSeed=Math.floor(Math.random()*9999)+1;studioErase=false;render();}
+function drawStudio(){
+  const cv=document.getElementById('studio-cv'); if(!cv)return; const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  let seed=studioSeed;
+  const rnd=()=>{seed=(seed*9301+49297)%233280;return seed/233280;};
+  const pal = studioStyle==='Pastel'?['#D3E4FF','#FFD6E7','#D9F2D0','#FFE9C7']
+    : studioStyle==='Neon'?['#00E5FF','#FF00C8','#B6FF00','#8A6BFF']
+    : studioStyle==='Mono'?['#E9EAEC','#9A9D9F','#5A5D5F','#2D2E30']
+    :['#8AB4F8','#C58AF9','#78D0EC','#FDD663'];
+  for(let i=0;i<14;i++){
+    ctx.fillStyle=pal[i%pal.length]; ctx.strokeStyle=pal[i%pal.length];
+    const x=rnd()*W,y=rnd()*H,r=18+rnd()*60;
+    ctx.globalAlpha=.85;
+    if(i%4===0){ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();}
+    else if(i%4===1){ctx.globalAlpha=.15;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();
+      ctx.globalAlpha=.8;ctx.lineWidth=6;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.stroke();}
+    else if(i%4===2){ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x+r,y);ctx.lineTo(x,y+r);ctx.lineTo(x-r,y);ctx.closePath();ctx.fill();}
+    else {roundRect(ctx,x-r,y-r/3,r*2,r/1.6,40);ctx.fill();}
+  }
+  ctx.globalAlpha=1;
+  if(studioErase){ctx.fillStyle='#101214';ctx.beginPath();ctx.arc(W*0.7,H*0.3,70,0,7);ctx.fill();}
+}
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+/* ---- CAMERA ---- */
+let camMode='Photo', camZoom=1, camShots=0;
+function cameraHTML(){
+  const modes=['Night Sight','Portrait','Photo','Video','5x Zoom','Pro'];
+  return `<div class="cam" id="cam-view">
+    <div class="vf">
+      <div class="grid"></div>
+      <div class="cam-top">
+        <div class="ct">${I.flash}</div>
+        <div class="mode-name">${camMode}</div>
+        <div class="ct">${I.tune}</div>
+      </div>
+      <div class="zoom-pills">
+        ${[0.6,1,2,5].map(z=>`<div class="zp ${camZoom===z?'on':''}" onclick="camZoomSet(${z})">${z===0.6?'.6':z+'×'}</div>`).join('')}
+      </div>
+    </div>
+    <div class="modes">${modes.map(m=>`<span class="${m===camMode?'on':''}" onclick="camMode='${m}';render()">${m}</span>`).join('')}</div>
+    <div class="controls">
+      <div class="ctrl sq">${camShots>0?'📸':'🖼'}</div>
+      <div class="shutter" onclick="camShot()"><div class="in" style="background:${camMode==='Video'?'#F28B82':'#fff'}"></div></div>
+      <div class="ctrl" onclick="setFace('back')">${I.switchCam}</div>
+    </div>
+    <div class="hint" style="color:rgba(255,255,255,.6);text-align:center">50MP wide · ${camZoom>1?camZoom+'× Super Res Zoom':'ƒ/1.68'}${camShots?' · '+camShots+' captured':''}</div>
+  </div>`;
+}
+function camZoomSet(z){camZoom=z;if(z===5)camMode='5x Zoom';render();}
+function camShot(){camShots++; const v=document.getElementById('cam-view'); if(v){v.classList.add('flash');setTimeout(()=>v.classList.remove('flash'),400);} render();}
+
+/* ---- RECORDER ---- */
+let recOn=false,recSec=0,recLines=["Meeting notes — Pixel Experience planning session.","We will finalize the titanium frame geometry today.","Gemini Live summarization runs entirely on Tensor G5."];
+let recTimer=null;
+function recorderHTML(){
+  const mm=String(Math.floor(recSec/60)).padStart(2,'0'), ss=String(recSec%60).padStart(2,'0');
+  const waves = recOn? Array.from({length:40},()=>`<span style="height:${8+Math.random()*26}px"></span>`).join('') : '';
+  return `<div class="rec-card">
+    <div class="rec-time">${mm}:${ss}</div>
+    <div class="rec-sub ${recOn?'live':''}">${recOn?'● Recording · Live Transcribe on':'Ready to record'}</div>
+    <div class="wave">${waves}</div>
+    <div class="rec-ctrl">
+      <div class="rec-btn main" onclick="recToggle()">${recOn?I.stop:I.rec}</div>
+      <div class="rec-btn sec" onclick="recReset()">${I.trash}</div>
+      <div style="flex:1"></div>
+      <div class="chip" onclick="recToggle()">Save transcript</div>
+    </div>
+  </div>
+  <div class="label-sm">LIVE TRANSCRIPT</div>
+  ${recLines.map(l=>`<div class="card" style="color:var(--text-med);font-size:12px;line-height:1.5">${l}</div>`).join('')}`;
+}
+function recToggle(){
+  recOn=!recOn;
+  if(recOn){ recTimer=setInterval(()=>{ recSec++; if(recSec%4===0){recLines.push(["Live transcribe: voice converted to text on-device.","The camera visor houses three lenses and a flash.","Battery at eighty-seven percent after the walk-through.","Magic Eraser fills removed regions with generated texture."][Math.floor(recSec/4)%4]);} render(); },1000);}
+  else {clearInterval(recTimer);recSec=0;}
+  render();
+}
+function recReset(){clearInterval(recTimer);recOn=false;recSec=0;recLines=[];render();}
+
+/* ---- WEATHER ---- */
+function weatherHTML(){
+  return `<div class="weather-hero">
+    <div class="city">Frankfurt am Main</div>
+    <div class="deg">21°</div>
+    ${I.sun}
+    <div style="font-size:13px;opacity:.9">Sunny · Clear skies</div>
+    <div class="wmini-row">
+      <div class="wmini"><b>H:24°</b><span>L:13°</span></div>
+      <div class="wmini"><b>6 km/h</b><span>Wind</span></div>
+      <div class="wmini"><b>42%</b><span>Humidity</span></div>
+      <div class="wmini"><b>AQI 28</b><span>Good</span></div>
+    </div>
+  </div>
+  <div class="label-sm">HOURLY</div>
+  <div class="hourly">
+    ${[['Now','21°'],['14','22°'],['15','23°'],['16','22°'],['17','20°'],['18','18°']].map(h=>`<div class="hour"><span>${h[0]}</span>${I.sun}<b>${h[1]}</b></div>`).join('')}
+  </div>
+  <div class="label-sm">7-DAY FORECAST</div>
+  ${[['Fri',I.sun,'24° / 14°'],['Sat',I.cloud,'21° / 12°'],['Sun',I.rain,'17° / 10°'],['Mon',I.cloudy,'19° / 11°'],['Tue',I.sun,'23° / 13°']].map(f=>`<div class="forecast-row"><span class="day">${f[0]}</span>${f[1]}<span class="tmp">${f[2]}</span></div>`).join('')}`;
+}
+
+/* ---- PHONE ---- */
+let dialNum='', calling=false, callSec=0, callTimer=null;
+function phoneHTML(){
+  if(calling){
+    const mm=String(Math.floor(callSec/60)).padStart(2,'0'), ss=String(callSec%60).padStart(2,'0');
+    return `<div style="padding:30px;text-align:center">
+      <div style="width:90px;height:90px;border-radius:50%;background:rgba(129,201,149,.2);margin:20px auto 14px;display:flex;align-items:center;justify-content:center;color:#81C995">${I.person}</div>
+      <div style="font-size:26px;font-weight:600">${dialNum}</div>
+      <div style="color:var(--text-med);font-size:13px;margin-top:4px">${mm}:${ss} · Tensor Voice HD</div>
+      <div style="display:flex;gap:22px;justify-content:center;margin:40px 0 30px">
+        <div style="text-align:center;color:var(--text-low)"><div style="width:54px;height:54px;border-radius:50%;background:var(--container);display:flex;align-items:center;justify-content:center;margin-bottom:4px;color:#fff">${I.mic}</div><div style="font-size:10px">Mute</div></div>
+        <div style="text-align:center;color:var(--text-low)"><div style="width:54px;height:54px;border-radius:50%;background:var(--container);display:flex;align-items:center;justify-content:center;margin-bottom:4px;color:#fff">${I.spk}</div><div style="font-size:10px">Speaker</div></div>
+        <div style="text-align:center;color:var(--text-low)"><div style="width:54px;height:54px;border-radius:50%;background:var(--container);display:flex;align-items:center;justify-content:center;margin-bottom:4px;color:#fff">${I.calc}</div><div style="font-size:10px">Keypad</div></div>
+      </div>
+      <div class="hang" style="margin:0 auto" onclick="hangUp()">${I.callEnd}</div>
+    </div>`;
+  }
+  const keys=['1','2','3','4','5','6','7','8','9','*','0','#'];
+  return `<div class="dial-num">${dialNum||'<span style="color:var(--text-low)">Dial a number</span>'}</div>
+  <div class="dial-grid">${keys.map(k=>`<div class="dial-key" onclick="dialPress('${k}')">${k}</div>`).join('')}</div>
+  <div class="dial-actions">
+    <div style="width:56px"></div>
+    <div class="call-btn" onclick="makeCall()">${I.phone}</div>
+    <div class="dial-key" style="background:var(--container2);width:56px;height:56px" onclick="dialNum=dialNum.slice(0,-1);render()">${I.del}</div>
+  </div>`;
+}
+function dialPress(k){dialNum+=k;render();}
+function makeCall(){if(!dialNum)return;calling=true;callSec=0;callTimer=setInterval(()=>{callSec++;render();},1000);render();}
+function hangUp(){clearInterval(callTimer);calling=false;dialNum='';render();}
+
+/* ---- MESSAGES ---- */
+let msgChat=null;
+const threads={
+  Mom:[{o:0,t:'Call me when you unbox the new Pixel!'},{o:1,t:'Will do — titanium frame looks amazing'}],
+  Alex:[{o:0,t:'Night Sight shots later?'}],
+  Gemini:[{o:0,t:'Your summary is ready.'}],
+  Work:[{o:0,t:'Standup moved to 9:30.'}],
+};
+const contactColor={Mom:'#F28B82',Alex:'#78D0EC',Gemini:'#C58AF9',Work:'#FDD663'};
+function messagesHTML(){
+  if(!msgChat){
+    return Object.keys(threads).map(name=>{
+      const c=contactColor[name], last=threads[name][threads[name].length-1];
+      return `<div class="card row" style="cursor:pointer" onclick="msgChat='${name}';render()">
+        <div style="width:42px;height:42px;border-radius:50%;background:${c}40;display:flex;align-items:center;justify-content:center;color:${c};font-weight:700;font-size:17px">${name[0]}</div>
+        <div style="margin-left:12px"><div style="font-weight:700;font-size:14px">${name}</div><div style="color:var(--text-med);font-size:12px">${last.t}</div></div>
+      </div>`;
+    }).join('');
+  }
+  const name=msgChat;
+  return `<div style="display:flex;align-items:center;gap:10px;padding:0 12px 8px">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--container2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff" onclick="msgChat=null;render()">${I.back}</div>
+    <div style="font-size:16px;font-weight:700">${name}</div>
+  </div>
+  <div id="msg-list">${threads[name].map(m=>`<div class="chat-row ${m.o?'out':''}"><div class="bubble-chat ${m.o?'out':'in'}">${m.t}</div></div>`).join('')}</div>
+  <div class="gem-input">
+    <input class="field" id="msg-field" placeholder="Text message…" onkeydown="if(event.key==='Enter')msgSend()">
+    <div class="gem-send" style="background:var(--blue)" onclick="msgSend()">${I.send}</div>
+  </div>`;
+}
+function msgSend(){
+  const f=document.getElementById('msg-field'); const v=(f.value||'').trim(); if(!v||!msgChat)return;
+  threads[msgChat].push({o:1,t:v}); f.value='';
+  if(msgChat==='Gemini') threads.Gemini.push({o:0,t:geminiReply(v)});
+  render(); const b=document.querySelector('.appbody'); if(b)b.scrollTop=b.scrollHeight;
+}
+
+/* ---- PHOTOS ---- */
+let photoSel=null;
+function photosHTML(){
+  if(!photoSel){
+    return `<div class="photo-grid">${S.gallery.map((p,i)=>`<div class="photo" style="background:linear-gradient(180deg,${p.c[0]},${p.c[1]} 55%,${p.c[2]})" onclick="photoSel=${i};render()"><div class="pt">${p.t}</div></div>`).join('')}</div>
+    <div class="hint">Best Take · Magic Editor · Photo Unblur run on Tensor G5</div>`;
+  }
+  const p=S.gallery[photoSel];
+  return `<div style="margin:0 14px;height:300px;border-radius:24px;background:linear-gradient(180deg,${p.c[0]},${p.c[1]} 55%,${p.c[2]})"></div>
+  <div style="font-size:16px;font-weight:700;padding:12px 16px">${p.t}</div>
+  <div style="display:flex;gap:10px;padding:0 14px">
+    ${[[I.wand,'Magic Edit'],[I.share,'Share'],[I.fav,'Favorite']].map(x=>`<div class="studio-btn"><span style="color:#C58AF9;display:flex">${x[0]}</span>${x[1]}</div>`).join('')}
+  </div>
+  <div style="padding:14px"><div class="chip" onclick="photoSel=null;render()">Back to library</div></div>`;
+}
+
+/* ---- MUSIC ---- */
+let musicPlay=false, musicProg=32, musicTimer=null;
+function musicHTML(){
+  const cur=Math.floor(musicProg/100*212);
+  return `<div class="album">${I.music}</div>
+  <div style="padding:0 24px"><div style="font-size:22px;font-weight:700">Midnight Drive</div><div style="color:var(--text-med);font-size:13px">Nova · Titanium Nights</div></div>
+  <div style="padding:14px 16px"><input type="range" min="0" max="100" value="${musicProg}" oninput="musicProg=+this.value;musicTick()"></div>
+  <div style="display:flex;justify-content:space-between;padding:0 24px;color:var(--text-low);font-size:11px"><span>${Math.floor(cur/60)}:${String(cur%60).padStart(2,'0')}</span><span>3:32</span></div>
+  <div class="music-ctrl">
+    <span onclick="musicProg=0;musicTick()">${I.prev}</span>
+    <div class="play-btn" onclick="musicToggle()">${musicPlay?I.pause:I.play}</div>
+    <span>${I.next}</span>
+  </div>`;
+}
+function musicTick(){ render(); }
+function musicToggle(){
+  musicPlay=!musicPlay;
+  if(musicPlay){ musicTimer=setInterval(()=>{musicProg=Math.min(100,musicProg+1);if(musicProg>=100){musicPlay=false;clearInterval(musicTimer);}render();},800);}
+  else clearInterval(musicTimer);
+  render();
+}
+
+/* ---- NOTES ---- */
+function notesHTML(){
+  return `<textarea class="notes-area" oninput="S.notes=this.value">${S.notes}</textarea>
+  <div style="display:flex;gap:10px;padding:12px 14px">
+    <div class="chip" style="color:var(--text-med)">${I.check} Auto-saved on-device</div>
+    <div class="chip" style="color:var(--text-med)">${I.lock} Encrypted</div>
+  </div>`;
+}
+
+/* ---- CALC ---- */
+let calcExpr='', calcRes='0';
+function calcPress(k){
+  if(k==='C'){calcExpr='';calcRes='0';}
+  else if(k==='⌫'){calcExpr=calcExpr.slice(0,-1);}
+  else if(k==='='){calcRes=calcEval(calcExpr);}
+  else { if(['+','−','×','÷'].includes(k)){ if('+-×÷*.'.includes(calcExpr.slice(-1)))calcExpr=calcExpr.slice(0,-1); calcExpr+= k==='×'?'*':k==='÷'?'/':k==='−'?'-':k; }
+    else if(k==='.'){ if(!calcExpr.split(/[/+*\-]/).pop().includes('.'))calcExpr+='.'; }
+    else calcExpr+=k;
+    if(k!=='=')calcRes=calcEval(calcExpr); }
+  render();
+}
+function calcEval(e){
+  if(!e)return'0'; if('+-*/.'.includes(e.slice(-1)))e=e.slice(0,-1);
+  try{ const r=Function('"use strict";return('+ (e.replace(/[^0-9+\-*/().]/g,'')||'0') +')')();
+    if(r===Infinity||isNaN(r))return'Error';
+    return Number.isInteger(r)?String(r):String(parseFloat(r.toFixed(6)));
+  }catch(_){return'0';}
+}
+function calcHTML(){
+  const rows=[['C','⌫','÷','×'],['7','8','9','−'],['4','5','6','+'],['1','2','3','='],['0','.','00','']];
+  return `<div class="calc-display"><div class="expr">${calcExpr||' '}</div><div class="res">${calcRes}</div></div>
+  <div class="calc-grid">${rows.flat().map(k=>{
+    if(k==='')return '<div></div>';
+    const op=['+','−','×','÷','='].includes(k), top=['C','⌫'].includes(k);
+    return `<button class="calc-key ${op?'op':''} ${top?'top':''}" onclick="calcPress('${k}')">${k}</button>`;
+  }).join('')}</div>`;
+}
+
+/* ---- CLOCK ---- */
+function clockHTML(){
+  const t=new Date();
+  const now=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+':'+String(t.getSeconds()).padStart(2,'0');
+  return `<div class="card" style="text-align:center;padding:20px">
+    <div style="font-size:44px;font-weight:100">${now}</div>
+    <div style="color:var(--text-low);font-size:11px;margin-top:4px">Frankfurt · live clock</div>
+  </div>
+  <div class="label-sm">ALARMS</div>
+  ${S.alarms.map((a,i)=>`<div class="setrow"><div class="st"><h5 style="font-size:24px;font-weight:100;color:${a.on?'var(--text-hi)':'var(--text-low)'}">${a.t}</h5><p>${a.l}</p></div>
+    <div class="switch ${a.on?'on':''}" onclick="S.alarms[${i}].on=!S.alarms[${i}].on;render()"><div class="knob"></div></div></div>`).join('')}
+  <div class="hint">World clock · Timer · Stopwatch</div>`;
+}
+
+/* ---- SETTINGS ---- */
+let youColor='#8AB4F8';
+function settingsHTML(){
+  const colors=[['#8AB4F8','Ocean'],['#C58AF9','Amethyst'],['#81C995','Forest'],['#FDD663','Sun'],['#F28B82','Coral'],['#78D0EC','Aqua']];
+  return `<div class="label-sm">MATERIAL YOU COLOR</div>
+  <div class="color-dots">${colors.map(c=>`<div class="cd ${youColor===c[0]?'sel':''}" style="background:${c[0]}" onclick="youColor='${c[0]}';render()">${youColor===c[0]?I.check:''}</div>`).join('')}</div>
+  ${setToggle('dark','Dark theme','Geometric Balance palette',S.dark,'dark')}
+  ${setToggle('saver','Battery Saver','Extend '+S.battery+'% charge',S.saver,'saver')}
+  ${setToggle('wifi','Wi-Fi',S.wifi?'Connected to Nova-5G':'Off',S.wifi,'wifi')}
+  ${setToggle('bluetooth','Bluetooth','Pixel Buds Pro nearby',S.bt,'bt')}
+  ${setToggle('loc','Location','Titan M2 protected',S.loc,'loc')}
+  <div class="card" style="margin-top:6px">
+    <div class="row">${I.battery}<span style="margin-left:8px;font-weight:700;font-size:14px">Battery</span><span style="margin-left:auto;color:#81C995;font-weight:700">${S.battery}%</span></div>
+    <div class="battery-bar"><i style="width:${S.battery}%"></i></div>
+    <div style="color:var(--text-low);font-size:11px;margin-top:8px">~14h left · Adaptive charging on</div>
+  </div>
+  <div class="label-sm">SECURITY</div>
+  ${setRow('finger','Fingerprint & Face Unlock','42MP Tensor Vision enrolled')}
+  ${setRow('shield','Titan M2 security chip','Hardware-backed keystore')}
+  <div class="label-sm">ABOUT PHONE</div>
+  ${setRow('chip','Processor','Google Tensor G5 · 3nm Titan')}
+  ${setRow('phone2','Device','Pixel 10 Pro Max · Titanium')}
+  ${setRow('android','Software','Pixel Experience 15 (Kotlin · Compose)')}
+  ${setRow('storage','Storage','128 GB free of 512 GB')}`;
+}
+function setToggle(icon,title,sub,val,key){
+  const special = key==='saver' ? "if(S.saver){S.battery=Math.min(100,S.battery+5);}" : "";
+  return `<div class="setrow"><div class="si">${I[icon]}</div><div class="st"><h5>${title}</h5><p>${sub}</p></div>
+  <div class="switch ${val?'on':''}" onclick="S.${key}=!S.${key};${special}render()"><div class="knob"></div></div></div>`;
+}
+function setRow(icon,title,sub){
+  return `<div class="setrow"><div class="si">${I[icon]}</div><div class="st"><h5>${title}</h5><p>${sub}</p></div></div>`;
+}
+
+/* ---- SHADE ---- */
+function shadeHTML(){
+  const t=new Date(); const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; const mon=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const hh=String(t.getHours()).padStart(2,'0'),mm=String(t.getMinutes()).padStart(2,'0');
+  const qs=[
+    ['wifi','Wi-Fi',S.wifi],['bluetooth','Bluetooth',S.bt],['dnd','Do Not Disturb',S.dnd],
+    ['torch','Flashlight',S.torch],['plane','Airplane',S.plane],['dark','Dark Theme',S.dark],
+    ['saver','Battery Saver',S.saver],['loc','Location',S.loc],
+  ];
+  return `<div class="shade" onclick="if(event.target===this){S.shade=false;render()}">
+    <div class="shade-panel" onclick="event.stopPropagation()">
+      <div class="row">
+        <div style="flex:1"><div style="font-size:26px;font-weight:100">${hh}:${mm}</div><div style="color:var(--text-med);font-size:12px">${days[t.getDay()]}, ${mon[t.getMonth()]} ${t.getDate()}</div></div>
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#0B1522">${I.person}</div>
+      </div>
+      <div class="slider-row" style="margin-top:14px">${I.brightL}
+        <input type="range" min="5" max="100" value="${S.brightness}" oninput="S.brightness=+this.value">
+        ${I.brightH}</div>
+      <div class="qs-grid">${qs.map(q=>`<div class="qs ${q[2]?'on':''}" onclick="toggleQS('${q[0]}')"><span style="display:flex">${I[q[0]]}</span>${q[1]}</div>`).join('')}</div>
+      <div class="label-sm" style="padding-left:0">NOTIFICATIONS</div>
+      <div class="notif"><div class="ni" style="background:#F8A96C40;color:#F8A96C">${I.music}</div><div><h5>Music</h5><p>Nova — Midnight Drive · playing</p></div></div>
+      <div class="notif"><div class="ni" style="background:#78D0EC40;color:#78D0EC">${I.cloud}</div><div><h5>Weather</h5><p>Clear skies · 21° · AQI good</p></div></div>
+      <div style="display:flex;justify-content:center;padding-top:10px;cursor:pointer" onclick="S.shade=false;render()"><div style="width:120px;height:5px;border-radius:50px;background:var(--border)"></div></div>
+    </div>
+  </div>`;
+}
+function toggleQS(k){ S[k]=!S[k]; render(); }
+
+/* ---- RECENTS ---- */
+function recentsHTML(){
+  return `<div class="recents" onclick="if(event.target===this){S.recents=false;render()}">
+    <h3>Recent apps</h3>
+    ${S.recentList.length? S.recentList.slice().reverse().map(id=>{const a=appById(id);
+      return `<div class="rcard" onclick="openApp('${id}')"><div class="icon ${a.shape}" style="background:${a.color};width:46px;height:46px">${I[a.glyph]}</div><div class="t">${a.name}</div><div class="x" onclick="event.stopPropagation();S.recentList=S.recentList.filter(x=>x!=='${id}');render()">${I.close}</div></div>`;
+    }).join('') : '<div style="text-align:center;color:var(--text-low);font-size:12px">No recent apps</div>'}
+    <div style="display:flex;justify-content:center;padding:16px">
+      <div class="chip" style="display:flex;align-items:center;gap:8px;color:var(--text-hi)" onclick="goHome()"><span style="display:flex">${I.home}</span>Home</div>
+    </div>
+  </div>`;
+}
+
+/* ============ BACK FACE ============ */
+function renderBack(){
+  document.getElementById('back-root').innerHTML=`
+  <div class="col">
+    <div style="font-size:10px;font-weight:700;color:var(--text-low)">HARDWARE BACK INSPECTOR</div>
+    <div class="visor" style="margin-top:14px">
+      <div class="flash"></div>
+      ${[['50MP','Wide ƒ/1.68'],['48MP','Tele 5x'],['50MP','Ultra-wide']].map(l=>`<div class="lens3"><div class="ring"><div class="core"></div></div><div class="mp">${l[0]}</div><div class="sub">${l[1]}</div></div>`).join('')}
+    </div>
+    <div style="color:var(--text-med);font-size:11px;margin-top:10px">Pixel Camera Visor · 3-lens array</div>
+    <div style="margin-top:14px">
+      ${spec('Chipset','Google Tensor G5 — 3nm Titan')}
+      ${spec('Front camera','42MP Tensor Vision · Face Unlock')}
+      ${spec('Body','Grade-5 titanium frame')}
+      ${spec('Display','6.9" Actua LTPO · 1–120Hz')}
+      ${spec('Battery','5,800 mAh · 100W wired')}
+      ${spec('Security','Titan M2 · under-display FP')}
+      ${spec('Memory','16GB RAM · 512GB UFS 4.2')}
+    </div>
+    <div class="brand"><div class="G">G</div><div><h4>Pixel 10 Pro Max</h4><p>Pixel Experience</p></div></div>
+  </div>`;
+}
+function spec(k,v){return `<div class="speccard"><div class="k">${k.toUpperCase()}</div><div class="v">${v}</div></div>`;}
+
+/* ============ FACE / GLOBAL ============ */
+function setFace(f){
+  S.face=f;
+  document.getElementById('phone').classList.toggle('back',f==='back');
+  document.getElementById('tab-front').classList.toggle('active',f==='front');
+  document.getElementById('tab-back').classList.toggle('active',f==='back');
+  if(f==='back')renderBack();
+}
+function afterRender(){
+  if(S.app==='studio') drawStudio();
+  if(S.app==='music'&&musicPlay){/* timer continues */}
+  // auto-scroll messages/gemini
+}
+/* live clock refresh (skip while user is typing so fields aren't wiped) */
+setInterval(()=>{
+  const ae=document.activeElement;
+  if(ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')) return;
+  render();
+},20000);
+
+/* init */
+render();
+renderBack();
+</script>
+</body>
+</html>

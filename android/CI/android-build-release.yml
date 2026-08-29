@@ -1,0 +1,92 @@
+name: Build & Release APKs
+
+# Triggered 3 ways:
+#  - manually: Actions tab -> "Build & Release APKs" -> Run workflow
+#  - push a tag (pixel-sim-v* / novamind-v*)
+#  - push to main after adding this file under .github/workflows/
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['pixel-sim-v*', 'novamind-v*']
+    paths:
+      - 'android/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install Gradle 8.9
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q gradle-8.9-bin.zip
+          echo "$PWD/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Build Pixel 10 Simulator
+        working-directory: android/pixel-simulator
+        run: gradle --no-daemon assembleDebug
+
+      - name: Build NovaMind Local AI
+        working-directory: android/novamind-local-ai
+        run: gradle --no-daemon assembleDebug
+
+      - name: Collect APKs
+        run: |
+          cp android/pixel-simulator/app/build/outputs/apk/debug/app-debug.apk Pixel10ProMax-Simulator.apk
+          cp android/novamind-local-ai/app/build/outputs/apk/debug/app-debug.apk NovaMind-LocalAI.apk
+          ls -lh *.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-download
+          path: '*.apk'
+          if-no-files-found: error
+
+      - name: Publish GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > pixel-notes.md <<'EOF'
+          ## Google Pixel 10 Pro Max — Interactive Simulator 📱
+          Fully interactive Pixel Experience OS built with Jetpack Compose + Kotlin.
+          Titanium frame + 3D Back Inspector (Tensor G5), Geometric Balance design,
+          13 interactive apps (Gemini, Studio, Camera, Recorder, Weather, Phone,
+          Messages, Photos, Music, Notes, Calculator, Clock, Settings), lock screen,
+          Quick Settings shade, gesture nav and Recents.
+
+          **Install:** download `Pixel10ProMax-Simulator.apk` below and open it on Android
+          (allow "install from unknown sources").
+          EOF
+
+          cat > nova-notes.md <<'EOF'
+          ## NovaMind — 100% Offline Local AI 🧠
+          A standalone on-device AI app (Jetpack Compose + Kotlin) with NO INTERNET
+          permission: LocalMind chat engine, offline photo filters, on-device
+          speech-to-text + text-to-speech, and local tools.
+
+          **Install:** download `NovaMind-LocalAI.apk` below and open it on Android.
+          EOF
+
+          gh release create pixel-sim-latest Pixel10ProMax-Simulator.apk \
+            --title "Pixel 10 Pro Max Simulator (APK)" --notes-file pixel-notes.md \
+            || gh release upload pixel-sim-latest Pixel10ProMax-Simulator.apk --clobber
+
+          gh release create novamind-latest NovaMind-LocalAI.apk \
+            --title "NovaMind Local AI (APK)" --notes-file nova-notes.md \
+            || gh release upload novamind-latest NovaMind-LocalAI.apk --clobber
