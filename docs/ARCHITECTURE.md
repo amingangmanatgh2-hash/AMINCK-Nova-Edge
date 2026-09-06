@@ -5,7 +5,7 @@
 ```text
 Telegram Bot API ──authenticated POST /telegram──► Worker
 Browser ──owner HttpOnly session─────────────────► Worker
-Termux console ──scoped bearer───────────────────► Worker
+Console owner (separate) ──scoped bearer───────────────────► Worker
                                                        │
                                              singleton NovaBot DO
                                              SQLite + durable alarm
@@ -62,7 +62,7 @@ A crash during an external send cannot be made atomic with Telegram. The system 
 ```bash
 npm ci
 npm run check
-npm run check:termux
+npm run check:self
 npm test
 npm run dry-run
 npm audit --audit-level=moderate

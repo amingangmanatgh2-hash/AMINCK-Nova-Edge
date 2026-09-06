@@ -15,7 +15,7 @@ async function webhook(from:number,text:string,chat=from,id=seq++){
 }
 async function drain(){expect((await call('/api/queue/run',{})).status).toBe(200);}
 async function pair(userId:number,kind='self'){
-  await webhook(userId,kind==='self'?'سلف':'ترموکس');await drain();
+  await webhook(userId,kind==='self'?'سلف':'کنسول مالک');await drain();
   const pairing=sent.filter(x=>x.method==='sendMessage'&&Number(x.data.chat_id)===userId).at(-1)!;
   const code=String(pairing.data.text).match(/<code>([a-f0-9]{32})<\/code>/)![1];
   return {code,userId};

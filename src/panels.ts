@@ -51,7 +51,7 @@ export function helpText(role: string, category?: string): string {
       games: {emoji:'🎮',title:'بازی و دوئل'},
       fun: {emoji:'🎭',title:'سرگرمی و فونت'},
       tools: {emoji:'🧰',title:'ابزار'},
-      self: {emoji:'🖥',title:'سلف و ترموکس'},
+      self: {emoji:'🖥',title:'سلف جدا و کنسول مالک — جدا'},
       admin: {emoji:'⚙️',title:'مدیریت گروه'},
       security: {emoji:'🛡',title:'امنیت و قفل'},
       moderation: {emoji:'⚖️',title:'مدیریت اعضا'},

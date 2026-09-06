@@ -77,7 +77,7 @@ class Api:
 
 
 def setup() -> Api:
-    print('\n✦ اتصال امن کنسول مالک\nدر خصوصی بات «ترموکس» بفرستید و کد یک‌بارمصرف را اینجا وارد کنید.')
+    print('\n✦ اتصال امن کنسول مالک\nدر خصوصی بات «کنسول مالک» یا «ترمینال» بفرستید و کد یک‌بارمصرف را اینجا وارد کنید.')
     url = safe_url(input('آدرس HTTPS ورکر خودتان: '))
     code = getpass.getpass('کد اتصال کنسول (نه کد ورود تلگرام): ').strip()
     result = Api(url).request('/api/terminal/pair', {'code': code})

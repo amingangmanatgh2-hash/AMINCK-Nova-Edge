@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
       - run: npm ci
       - run: npm run check
-      - run: npm run check:termux
+      - run: npm run check:self
       - run: npm test
       - run: npm run dry-run
       - run: npm audit --audit-level=moderate

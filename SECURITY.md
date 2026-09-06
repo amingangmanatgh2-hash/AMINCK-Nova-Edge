@@ -32,7 +32,7 @@ This version intentionally adds a bot-token form because manual Secret/webhook s
 - Shared panel password gives global-owner authority and is attributed to the first owner in audit logs. Store it accordingly; this is **not** a multi-tenant, per-group web login system.
 - Panel sessions are random 256-bit tokens, stored as hashes, HttpOnly, SameSite=Strict, Secure on HTTPS, with a 12-hour expiry. Mutation requests require JSON and a matching Origin. Password/webhook-secret rotation invalidates existing panel sessions on the next authentication check.
 - Login and pairing attempts are rate-limited. In production Cloudflare supplies the client-IP header. For public high-volume deployments add Cloudflare WAF/rate limits as another layer.
-- Termux and self credentials are separately scoped, randomly generated, hashed server-side, expire in 30 days and are revocable. Pairing codes have 128 bits of entropy, expire in ten minutes and can be consumed once. The bot gives codes only in private chats; self codes are bound to the requesting Telegram user ID.
+- Console and self credentials are separately scoped, randomly generated, hashed server-side, expire in 30 days and are revocable. Pairing codes have 128 bits of entropy, expire in ten minutes and can be consumed once. The bot gives codes only in private chats; self codes are bound to the requesting Telegram user ID.
 - A self bearer cannot read groups, adjust balances, export settings, or execute owner API operations. The local account ID must match its pairing identity. No unauthenticated endpoint grants a role based on a claimed owner ID.
 - Owner messages only target active groups already seen by this bot. Deletion requires actor/chat-bound, expiring, one-use confirmation. Pending scheduled messages recheck the actor's admin and pin rights before execution.
 
@@ -65,7 +65,7 @@ Scheduled sends mark `sending` before network I/O. A crash in that window become
 | Confirmation | 90 seconds, one-use |
 | Pairing code | 10 minutes, hash only, one-use |
 | Panel token | 12 hours, hash only |
-| Termux/self token | 30 days, hash only |
+| Console/self token | 30 days, hash only |
 | Scheduled-message body | Until delivery/cancellation; completed jobs normally erase it |
 | Completed job metadata | 7 days |
 | Audit | 30 days |
