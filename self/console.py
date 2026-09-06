@@ -54,7 +54,7 @@ class Api:
     def request(self, path: str, body: dict | None = None) -> dict:
         if not path.startswith('/api/') or '..' in path:
             raise ValueError('مسیر نامعتبر')
-        headers = {'Accept': 'application/json', 'User-Agent': 'NovaGuard-Termux/2.0'}
+        headers = {'Accept': 'application/json', 'User-Agent': 'NovaGuard-Console/2.1'}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
         data = None
