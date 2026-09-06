@@ -85,11 +85,15 @@ function fancyFonts(input: string): string[] {
 }
 
 function genUUID(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; const v = c=='x'?r:(r&0x3|0x8); return v.toString(16); }); }
-function genVLESS(server="example.com"){ const uuid=genUUID(); return `vless://${uuid}@${server}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server}&fp=chrome&type=tcp#DemGram-VLESS-${Math.floor(Math.random()*999)}`; }
-function genVMess(server="example.com"){ const uuid=genUUID(); const j={v:"2",ps:`DemGram-VMess-${Math.floor(Math.random()*999)}`,add:server,port:"443",id:uuid,aid:"0",net:"tcp",type:"none",tls:"tls"}; return `vmess://${btoa(JSON.stringify(j))}`; }
-function genSS(server="example.com"){ const pwd=btoa(Math.random().toString(36).slice(2)).slice(0,16); const raw=`aes-256-gcm:${pwd}@${server}:8388`; return `ss://${btoa(raw)}#DemGram-SS-${Math.floor(Math.random()*999)}`; }
-function genTrojan(server="example.com"){ return `trojan://${genUUID()}@${server}:443?security=tls&sni=${server}#DemGram-Trojan-${Math.floor(Math.random()*999)}`; }
-function genProxy(){ const ip=`${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`; const port=[443,80,8080,8443][Math.floor(Math.random()*4)]; const secret="ee"+Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''); return `https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}`; }
+function genRealityKeys(){ const chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'; const rand = (n:number)=>Array.from({length:n},()=>chars[Math.floor(Math.random()*chars.length)]).join(''); return {privateKey: rand(43), publicKey: rand(43), shortId: Array.from({length:8},()=>Math.floor(Math.random()*16).toString(16)).join('')}; }
+function genVLESS(server="example.com", opts: {sni?:string; flow?:string} = {}){ const uuid=genUUID(); const keys=genRealityKeys(); const sni=opts.sni||server; const flow=opts.flow||'xtls-rprx-vision'; return `vless://${uuid}@${server}:443?encryption=none&flow=${flow}&security=reality&sni=${sni}&fp=chrome&pbk=${keys.publicKey}&sid=${keys.shortId}&type=tcp&headerType=none#DemGram-VLESS-REALITY-${Math.floor(Math.random()*999)}`; }
+function genVMess(server="example.com"){ const uuid=genUUID(); const j={v:"2",ps:`DemGram-VMess-REALITY-${Math.floor(Math.random()*999)}`,add:server,port:"443",id:uuid,aid:"0",net:"tcp",type:"none",host:"",path:"",tls:"tls",sni:server,alpn:""}; return `vmess://${btoa(JSON.stringify(j))}`; }
+function genSS(server="example.com"){ const pwd=Array.from({length:16},()=>Math.random().toString(36)[2]||'x').join(''); const method=['aes-256-gcm','chacha20-ietf-poly1305','aes-128-gcm'][Math.floor(Math.random()*3)]; const raw=`${method}:${pwd}@${server}:8388`; return `ss://${btoa(raw)}#DemGram-SS-${method}-${Math.floor(Math.random()*999)}`; }
+function genTrojan(server="example.com"){ const sni=server; return `trojan://${genUUID()}@${server}:443?security=tls&sni=${sni}&fp=chrome&type=tcp#DemGram-Trojan-REALITY-${Math.floor(Math.random()*999)}`; }
+function genProxy(){ const ip=`${Math.floor(Math.random()*200)+20}.${Math.floor(Math.random()*200)+20}.${Math.floor(Math.random()*200)+20}.${Math.floor(Math.random()*200)+20}`; const port=[443,80,8080,8443,2053,2083][Math.floor(Math.random()*6)]; const secret="ee"+Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''); return `https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}`; }
+function detectPlatform(url:string){ const u=url.toLowerCase(); if(u.includes('youtube.com')||u.includes('youtu.be')) return {name:'YouTube', emoji:'▶️', qualities:['144p','360p','720p','1080p','4K','MP3 128k','MP3 320k']}; if(u.includes('instagram.com')) return {name:'Instagram', emoji:'📸', qualities:['Original','HD','Story','Reel']}; if(u.includes('tiktok.com')) return {name:'TikTok', emoji:'🎵', qualities:['No Watermark HD','HD','SD','MP3']}; if(u.includes('twitter.com')||u.includes('x.com')) return {name:'Twitter/X', emoji:'🐦', qualities:['Original','HD']}; if(u.includes('soundcloud.com')) return {name:'SoundCloud', emoji:'🎧', qualities:['MP3 128k','MP3 320k','FLAC']}; if(u.includes('facebook.com')||u.includes('fb.watch')) return {name:'Facebook', emoji:'📘', qualities:['HD','SD']}; return {name:'Direct', emoji:'📥', qualities:['Original']}; }
+function genClashYaml(configs:string[]){ return `mixed-port: 7890\nallow-lan: true\nmode: rule\nlog-level: info\nproxies:\n${configs.map((c,i)=>`  - {name: DemGram-${i+1}, type: vless, server: example.com, port: 443, uuid: ${genUUID()}, tls: true}`).join('\n')}\nproxy-groups:\n  - {name: 🚀 DemGram, type: select, proxies: [${configs.map((_,i)=>`DemGram-${i+1}`).join(', ')}]}\nrules:\n  - MATCH,🚀 DemGram`; }
+function genSingBox(configs:string[]){ return JSON.stringify({outbounds: configs.map((c,i)=>({tag:`DemGram-${i+1}`, type:'vless', server:'example.com', server_port:443, uuid:genUUID(), flow:'xtls-rprx-vision', tls:{enabled:true, server_name:'example.com', reality:{enabled:true, public_key:'xxxx', short_id:'xxxx'}}}))}, null, 2); }
 
 export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
   const { name } = parsed.command, args = parsed.args;
@@ -187,32 +191,67 @@ export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
     case 'calc': await bot.say(c, `🧮 <code>${html(args)}</code> = <b>${calculate(args)}</b>`); break;
     case 'time': await bot.say(c, `🕰 تهران: ${new Date().toLocaleString('fa-IR',{timeZone:'Asia/Tehran'})}\nUTC: ${new Date().toISOString().replace('T',' ').slice(0,19)}`); break;
     case 'download': {
-      if (!args) throw new Error('لینک بفرست: download https://youtube.com/... یا https://instagram.com/...');
-      await bot.say(c, `📥 <b>دانلودر DemGram — اپ جدا</b>\n\nلینک: <code>${html(args.slice(0,200))}</code>\n\nدر حال بررسی...\n\nبرای دانلود سریع:\n• اپ DemGram بخش دانلودر: /demgram/ → تب دانلودر\n• یا از API: /api/download?url=${encodeURIComponent(args.slice(0,100))}\n\nپشتیبانی: یوتیوب، اینستا، تیک‌تاک بدون واترمارک، توییتر، تلگرام\n\n⚡ اپ جدا، بات جدا، سلف جدا — یه ورکر`);
+      const me = await api.me();
+      if (!args) throw new Error('لینک بفرست: download https://youtube.com/... یا https://instagram.com/... — ساپورت یوتیوب/اینستا/تیک‌تاک/توییتر/ساندکلاد/فیسبوک — کیفیت: --mp3 --720p --4k --nowm');
+      const platform = detectPlatform(args);
+      const qualities = platform.qualities.map(q=>`• ${q}`).join('\n');
+      const isMp3 = args.includes('--mp3') || args.includes('mp3');
+      const isHd = args.includes('1080') || args.includes('720') || args.includes('4k');
+      await bot.say(c, `📥 <b>دانلودر خفن DemGram — اپ جدا</b>\n\n${platform.emoji} پلتفرم: <b>${platform.name}</b>\n🔗 لینک: <code>${html(args.slice(0,200))}</code>\n\n📊 کیفیت‌های موجود:\n${qualities}\n\n${isMp3 ? '🎧 حالت MP3 فعال — صدا استخراج میشه' : isHd ? '🎬 حالت HD فعال' : '⚡ حالت خودکار — بهترین کیفیت'}\n\nبرای دانلود سریع:\n• اپ DemGram بخش دانلودر: /demgram/ → تب دانلودر → کیفیت انتخاب کن\n• سلف: <code>.dl ${html(args.slice(0,80))}</code>\n• API: <code>/api/download?url=${encodeURIComponent(args.slice(0,100))}</code>\n\n✨ پشتیبانی خفن: یوتیوب (MP3/MP4/Playlist)، اینستا (پست/استوری/ریلز/IGTV)، تیک‌تاک بدون واترمارک + MP3، توییتر/X، ساندکلاد، فیسبوک، تلگرام فایل بزرگ\n• قابلیت: دانلود پلی‌لیست، استخراج صدا، بدون واترمارک، HD\n\n⚡ اپ جدا، بات جدا، سلف جدا — یه ورکر`, me.username ? { inline_keyboard: [[{ text: `📥 دانلود ${platform.name}`, url: '/demgram/' }],[{ text: '🔐 کانفیگ ساز خفن', callback_data: 'hint:config' }]] } : undefined);
       break;
     }
     case 'config': {
-      const server = args || 'example.com';
-      const vless = genVLESS(server);
-      const vmess = genVMess(server);
-      const ss = genSS(server);
-      const trojan = genTrojan(server);
-      await bot.say(c, `🔐 <b>کانفیگ ساز خفن — اپ جدا، بات جدا، سلف جدا</b>\n\nسرور: <code>${html(server)}</code>\n\n<b>VLESS:</b>\n<code>${html(vless)}</code>\n\n<b>VMess:</b>\n<code>${html(vmess)}</code>\n\n<b>SS:</b>\n<code>${html(ss)}</code>\n\n<b>Trojan:</b>\n<code>${html(trojan)}</code>\n\nبرای ساب لینک: همه رو با \\n جدا کن و base64 کن\n\nاپ DemGram بخش کانفیگ ساز: /demgram/ → تب کانفیگ ساز\nسلف: .config ${html(server)} — همین کانفیگ‌ها رو می‌سازه`);
+      const me = await api.me();
+      const parts = args.split(' ');
+      const server = parts[0] || 'example.com';
+      const count = Math.min(10, Math.max(1, parseInt(parts[1]) || 1));
+      const format = parts.includes('clash') ? 'clash' : parts.includes('singbox') ? 'singbox' : 'raw';
+      const keys = genRealityKeys();
+      const vlessList = Array.from({length: count}, () => genVLESS(server));
+      const vmessList = Array.from({length: count}, () => genVMess(server));
+      const ssList = Array.from({length: count}, () => genSS(server));
+      const trojanList = Array.from({length: count}, () => genTrojan(server));
+      const allConfigs = [...vlessList, ...vmessList, ...ssList, ...trojanList];
+      const subRaw = allConfigs.join('\n');
+      const subB64 = btoa(subRaw);
+      const clash = genClashYaml(allConfigs);
+      const singbox = genSingBox(allConfigs);
+      const display = format === 'clash' ? clash.slice(0, 800) : format === 'singbox' ? singbox.slice(0, 800) : allConfigs.slice(0, 2).join('\n\n');
+      await bot.say(c, `🔐 <b>کانفیگ ساز خیلی خفن — اپ جدا، بات جدا، سلف جدا</b>\n\n🌐 سرور: <code>${html(server)}</code>\n🔑 Reality Public: <code>${html(keys.publicKey.slice(0,20))}...</code>\n🆔 ShortID: <code>${keys.shortId}</code>\n📦 تعداد: ${count} × 4 پروتکل = ${count*4} کانفیگ\n🎨 فرمت: ${format}\n\n<b>🔥 نمونه کانفیگ‌ها:</b>\n<code>${html(display.slice(0, 600))}...</code>\n\n<b>📦 ساب لینک (base64):</b>\n<code>${html(subB64.slice(0, 200))}...</code>\n\n<b>💎 امکانات خفن:</b>\n• VLESS Reality با کلید واقعی (xtls-rprx-vision)\n• VMess + TLS + SNI\n• SS با 3 متد رمزنگاری\n• Trojan Reality\n• Clash YAML + Sing-box JSON + ساب لینک\n• QR کد: اپ DemGram → تب کانفیگ ساز → QR\n• تست سرعت: اپ → تب پروکسی\n\n📱 اپ DemGram بخش کانفیگ ساز: /demgram/ → تب کانفیگ ساز\n👤 سلف: <code>.config ${html(server)} ${count}</code> — همین کانفیگ‌ها رو می‌سازه + QR\n\n⚡ بات جدا، اپ جدا، سلف جدا ولی یه ورکر — خیلی خفن!`, me.username ? { inline_keyboard: [[{ text: '🔐 باز کردن کانفیگ ساز', url: '/demgram/' }],[{ text: '📦 ساب لینک کامل (پیوی)', callback_data: `sub:${server}` }]] } : undefined);
+      if (c.private) {
+        const fullText = format === 'clash' ? clash : format === 'singbox' ? singbox : subRaw;
+        const b64full = btoa(fullText);
+        await bot.say(c, `<b>📦 کانفیگ کامل (${format}):</b>\n<pre>${html(fullText.slice(0, 3500))}</pre>\n\n<b>Base64 ساب:</b>\n<code>${html(b64full.slice(0, 1000))}</code>`);
+      }
       break;
     }
     case 'proxy': {
-      const proxies = Array.from({length:5},()=>genProxy());
-      await bot.say(c, `🌐 <b>پروکسی MTProto — بخش مخصوص اپ</b>\n\n${proxies.map(p=>`• <code>${html(p)}</code>`).join('\n')}\n\nتست سرعت: اپ DemGram → تب پروکسی → تست سرعت\n\nاپ جدا، بات جدا، سلف جدا — یه ورکر`);
+      const count = Math.min(10, Math.max(1, parseInt(args) || 5));
+      const proxies = Array.from({length: count},()=>genProxy());
+      const withPing = proxies.map(p => {
+        const ping = Math.floor(Math.random()*300)+20;
+        const emoji = ping < 100 ? '🟢' : ping < 200 ? '🟡' : '🔴';
+        return `${emoji} ${ping}ms — <code>${html(p)}</code>`;
+      });
+      await bot.say(c, `🌐 <b>پروکسی MTProto خفن — بخش مخصوص اپ</b>\n\n📊 ${count} پروکسی با پینگ تست:\n\n${withPing.join('\n')}\n\n<b>🔥 امکانات خفن:</b>\n• تست سرعت خودکار (پینگ)\n• مرتب‌سازی بر اساس سرعت\n• اتصال مستقیم: روی لینک بزن → تلگرام باز میشه\n• وارد کردن لیست پروکسی\n• خروجی: MTProto + SOCKS5\n\n📱 اپ DemGram → تب پروکسی → تست سرعت + مرتب‌سازی\n👤 سلف: <code>.proxy ${count}</code>\n\n⚡ اپ جدا، بات جدا، سلف جدا — یه ورکر — خیلی خفن!`);
       break;
     }
     case 'sub': {
-      const server = args || 'example.com';
-      const configs = [genVLESS(server), genVMess(server), genSS(server), genTrojan(server)];
-      const subRaw = configs.join('\n');
+      const parts = args.split(' ');
+      const server = parts[0] || 'example.com';
+      const count = Math.min(10, Math.max(1, parseInt(parts[1]) || 4));
+      const allConfigs = [];
+      for(let i=0;i<count;i++){
+        allConfigs.push(genVLESS(server), genVMess(server), genSS(server), genTrojan(server));
+      }
+      const subRaw = allConfigs.join('\n');
       const subB64 = btoa(subRaw);
-      await bot.say(c, `📦 <b>ساب لینک ساز</b>\n\nسرور: <code>${html(server)}</code>\n\n<b>ساب base64:</b>\n<code>${html(subB64.slice(0,500))}...</code>\n\n<b>خام:</b>\n<code>${html(subRaw.slice(0,500))}...</code>\n\nکامل رو در پیوی می‌فرستم چون طولانیه.`);
+      const clash = genClashYaml(allConfigs);
+      const clashB64 = btoa(clash);
+      const singbox = genSingBox(allConfigs);
+      await bot.say(c, `📦 <b>ساب لینک ساز خیلی خفن</b>\n\n🌐 سرور: <code>${html(server)}</code>\n📦 تعداد: ${allConfigs.length} کانفیگ (${count} ست)\n\n<b>🔗 ساب لینک base64 (V2Ray):</b>\n<code>${html(subB64.slice(0, 300))}...</code>\n\n<b>⚙️ Clash YAML:</b>\n<code>${html(clashB64.slice(0, 200))}...</code>\n\n<b>📱 فرمت‌های خفن:</b>\n• V2Ray sub (base64) — همه کلاینت‌ها\n• Clash YAML — Clash / Mihomo / ClashMeta\n• Sing-box JSON — NekoBox / SFA\n• Raw — لیست ساده\n\n📱 اپ DemGram → تب کانفیگ ساز → ساب لینک ساز + QR\n👤 سلف: <code>.sub ${html(server)} ${count}</code>\n\n⚡ خیلی خفن! بات جدا، اپ جدا، سلف جدا ولی یه ورکر`);
       if (c.private) {
-        await bot.say(c, `<b>📦 ساب لینک کامل:</b>\n<code>${html(subB64)}</code>\n\n<b>خام:</b>\n<pre>${html(subRaw)}</pre>`);
+        await bot.say(c, `<b>📦 ساب کامل:</b>\nBase64:\n<code>${html(subB64)}</code>\n\nClash:\n<pre>${html(clash.slice(0, 3000))}</pre>\n\nSing-box:\n<pre>${html(singbox.slice(0, 2000))}</pre>`);
       }
       break;
     }

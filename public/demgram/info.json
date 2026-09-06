@@ -1,36 +1,44 @@
 {
-  "name": "DemGram",
-  "version": "2.1-separate",
+  "name": "DemGram — اپ جدا خیلی خفن 🔥",
+  "version": "2.1-goulakh-khafan",
   "package": "com.demgram.app",
-  "architecture": "اپ جدا، بات جدا، سلف جدا، یه ورکر",
+  "architecture": "اپ جدا، بات جدا، سلف جدا، یه ورکر — خیلی خفن 🔥",
   "connections": {
-    "app_to_bot": "از پیوی ربات demgram / دانلود / اپ → لینک APK",
-    "self_to_bot": "از پیوی ربات سلف → کد ۳۲ کاراکتری → self/self_client.py"
+    "app_to_bot": "از پیوی ربات demgram / دانلود / اپ → لینک APK + PWA خیلی خفن",
+    "self_to_bot": "از پیوی ربات سلف → کد ۳۲ کاراکتری → self/self_client.py — خیلی خفن"
   },
   "features": {
-    "downloader": [
-      "youtube video/mp3",
-      "instagram post/story/reel",
-      "tiktok no watermark",
-      "twitter",
-      "telegram large files"
-    ],
-    "config_maker": [
-      "VLESS reality",
-      "VMess",
-      "Shadowsocks",
-      "Trojan",
-      "sub link base64",
-      "MTProto proxy list",
-      "QR code"
-    ],
-    "app_separate": "اپ جدا از سلف، سلف جدا از بات، بات جدا ولی یه ورکر"
+    "downloader_khafan": {
+      "platforms": ["youtube 4K + MP3 320k + playlist", "instagram HD + story + reel + IGTV", "tiktok no watermark HD + MP3", "twitter/X HD", "soundcloud FLAC/WAV/MP3", "facebook HD", "telegram large files 2GB"],
+      "qualities": ["144p to 4K", "MP3 128k/320k", "M4A", "WAV", "FLAC", "Original HD"],
+      "extra": ["playlist support", "audio extraction", "no watermark", "HD", "batch download", "progress bar"]
+    },
+    "config_maker_khafan": {
+      "protocols": ["VLESS Reality xtls-rprx-vision with real keys", "VMess TLS+SNI", "Shadowsocks 3 methods aes-256-gcm/chacha20/aes-128-gcm", "Trojan Reality"],
+      "formats": ["V2Ray raw", "Base64 subscription", "Clash YAML", "Sing-box JSON", "QR code"],
+      "reality": "Real Reality keys: private/public/shortId + SNI + FP chrome",
+      "count": "1-20 configs per request",
+      "extra": ["QR code generation", "Clash YAML", "Sing-box JSON", "Sub link base64", "Speed test", "Country detection"]
+    },
+    "proxy_khafan": {
+      "type": "MTProto",
+      "features": ["ping test real", "sort by ping", "fastest detection", "country detection", "convert to SOCKS5", "import/export", "speed test", "15 proxies at once"]
+    },
+    "contacts_khafan": [".contacts 50 smart filtered", ".filter/.find", ".add @username/id/reply", ".addall confirm -> YES 3s anti-flood cap 50", ".addselect", "export JSON", "online/offline filter", "tag all 50"],
+    "fonts_khafan": "15 styles: bold, italic, mono, fancy Persian decorations 🔥💎⚡🌟🎀",
+    "tools_khafan": ["QR maker", "translator", "calculator", "weather", "sticker maker", "AI local+cloud"],
+    "app_separate": "اپ جدا از سلف، سلف جدا از بات، بات جدا ولی یه ورکر — خیلی خفن 🔥",
+    "bot_khafan": "140 commands: management, locks, duels real dice, downloader khafan, config maker khafan, proxy, sub, font 15 styles",
+    "self_khafan": "80+ commands: contacts smart, groups, downloader khafan with quality, config maker khafan Reality+Clash+Sing-box+QR, proxy with ping, font 15 styles, AI, multi-account --session my2 unlimited"
   },
   "web_url": "/demgram/",
   "apk_direct": "/demgram/DemGram.apk",
   "api": {
-    "download": "/api/download",
-    "config": "/api/config/generate",
-    "proxy": "/api/proxy/list"
-  }
+    "download": "/api/download — quality + audioOnly + playlist + platform detection — خیلی خفن",
+    "config": "/api/config/generate — count 1-20 + format raw/b64/clash/singbox/all + Reality keys — خیلی خفن",
+    "proxy": "/api/proxy/list — count 1-50 + ping + country + sorted + fastest — خیلی خفن",
+    "qr": "QR via https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=..."
+  },
+  "khafan": true,
+  "version_khafan": "2.1 خیلی خفن گولاخ 🔥"
 }

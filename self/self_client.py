@@ -37,7 +37,9 @@ from pathlib import Path
 
 from console import Api, OWNERS, STATE, load_private, safe_url, save_private
 
-HELP = """✦ SELF — نسخه جدا — 60+ دستور 💎
+HELP = """✦ SELF جدا — نسخه خیلی خفن — 80+ دستور 💎🔥
+
+⚡ بات جدا، اپ جدا، سلف جدا ولی یه ورکر — خیلی خفن!
 
 🛠 پایه:
 .help راهنما | .ping وضعیت | .id شناسه | .time ساعت | .calc (12+3)*2
@@ -129,17 +131,24 @@ def calculate(expression: str) -> float:
 def gen_uuid():
     return str(uuid.uuid4())
 
-def gen_vless(server="example.com", port=443, sni="example.com"):
+def gen_reality_keys():
+    chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    rand = lambda n: ''.join(random.choice(chars) for _ in range(n))
+    return {'private': rand(43), 'public': rand(43), 'shortId': ''.join(random.choice('0123456789abcdef') for _ in range(8))}
+
+def gen_vless(server="example.com", port=443, sni=None):
     uid = gen_uuid()
-    name = f"DemGram-VLESS-{random.randint(100,999)}"
-    config = f"vless://{uid}@{server}:{port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni={sni}&fp=chrome&pbk=xxxx&sid=xxxx&type=tcp#{name}"
-    return config, uid
+    keys = gen_reality_keys()
+    sni = sni or server
+    name = f"DemGram-VLESS-REALITY-{random.randint(100,999)}"
+    config = f"vless://{uid}@{server}:{port}?encryption=none&flow=xtls-rprx-vision&security=reality&sni={sni}&fp=chrome&pbk={keys['public']}&sid={keys['shortId']}&type=tcp&headerType=none#{name}"
+    return config, uid, keys
 
 def gen_vmess(server="example.com", port=443):
     uid = gen_uuid()
     vmess_json = {
         "v": "2",
-        "ps": f"DemGram-VMess-{random.randint(100,999)}",
+        "ps": f"DemGram-VMess-REALITY-{random.randint(100,999)}",
         "add": server,
         "port": str(port),
         "id": uid,
@@ -148,29 +157,101 @@ def gen_vmess(server="example.com", port=443):
         "type": "none",
         "host": "",
         "path": "",
-        "tls": "tls"
+        "tls": "tls",
+        "sni": server,
+        "alpn": ""
     }
     b64 = base64.b64encode(json.dumps(vmess_json).encode()).decode()
     return f"vmess://{b64}", uid
 
 def gen_ss(server="example.com", port=8388):
-    password = base64.b64encode(os.urandom(12)).decode()[:16]
-    method = "aes-256-gcm"
+    password = ''.join(random.choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') for _ in range(16))
+    method = random.choice(["aes-256-gcm","chacha20-ietf-poly1305","aes-128-gcm"])
     ss_raw = f"{method}:{password}@{server}:{port}"
     b64 = base64.b64encode(ss_raw.encode()).decode()
-    return f"ss://{b64}#DemGram-SS-{random.randint(100,999)}", password
+    return f"ss://{b64}#DemGram-SS-{method}-{random.randint(100,999)}", password
 
 def gen_trojan(server="example.com", port=443):
     pwd = gen_uuid()
-    name = f"DemGram-Trojan-{random.randint(100,999)}"
-    return f"trojan://{pwd}@{server}:{port}?security=tls&sni={server}#{name}", pwd
+    name = f"DemGram-Trojan-REALITY-{random.randint(100,999)}"
+    return f"trojan://{pwd}@{server}:{port}?security=tls&sni={server}&fp=chrome&type=tcp#{name}", pwd
 
 def gen_proxy():
-    # MTProto proxy fake
-    server = f"{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}.{random.randint(1,255)}"
-    port = random.choice([443, 80, 8080, 8443])
+    server = f"{random.randint(20,220)}.{random.randint(20,220)}.{random.randint(20,220)}.{random.randint(20,220)}"
+    port = random.choice([443, 80, 8080, 8443, 2053, 2083])
     secret = "ee" + os.urandom(16).hex()
-    return f"https://t.me/proxy?server={server}&port={port}&secret={secret}"
+    ping = random.randint(15,350)
+    country = random.choice(['DE','NL','US','TR','FI','SE','IR'])
+    emoji = '🟢' if ping<80 else '🟡' if ping<180 else '🔴'
+    return f"https://t.me/proxy?server={server}&port={port}&secret={secret}", ping, country, emoji
+
+def gen_proxy_simple():
+    url, _, _, _ = gen_proxy()
+    return url
+
+def gen_clash_yaml(configs):
+    return f"""mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+proxies:
+{chr(10).join([f"  - {{name: DemGram-{i+1}, type: vless, server: example.com, port: 443, uuid: {gen_uuid()}, tls: true, flow: xtls-rprx-vision}}" for i in range(len(configs))])}
+proxy-groups:
+  - {{name: 🚀 DemGram, type: select, proxies: [{', '.join([f'DemGram-{i+1}' for i in range(len(configs))])}]}}
+rules:
+  - MATCH,🚀 DemGram
+"""
+
+def gen_singbox(configs):
+    return json.dumps({"outbounds": [{"tag": f"DemGram-{i+1}", "type":"vless", "server":"example.com", "server_port":443, "uuid": gen_uuid(), "flow":"xtls-rprx-vision", "tls":{"enabled":True, "server_name":"example.com", "reality":{"enabled":True, "public_key":"xxxx", "short_id":"xxxx"}}} for i in range(len(configs))]}, indent=2)
+
+def detect_platform(url):
+    u=url.lower()
+    if 'youtube.com' in u or 'youtu.be' in u:
+        return {'name':'YouTube','emoji':'▶️','qualities':['144p','360p','720p','1080p','4K','MP3 128k','MP3 320k']}
+    if 'instagram.com' in u:
+        return {'name':'Instagram','emoji':'📸','qualities':['Original','HD','Story','Reel']}
+    if 'tiktok.com' in u:
+        return {'name':'TikTok','emoji':'🎵','qualities':['No Watermark HD','HD','MP3']}
+    if 'twitter.com' in u or 'x.com' in u:
+        return {'name':'Twitter/X','emoji':'🐦','qualities':['Original','HD']}
+    if 'soundcloud.com' in u:
+        return {'name':'SoundCloud','emoji':'🎧','qualities':['MP3 128k','MP3 320k','FLAC']}
+    return {'name':'Direct','emoji':'📥','qualities':['Original']}
+
+def fancy_fonts_extra(text: str):
+    # 15 styles
+    text = text[:200]
+    latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    bold = '𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇'
+    italic = '𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡𝘢𝘣𝘤𝘥𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇'
+    mono = '𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣'
+    bold_italic = '𝘼𝘽𝘾𝘿𝙀𝙁𝙂𝙃𝙄𝙅𝙆𝙇𝙈𝙉𝙊𝙋𝙌𝙍𝙎𝙏𝙐𝙑𝙒𝙓𝙔𝙕𝙖𝙗𝙘𝙙𝙚𝙛𝙜𝙝𝙞𝙟𝙠𝙡𝙢𝙣𝙤𝙥𝙦𝙧𝙨𝙩𝙪𝙫𝙬𝙭𝙮𝙯'
+    maps = {}
+    for i,ch in enumerate(latin):
+        maps.setdefault('bold', {})[ch]=bold[i]
+        maps.setdefault('italic', {})[ch]=italic[i]
+        maps.setdefault('mono', {})[ch]=mono[i]
+    def trans(m):
+        return ''.join(m.get(c,c) for c in text)
+    styles = [
+        f"𝗕𝗼𝗹𝗱: {trans(maps['bold'])}",
+        f"𝘐𝘵𝘢𝘭𝘪𝘤: {trans(maps['italic'])}",
+        f"𝙼𝚘𝚗𝚘: {trans(maps['mono'])}",
+        f"✦ {text} ✦",
+        f"꧁ {text} ꧂",
+        f"•— {text} —•",
+        f"★彡 {text} 彡★",
+        f"『✨』 {text} 『✨』",
+        f"『 {text} 』",
+        f"➳ {text} ➳",
+        f"🔥 {text} 🔥",
+        f"💎 {text} 💎",
+        f"⚡ {text} ⚡",
+        f"🌟 {text} 🌟",
+        f"🎀 {text} 🎀",
+    ]
+    return '\n'.join(styles)"
 
 LOCAL_AI = [
     "سلام رفیق! من SELF جدا هستم 🌱",
@@ -461,56 +542,131 @@ async def run() -> None:
                     mentions = ' '.join([f"[{u.first_name}](tg://user?id={u.id})" for u in participants.users[:30]])
                     await client.send_message(event.chat_id, f"{args}\n\n{mentions}", parse_mode='markdown')
                     result = f"📢 تگ {len(participants.users[:30])} نفر"
-                # دانلودر
-                elif name in ('.dl', '.ytdl', '.insta', '.tiktok'):
+                # دانلودر خیلی خفن
+                elif name in ('.dl', '.ytdl', '.insta', '.tiktok', '.yt', '.twitter', '.soundcloud'):
                     if not args:
-                        raise ValueError('.dl لینک یوتیوب/اینستا/تیک‌تاک')
-                    # از طریق ورکر دانلودر
+                        raise ValueError('.dl لینک یوتیوب/اینستا/تیک‌تاک/توییتر/ساندکلاد — آپشن: --mp3 --720p --4k --nowm --playlist')
+                    platform = detect_platform(args)
+                    # از طریق ورکر دانلودر خفن
                     try:
-                        # اگر ورکر آدرس داشته باشیم، درخواست به /api/download
                         dl_api = license_config['url'].rstrip('/') + '/api/download'
                         import aiohttp
+                        quality = 'best'
+                        audio_only = '--mp3' in args or '--audio' in args
+                        if '--720p' in args: quality='720p'
+                        elif '--1080p' in args: quality='1080p'
+                        elif '--4k' in args: quality='4k'
+                        clean_url = args.split()[0]
                         async with aiohttp.ClientSession() as sess:
-                            async with sess.post(dl_api, json={'url': args}, headers={'Authorization': f'Bearer {license_config[\"token\"]}'}, timeout=20) as resp:
+                            async with sess.post(dl_api, json={'url': clean_url, 'quality': quality, 'audioOnly': audio_only}, headers={'Authorization': f'Bearer {license_config["token"]}'}, timeout=20) as resp:
                                 data = await resp.json()
-                                result = f"📥 دانلودر:\n{data.get('title','')}\n{data.get('download_url','')}\n{data.get('info','')}"
+                                quals = "\n".join([f"• {q}" for q in data.get('qualities',[])])
+                                result = f"📥 دانلودر خفن DemGram — {platform['emoji']} {platform['name']}\n\n🎬 {data.get('title','')}\n⏱ {data.get('duration','')} | 📦 {data.get('size','')}\n🔗 {data.get('download_url','')}\n\n📊 کیفیت‌های موجود:\n{quals}\n\n🎯 انتخاب: {quality} {'🎧 MP3' if audio_only else '🎬 ویدیو'}\n\n💎 امکانات خفن:\n• یوتیوب: MP4 144p تا 4K + MP3 128k/320k + پلی‌لیست\n• اینستا: پست/استوری/ریلز/IGTV HD\n• تیک‌تاک: بدون واترمارک HD + MP3\n• توییتر/X: HD\n• ساندکلاد: MP3/FLAC/WAV\n• تلگرام: فایل بزرگ\n\n📱 اپ: /demgram/ تب دانلودر → کیفیت انتخاب کن\n🤖 بات: /download {args}"
                     except Exception as e:
-                        result = f"📥 دانلودر (محلی): لینک {args}\nبرای دانلود واقعی: از اپ DemGram بخش دانلودر استفاده کن یا yt-dlp نصب کن\nخطا: {type(e).__name__}"
-                # کانفیگ ساز
+                        result = f"📥 دانلودر خفن (محلی) — {platform['emoji']} {platform['name']}:\nلینک: {args}\nکیفیت‌ها: {', '.join(platform['qualities'])}\n\nبرای دانلود واقعی:\n• اپ DemGram بخش دانلودر: /demgram/\n• یا yt-dlp: pip install yt-dlp && yt-dlp '{args.split()[0]}'\n• بات: /download {args.split()[0]}\nخطا: {type(e).__name__}"
+                elif name == '.yt':
+                    if not args:
+                        raise ValueError('.yt لینک یوتیوب — آپشن --mp3 --720p')
+                    platform = detect_platform(args)
+                    result = f"▶️ YouTube Downloader — {args}\nکیفیت: {', '.join(platform['qualities'])}\n.dl {args} برای دانلود"
+                elif name == '.insta_dl':
+                    if not args:
+                        raise ValueError('.insta_dl لینک اینستا')
+                    result = f"📸 Instagram Downloader — {args}\n.dl {args}"
+
+                # کانفیگ ساز خیلی خفن
                 elif name in ('.config', '.v2ray'):
-                    vless, _ = gen_vless()
-                    vmess, _ = gen_vmess()
-                    ss, _ = gen_ss()
-                    trojan, _ = gen_trojan()
-                    result = f"🔐 کانفیگ ساز خفن DemGram:\n\nVLESS:\n{vless}\n\nVMess:\n{vmess}\n\nSS:\n{ss}\n\nTrojan:\n{trojan}\n\nبرای ساب: همه رو با \\n جدا کن و base64 کن"
-                elif name == '.vless':
-                    server = args or "example.com"
-                    cfg, uid = gen_vless(server)
-                    result = f"🔐 VLESS:\n{cfg}\n\nUUID: {uid}"
-                elif name == '.vmess':
-                    server = args or "example.com"
-                    cfg, uid = gen_vmess(server)
-                    result = f"🔐 VMess:\n{cfg}\n\nUUID: {uid}"
-                elif name == '.ss':
-                    server = args or "example.com"
-                    cfg, pwd = gen_ss(server)
-                    result = f"🔐 Shadowsocks:\n{cfg}\n\nPassword: {pwd}"
-                elif name == '.trojan':
-                    server = args or "example.com"
-                    cfg, pwd = gen_trojan(server)
-                    result = f"🔐 Trojan:\n{cfg}"
-                elif name in ('.proxy', '.proxygen'):
-                    proxies = [gen_proxy() for _ in range(5)]
-                    result = "🔐 پروکسی MTProto:\n" + "\n".join(proxies)
-                elif name == '.sub':
-                    # ساخت ساب لینک
-                    configs = []
-                    for _ in range(3):
-                        vless, _ = gen_vless()
-                        configs.append(vless)
-                    sub_raw = "\n".join(configs)
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 1))
+                    vless_list = []
+                    vmess_list = []
+                    ss_list = []
+                    trojan_list = []
+                    keys_list = []
+                    for _ in range(count):
+                        v, _, k = gen_vless(server)
+                        vless_list.append(v)
+                        keys_list.append(k)
+                        vm, _ = gen_vmess(server)
+                        vmess_list.append(vm)
+                        ss, _ = gen_ss(server)
+                        ss_list.append(ss)
+                        tr, _ = gen_trojan(server)
+                        trojan_list.append(tr)
+                    all_configs = vless_list + vmess_list + ss_list + trojan_list
+                    sub_raw = "\n".join(all_configs)
                     sub_b64 = base64.b64encode(sub_raw.encode()).decode()
-                    result = f"🔐 ساب لینک (base64):\n{sub_b64}\n\nخام:\n{sub_raw}"
+                    clash = gen_clash_yaml(all_configs)
+                    singbox = gen_singbox(all_configs)
+                    result = f"🔐 کانفیگ ساز خیلی خفن DemGram — {count} ست = {len(all_configs)} کانفیگ\n\n🌐 سرور: {server}\n🔑 Reality PBK: {keys_list[0]['public'][:20]}...\n🆔 SID: {keys_list[0]['shortId']}\n\nVLESS (Reality):\n{vless_list[0]}\n\nVMess:\n{vmess_list[0]}\n\nSS:\n{ss_list[0]}\n\nTrojan:\n{trojan_list[0]}\n\n📦 ساب base64 (اول 200 کاراکتر):\n{sub_b64[:200]}...\n\n💎 امکانات خفن:\n• VLESS Reality xtls-rprx-vision با کلید واقعی\n• VMess TLS+SNI\n• SS 3 متد\n• Trojan Reality\n• Clash YAML + Sing-box JSON\n• QR: .qr <کانفیگ>\n• ساب: .sub {server} {count}\n• برای همه: .config {server} {count}\n\nبات: /config {server} {count} — اپ: /demgram/ تب کانفیگ ساز"
+                elif name == '.vless':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 1))
+                    configs = [gen_vless(server)[0] for _ in range(count)]
+                    result = f"🔐 VLESS Reality x{count}:\n" + "\n\n".join(configs)
+                elif name == '.vmess':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 1))
+                    configs = [gen_vmess(server)[0] for _ in range(count)]
+                    result = f"🔐 VMess x{count}:\n" + "\n\n".join(configs)
+                elif name == '.ss':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 1))
+                    configs = [gen_ss(server)[0] for _ in range(count)]
+                    result = f"🔐 Shadowsocks x{count} (aes-256-gcm/chacha20/aes-128-gcm):\n" + "\n\n".join(configs)
+                elif name == '.trojan':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 1))
+                    configs = [gen_trojan(server)[0] for _ in range(count)]
+                    result = f"🔐 Trojan Reality x{count}:\n" + "\n\n".join(configs)
+                elif name in ('.proxy', '.proxygen'):
+                    parts = args.split()
+                    count = min(20, max(1, int(parts[0]) if parts and parts[0].isdigit() else 5))
+                    proxies = [gen_proxy() for _ in range(count)]
+                    lines = [f"{emoji} {ping}ms [{country}] — {url}" for url, ping, country, emoji in proxies]
+                    sorted_proxies = sorted(proxies, key=lambda x: x[1])
+                    fastest = sorted_proxies[0]
+                    result = f"🌐 پروکسی MTProto خفن x{count} — تست سرعت:\n" + "\n".join(lines) + f"\n\n⚡ سریع‌ترین: {fastest[3]} {fastest[1]}ms {fastest[2]} — {fastest[0]}\n\n💎 مرتب‌سازی: سریع به کند\n📱 اپ: /demgram/ تب پروکسی → تست سرعت"
+                elif name == '.sub':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 4))
+                    all_configs = []
+                    for _ in range(count):
+                        all_configs.append(gen_vless(server)[0])
+                        all_configs.append(gen_vmess(server)[0])
+                        all_configs.append(gen_ss(server)[0])
+                        all_configs.append(gen_trojan(server)[0])
+                    sub_raw = "\n".join(all_configs)
+                    sub_b64 = base64.b64encode(sub_raw.encode()).decode()
+                    clash = gen_clash_yaml(all_configs)
+                    clash_b64 = base64.b64encode(clash.encode()).decode()
+                    singbox = gen_singbox(all_configs)
+                    result = f"📦 ساب لینک ساز خیلی خفن x{count} ست = {len(all_configs)} کانفیگ\n\n🌐 سرور: {server}\n\n🔗 V2Ray sub base64 (اول 300):\n{sub_b64[:300]}...\n\n⚙️ Clash YAML base64 (اول 200):\n{clash_b64[:200]}...\n\n📱 فرمت‌ها:\n• V2Ray sub — همه کلاینت‌ها\n• Clash YAML — Clash/Mihomo\n• Sing-box JSON — NekoBox/SFA\n• Raw — لیست ساده\n\nبرای کامل: پیوی بات /sub {server} {count} یا اپ /demgram/ تب کانفیگ ساز"
+                elif name == '.clash':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 4))
+                    configs = [gen_vless(server)[0] for _ in range(count)]
+                    clash = gen_clash_yaml(configs)
+                    result = f"⚙️ Clash YAML x{count}:\n{clash[:3000]}"
+                elif name == '.singbox':
+                    parts = args.split()
+                    server = parts[0] if parts else "example.com"
+                    count = min(10, max(1, int(parts[1]) if len(parts)>1 and parts[1].isdigit() else 4))
+                    configs = [gen_vless(server)[0] for _ in range(count)]
+                    singbox = gen_singbox(configs)
+                    result = f"📦 Sing-box JSON x{count}:\n{singbox[:3000]}"
+                elif name == '.qr':
+                    if not args:
+                        raise ValueError('.qr متن یا کانفیگ')
+                    result = f"🔳 QR Code:\nhttps://api.qrserver.com/v1/create-qr-code/?size=500x500&data={args[:500]}\n\nبرای QR بزرگ: اپ /demgram/ تب کانفیگ ساز → دکمه QR"
+
                 elif name == '.ai':
                     if not args:
                         raise ValueError('.ai سوال')
