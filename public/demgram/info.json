@@ -1,12 +1,36 @@
 {
   "name": "DemGram",
-  "version": "2.1-goulakh",
+  "version": "2.1-separate",
   "package": "com.demgram.app",
-  "features": 1000,
-  "type": "PWA + Native WebView",
+  "architecture": "اپ جدا، بات جدا، سلف جدا، یه ورکر",
+  "connections": {
+    "app_to_bot": "از پیوی ربات demgram / دانلود / اپ → لینک APK",
+    "self_to_bot": "از پیوی ربات سلف → کد ۳۲ کاراکتری → self/self_client.py"
+  },
+  "features": {
+    "downloader": [
+      "youtube video/mp3",
+      "instagram post/story/reel",
+      "tiktok no watermark",
+      "twitter",
+      "telegram large files"
+    ],
+    "config_maker": [
+      "VLESS reality",
+      "VMess",
+      "Shadowsocks",
+      "Trojan",
+      "sub link base64",
+      "MTProto proxy list",
+      "QR code"
+    ],
+    "app_separate": "اپ جدا از سلف، سلف جدا از بات، بات جدا ولی یه ورکر"
+  },
   "web_url": "/demgram/",
   "apk_direct": "/demgram/DemGram.apk",
-  "github_actions": "https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/actions/workflows/build-demgram-apk.yml",
-  "install_pwa": "Open /demgram/ in Chrome Android -> Menu -> Add to Home Screen",
-  "build_native": "Push triggers GitHub Actions that builds real APK with Android SDK"
+  "api": {
+    "download": "/api/download",
+    "config": "/api/config/generate",
+    "proxy": "/api/proxy/list"
+  }
 }

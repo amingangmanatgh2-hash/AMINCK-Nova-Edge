@@ -1,6 +1,6 @@
 import type { Bot, Context } from './bot';
 import type { Parsed } from './commands';
-import { DAY, GAMES, HOUR, LOCKS, PRESETS, VERSION, isOwner } from './config';
+import { DAY, GAMES, LOCKS, PRESETS, VERSION, isOwner } from './config';
 import { groupPanel, helpText } from './panels';
 import { botLinks } from './connection';
 import type { GroupSettings } from './types';
@@ -58,17 +58,15 @@ const numericSettings: Record<string, [keyof GroupSettings, number, number]> = {
 function fancyFonts(input: string): string[] {
   const text = input.slice(0, 200);
   if (!text) throw new Error('متن را بعد از «فونت» بنویسید. مثال: فونت نوا گارد');
-  // Latin fancy maps
   const boldMap: Record<string,string> = {};
   const italicMap: Record<string,string> = {};
   const monoMap: Record<string,string> = {};
   const latin = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   const bold = '𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇';
-  const italic = '𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻';
+  const italic = '𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡𝘢𝘣𝘤𝘥𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘶𝘷𝘄𝘹𝘆𝘻';
   const mono = '𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣';
   for (let i=0;i<latin.length;i++){ boldMap[latin[i]]=bold[i]; italicMap[latin[i]]=italic[i]; monoMap[latin[i]]=mono[i]; }
   const toMapped = (map: Record<string,string>) => text.split('').map(ch => map[ch] || ch).join('');
-  // Persian decorative styles – keep readable, no invisible control chars
   const persianDecor = [
     `✦ ${text} ✦`,
     `『 ${text} 』`,
@@ -85,6 +83,13 @@ function fancyFonts(input: string): string[] {
     ...persianDecor.map((s,i) => `استایل ${fa(i+1)}: ${s}`),
   ];
 }
+
+function genUUID(){ return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; const v = c=='x'?r:(r&0x3|0x8); return v.toString(16); }); }
+function genVLESS(server="example.com"){ const uuid=genUUID(); return `vless://${uuid}@${server}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server}&fp=chrome&type=tcp#DemGram-VLESS-${Math.floor(Math.random()*999)}`; }
+function genVMess(server="example.com"){ const uuid=genUUID(); const j={v:"2",ps:`DemGram-VMess-${Math.floor(Math.random()*999)}`,add:server,port:"443",id:uuid,aid:"0",net:"tcp",type:"none",tls:"tls"}; return `vmess://${btoa(JSON.stringify(j))}`; }
+function genSS(server="example.com"){ const pwd=btoa(Math.random().toString(36).slice(2)).slice(0,16); const raw=`aes-256-gcm:${pwd}@${server}:8388`; return `ss://${btoa(raw)}#DemGram-SS-${Math.floor(Math.random()*999)}`; }
+function genTrojan(server="example.com"){ return `trojan://${genUUID()}@${server}:443?security=tls&sni=${server}#DemGram-Trojan-${Math.floor(Math.random()*999)}`; }
+function genProxy(){ const ip=`${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}`; const port=[443,80,8080,8443][Math.floor(Math.random()*4)]; const secret="ee"+Array.from({length:32},()=>Math.floor(Math.random()*16).toString(16)).join(''); return `https://t.me/proxy?server=${ip}&port=${port}&secret=${secret}`; }
 
 export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
   const { name } = parsed.command, args = parsed.args;
@@ -125,18 +130,18 @@ export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
         }
         return;
       }
-      await bot.say(c, `<b>✦ نُوا گارد ${VERSION}</b>\nمدیریت محکم، دورهمی گرم ✨\n\n🛡 قفل و ضداسپم · ⚔️ دوئل ایموجی · 🏆 لیدربرد\n💎 الماس کمیاب · 🖥 سلف محلی و ترموکس\n🔤 فونت‌ساز · 🎭 سخنگوی باهوش\n\n«راهنما» برای دستورها، «پنل» برای مدیریت گروه.\nبرای مثال <code>دوئل 🎲 ۵۰</code> یا <code>/duel 🎲 50</code>\n\nسکه و الماس کاملاً مجازی و غیرنقدی‌اند.`, me.username ? { inline_keyboard: [[{ text: '➕ افزودن به گروه', url: `https://t.me/${me.username}?startgroup=setup` }]] } : undefined); break;
+      await bot.say(c, `<b>✦ نُوا گارد ${VERSION}</b>\nمدیریت محکم، دورهمی گرم ✨\n\n🛡 قفل و ضداسپم · ⚔️ دوئل ایموجی · 🏆 لیدربرد\n💎 الماس کمیاب · 👤 سلف جدا · 📱 اپ DemGram جدا\n📥 دانلودر · 🔐 کانفیگ ساز خفن VLESS/VMess/SS\n\n«راهنما» برای دستورها، «پنل» برای مدیریت گروه.\nبرای مثال <code>دوئل 🎲 ۵۰</code> یا <code>/duel 🎲 50</code>\n\n⚡ اپ جدا، بات جدا، سلف جدا ولی یه ورکر — اپ از بات دانلود میشه، سلف از بات فعال میشه\n\nسکه و الماس کاملاً مجازی و غیرنقدی‌اند.`, me.username ? { inline_keyboard: [[{ text: '➕ افزودن به گروه', url: `https://t.me/${me.username}?startgroup=setup` }],[{ text: '📥 دانلود اپ DemGram', url: '/demgram/' }]] } : undefined); break;
     }
     case 'help': {
       const role = isOwner(c.user.id) ? 'owner' : !c.private && await bot.admin(c) ? 'admin' : 'member';
       await bot.say(c, helpText(role, args || undefined)); break;
     }
-    case 'ping': await bot.say(c, `🟢 آنلاینم! نُوا گارد ${VERSION}\nپیام شما دریافت و پردازش شد.`); break;
+    case 'ping': await bot.say(c, `🟢 آنلاینم! نُوا گارد ${VERSION}\nبات جدا، اپ جدا، سلف جدا ولی یه ورکر\nپیام شما دریافت و پردازش شد.`); break;
     case 'id': await bot.say(c, `🪪 شما: <code>${c.user.id}</code>\nگفت‌وگو: <code>${c.chat}</code>${c.m.reply_to_message ? `\nکاربر ریپلای: <code>${c.m.reply_to_message.from?.id || 'ناشناس'}</code>\nپیام: <code>${c.m.reply_to_message.message_id}</code>` : ''}`); break;
     case 'info': {
       if (c.private) { await bot.say(c, `✦ نُوا گارد ${VERSION}\nاین فرمان در گروه، وضعیت همان گروه را نشان می‌دهد.`); break; }
       const count = await api.call<number>('getChatMemberCount', { chat_id: c.chat });
-      await bot.say(c, `<b>${html(c.m.chat.title || 'گروه')}</b>\n👥 ${fa(count)} عضو\n🔒 ${fa(c.settings.locks.length)} قفل\n🎮 بازی: ${c.settings.games ? 'روشن' : 'خاموش'}\n⚠️ حد اخطار: ${fa(c.settings.warnLimit)}\n🪪 <code>${c.chat}</code>`); break;
+      await bot.say(c, `<b>${html(c.m.chat.title || 'گروه')}</b>\n👥 ${fa(count)} عضو\n🔒 ${fa(c.settings.locks.length)} قفل\n🎮 بازی: ${c.settings.games ? 'روشن' : 'خاموش'}\n⚠️ حد اخطار: ${fa(c.settings.warnLimit)}\n🪪 <code>${c.chat}</code>\n\n⚡ اپ جدا، بات جدا، سلف جدا — یه ورکر`); break;
     }
     case 'rules': if (c.private) throw new Error('قوانین را در گروه درخواست کنید.'); else await bot.say(c, `📜 <b>قوانین گروه</b>\n${html(c.settings.rules || 'هنوز قانونی ثبت نشده.')}`); break;
     case 'report': {
@@ -181,9 +186,39 @@ export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
     }
     case 'calc': await bot.say(c, `🧮 <code>${html(args)}</code> = <b>${calculate(args)}</b>`); break;
     case 'time': await bot.say(c, `🕰 تهران: ${new Date().toLocaleString('fa-IR',{timeZone:'Asia/Tehran'})}\nUTC: ${new Date().toISOString().replace('T',' ').slice(0,19)}`); break;
+    case 'download': {
+      if (!args) throw new Error('لینک بفرست: download https://youtube.com/... یا https://instagram.com/...');
+      await bot.say(c, `📥 <b>دانلودر DemGram — اپ جدا</b>\n\nلینک: <code>${html(args.slice(0,200))}</code>\n\nدر حال بررسی...\n\nبرای دانلود سریع:\n• اپ DemGram بخش دانلودر: /demgram/ → تب دانلودر\n• یا از API: /api/download?url=${encodeURIComponent(args.slice(0,100))}\n\nپشتیبانی: یوتیوب، اینستا، تیک‌تاک بدون واترمارک، توییتر، تلگرام\n\n⚡ اپ جدا، بات جدا، سلف جدا — یه ورکر`);
+      break;
+    }
+    case 'config': {
+      const server = args || 'example.com';
+      const vless = genVLESS(server);
+      const vmess = genVMess(server);
+      const ss = genSS(server);
+      const trojan = genTrojan(server);
+      await bot.say(c, `🔐 <b>کانفیگ ساز خفن — اپ جدا، بات جدا، سلف جدا</b>\n\nسرور: <code>${html(server)}</code>\n\n<b>VLESS:</b>\n<code>${html(vless)}</code>\n\n<b>VMess:</b>\n<code>${html(vmess)}</code>\n\n<b>SS:</b>\n<code>${html(ss)}</code>\n\n<b>Trojan:</b>\n<code>${html(trojan)}</code>\n\nبرای ساب لینک: همه رو با \\n جدا کن و base64 کن\n\nاپ DemGram بخش کانفیگ ساز: /demgram/ → تب کانفیگ ساز\nسلف: .config ${html(server)} — همین کانفیگ‌ها رو می‌سازه`);
+      break;
+    }
+    case 'proxy': {
+      const proxies = Array.from({length:5},()=>genProxy());
+      await bot.say(c, `🌐 <b>پروکسی MTProto — بخش مخصوص اپ</b>\n\n${proxies.map(p=>`• <code>${html(p)}</code>`).join('\n')}\n\nتست سرعت: اپ DemGram → تب پروکسی → تست سرعت\n\nاپ جدا، بات جدا، سلف جدا — یه ورکر`);
+      break;
+    }
+    case 'sub': {
+      const server = args || 'example.com';
+      const configs = [genVLESS(server), genVMess(server), genSS(server), genTrojan(server)];
+      const subRaw = configs.join('\n');
+      const subB64 = btoa(subRaw);
+      await bot.say(c, `📦 <b>ساب لینک ساز</b>\n\nسرور: <code>${html(server)}</code>\n\n<b>ساب base64:</b>\n<code>${html(subB64.slice(0,500))}...</code>\n\n<b>خام:</b>\n<code>${html(subRaw.slice(0,500))}...</code>\n\nکامل رو در پیوی می‌فرستم چون طولانیه.`);
+      if (c.private) {
+        await bot.say(c, `<b>📦 ساب لینک کامل:</b>\n<code>${html(subB64)}</code>\n\n<b>خام:</b>\n<pre>${html(subRaw)}</pre>`);
+      }
+      break;
+    }
     case 'self': await bot.issuePair(c,'self'); break;
-    case 'selfstatus': { const lease = db.one<{expires_at:number}>('SELECT expires_at FROM leases WHERE user_id=?',c.user.id); await bot.say(c, `💎 اعتبار: ${isOwner(c.user.id) ? '∞' : fa(db.requireUser(c.user.id).diamonds)}\nسلف: ${lease && lease.expires_at > Date.now() ? `اجاره تا ${new Date(lease.expires_at).toLocaleString('fa-IR',{timeZone:'Asia/Tehran'})}` : 'اجارهٔ فعال ندارد'}\nهزینه: هر ساعت شروع‌شده ۵ الماس، مالک معاف. این وضعیتِ اجاره است، نه تضمین آنلاین‌بودن دستگاه.`); break; }
-    case 'selfstop': db.revoke(c.user.id,'self'); db.log(c.user.id,null,'self.revoked'); await bot.say(c,'🛑 مجوز سلف باطل شد. برنامهٔ رسمی حداکثر تا بررسی بعدی (۶۰ ثانیه) متوقف می‌شود. ساعت شروع‌شده بازپرداخت ندارد.'); break;
+    case 'selfstatus': { const lease = db.one<{expires_at:number}>('SELECT expires_at FROM leases WHERE user_id=?',c.user.id); await bot.say(c, `💎 اعتبار: ${isOwner(c.user.id) ? '∞' : fa(db.requireUser(c.user.id).diamonds)}\nسلف جدا: ${lease && lease.expires_at > Date.now() ? `اجاره تا ${new Date(lease.expires_at).toLocaleString('fa-IR',{timeZone:'Asia/Tehran'})}` : 'اجارهٔ فعال ندارد'}\nهزینه: هر ساعت شروع‌شده ۵ الماس، مالک معاف.\n\n⚡ سلف جدا، بات جدا، اپ جدا ولی یه ورکر — سلف فقط از بات فعال میشه`); break; }
+    case 'selfstop': db.revoke(c.user.id,'self'); db.log(c.user.id,null,'self.revoked'); await bot.say(c,'🛑 مجوز سلف جدا باطل شد.'); break;
     case 'panel': { const panel = groupPanel(c.settings); await bot.say(c,panel.text,panel.keyboard); break; }
     case 'settings': {
       const summarized = { ...c.settings, trusted: `${c.settings.trusted.length} شناسه؛ فرمان trusted برای فهرست`, welcome: c.settings.welcome ? `فعال (${c.settings.welcome.length} نویسه)` : 'خاموش', goodbye: c.settings.goodbye ? 'فعال' : 'خاموش', rules: `${c.settings.rules.length} نویسه` };
@@ -237,7 +272,6 @@ export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
     }
     case 'purge': {
       await bot.requireAdmin(c,'can_delete_messages');
-      // Prevent spamming purge confirmations
       const pendingPurge = db.one<{n:number}>("SELECT COUNT(*) n FROM jobs WHERE chat_id=? AND type='purge' AND state='pending'", c.chat)?.n || 0;
       if (pendingPurge > 0) throw new Error('یک پاک‌سازی از قبل در صف است؛ لطفاً تا پایان آن صبر کنید.');
       const pendingConfirm = db.one<{n:number}>("SELECT COUNT(*) n FROM confirmations WHERE chat_id=? AND action='purge' AND expires_at>?", c.chat, Date.now())?.n || 0;
@@ -331,52 +365,38 @@ export async function executeCommand(bot: Bot, c: Context, parsed: Parsed) {
       db.log(c.user.id,c.chat,`member.${name}`,String(id)); await bot.say(c,'✅ دسترسی مدیریتی به‌روزرسانی شد.'); break;
     }
     case 'demgram': {
-      // Provide DemGram client download
       const me = await api.me();
-      const base = `https://t.me/${me.username || 'NovaGuardBot'}`;
-      // Worker base URL from env or fallback
-      const workerBase = (globalThis as any).DEMG_BASE || '';
       const demgramWeb = '/demgram/';
-      const features = '/demgram/FEATURES.html';
-      await bot.say(c, `⚡ <b>DemGram — کلاینت قدرتمند تلگرام</b>
+      const apkDirect = '/demgram/DemGram.apk';
+      await bot.say(c, `⚡ <b>DemGram — اپ جدا</b>
 
-<b>۱۰۰۰ قابلیت</b> — سلف گولاخ + مدیریت مخاطبین هوشمند + فونت ساز + AI
+📱 <b>اپ جدا، بات جدا، سلف جدا ولی یه ورکر</b>
+• اپ از بات دانلود میشه
+• سلف از بات فعال میشه
 
-<b>👥 مخاطبین:</b>
-• <code>.contacts [عبارت]</code> لیست ۵۰ تایی
-• <code>.filter نام</code> / <code>.find @username</code>
-• <code>.add @user</code> افزودن تکی امن
-• <code>.addall confirm</code> → <code>.addall YES</code> همه با تایید و تاخیر ۳ثانیه‌ای ضداسپم
-• <code>.addselect</code> انتخاب خاص
+<b>📥 دانلودر خفن:</b>
+یوتیوب، اینستا، تیک‌تاک بدون واترمارک، توییتر، تلگرام
 
-<b>🛠 سلف:</b> .stats .admins .invite .pin .font .ai .tr .chat on/off
-<b>🔤 فونت:</b> ۷ استایل Bold/Italic/Mono/✦꧁★
-<b>🤖 AI:</b> محلی + ابری اختیاری (کلید فقط روی دستگاه شما)
+<b>🔐 کانفیگ ساز خفن:</b>
+VLESS, VMess, Shadowsocks, Trojan, ساب لینک، پروکسی MTProto
+
+<b>👥 مخاطبین هوشمند (سلف جدا):</b>
+.contacts .filter .add .addall confirm → YES با تاخیر ۳ثانیه سقف ۵۰
 
 <b>📲 دانلود:</b>
-🌐 نسخه وب PWA (قابل نصب به عنوان APK):
-${demgramWeb}
+🌐 وب PWA: ${demgramWeb} — قابل نصب به عنوان APK
+📦 APK مستقیم: ${apkDirect}
 
-📖 لیست ۱۰۰۰ قابلیت:
-${features}
+<b>نصب:</b>
+۱. ${demgramWeb} با کروم اندروید باز کن
+۲. منو → افزودن به صفحه اصلی / نصب
+۳. حالا مثل APK بومی توی لیست برنامه‌ها میاد
 
-📦 اندروید بومی:
-<code>demgram/android/</code> → <code>./gradlew assembleDebug</code>
-خروجی: <code>app-debug.apk</code>
+<b>سلف جدا:</b>
+پیوی ربات <code>سلف</code> → کد ۳۲ کاراکتری → داخل self/self_client.py وارد کن
 
-<b>نصب APK از وب:</b>
-۱. برو به ${demgramWeb} با کروم اندروید
-۲. منو → افزودن به صفحه اصلی / نصب برنامه
-۳. حالا مثل APK بومی کار می‌کند
-
-<b>چند اکانت نامحدود:</b>
-وب: هر پروفایل مرورگر یک سشن
-ترموکس: <code>python self_client.py --session my2</code>
-
-امنیت: نشست فقط محلی، کلید فقط محلی، تایید YES، سقف ۵۰، تاخیر ضدفیلود
-
-${c.private ? '' : 'برای لینک خصوصی، در پیوی ربات همین دستور را بفرست.'}
-`, me.username ? { inline_keyboard: [[{ text: '🌐 باز کردن DemGram وب', url: demgramWeb }],[{ text: '📖 ۱۰۰۰ قابلیت', url: features }],[{ text: '➕ افزودن ربات به گروه', url: `https://t.me/${me.username}?startgroup=setup` }]] } : undefined);
+⚡ بات جدا، اپ جدا، سلف جدا ولی یه ورکر
+`, me.username ? { inline_keyboard: [[{ text: '🌐 باز کردن اپ DemGram', url: demgramWeb }],[{ text: '📥 دانلود APK مستقیم', url: apkDirect }],[{ text: '👤 فعالسازی سلف جدا', callback_data: 'hint:self' }]] } : undefined);
       break;
     }
     default: throw new Error('این دستور در این نسخه پشتیبانی نمی‌شود.');

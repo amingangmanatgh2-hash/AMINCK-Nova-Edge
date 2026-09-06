@@ -102,13 +102,13 @@ export class Bot {
     }
   }
   async issuePair(c: Context, kind: 'self' | 'terminal') {
-    if (!c.private) throw new Error(`برای حفظ امنیت، «${kind === 'self' ? 'سلف' : 'ترموکس'}» را در گفت‌وگوی خصوصی بات بفرستید.`);
+    if (!c.private) throw new Error(`برای حفظ امنیت، «${kind === 'self' ? 'سلف جدا' : 'کنسول مالک'}» را در گفت‌وگوی خصوصی بات بفرستید.`);
     if (kind === 'terminal' && !isOwner(c.user.id)) throw new Error('کنسول مدیریت فقط برای مالک‌های سراسری است.');
     if (this.db.requireUser(c.user.id).frozen && !isOwner(c.user.id)) throw new Error('دسترسی حساب متوقف است.');
     this.db.exec('DELETE FROM tokens WHERE user_id=? AND kind=?', c.user.id, `pair_${kind}`);
     const code = token(16);
     this.db.addToken(await hash(code), c.user.id, `pair_${kind}`, Date.now() + 10 * 60000);
-    await this.say(c, `${kind === 'self' ? '💎 اتصال سلف محلی' : '🖥 اتصال کنسول مالک'}\n\nکد یک‌بارمصرف، معتبر برای ۱۰ دقیقه:\n<code>${code}</code>\n\nکد را فقط در ابزار ترموکس همین پروژه وارد کنید، نه برای اشخاص دیگر. ${kind === 'self' ? 'هر ساعتِ شروع‌شده ۵ الماس پیش‌پرداخت؛ توقف زودتر بازپرداخت ندارد. مالکان معاف‌اند. شماره، کد ورود و نشست تلگرام فقط روی دستگاه خودتان می‌ماند.' : 'این دسترسی اختیار مدیریت ربات دارد؛ فایل تنظیمات ترموکس را به کسی ندهید.'}`);
+    await this.say(c, `${kind === 'self' ? '💎 اتصال سلف جدا — اپ جدا، بات جدا، سلف جدا ولی یه ورکر' : '🖥 اتصال کنسول مالک — بات جدا'}\n\nکد یک‌بارمصرف، معتبر برای ۱۰ دقیقه:\n<code>${code}</code>\n\nکد را فقط در سلف جدا همین پروژه وارد کنید: self/self_client.py، نه برای اشخاص دیگر. ${kind === 'self' ? 'هر ساعتِ شروع‌شده ۵ الماس پیش‌پرداخت؛ توقف زودتر بازپرداخت ندارد. مالکان معاف‌اند. شماره، کد ورود و نشست تلگرام فقط روی دستگاه خودتان می‌ماند.' : 'این دسترسی اختیار مدیریت ربات دارد؛ فایل تنظیمات سلف جدا را به کسی ندهید.'}`);
   }
   async announce(chat: number, text: string, pin: boolean, actor: number) {
     const group = this.db.group(chat);

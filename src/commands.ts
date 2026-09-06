@@ -28,9 +28,13 @@ const rows: [string, string, string, Command['role'], string, string, string?][]
   ['time','ساعت','زمان', 'member','tools','زمان تهران و UTC'],
   ['notes','یادداشتها','یادداشت ها', 'member','tools','فهرست یادداشت‌های گروه'],
   ['getnote','یادداشت','', 'member','tools','خواندن یادداشت ذخیره‌شده','getnote لینکها'],
-  ['self','سلف','سلف بات', 'member','self','کد اتصال یک‌بارمصرف ترموکس؛ فقط خصوصی'],
-  ['selfstatus','وضعیت سلف','', 'member','self','اعتبار و ساعت پایان اجارهٔ سلف'],
-  ['selfstop','توقف سلف','', 'member','self','ابطال دسترسی سلف و پایان اجاره'],
+  ['download','دانلود','dl|دانلودر|downloader|ytdl|یوتیوب|اینستا', 'member','tools','دانلودر یوتیوب/اینستا/تیک‌تاک/توییتر','download https://...'],
+  ['config','کانفیگ','vless|vmess|ss|trojan|ساخت کانفیگ|کانفیگ ساز|v2ray', 'member','tools','ساخت کانفیگ خفن VLESS/VMess/SS/Trojan','config example.com'],
+  ['proxy','پروکسی','mtproto|پروکسی ساز|proxygen', 'member','tools','لیست پروکسی MTProto و ساخت پروکسی','proxy'],
+  ['sub','ساب','subscription|ساب لینک', 'member','tools','ساخت ساب لینک از کانفیگ‌ها','sub'],
+  ['self','سلف','سلف بات|فعالسازی سلف', 'member','self','کد اتصال یک‌بارمصرف سلف جدا؛ فقط خصوصی - سلف جدا از بات و اپ'],
+  ['selfstatus','وضعیت سلف','', 'member','self','اعتبار و ساعت پایان اجارهٔ سلف جدا'],
+  ['selfstop','توقف سلف','', 'member','self','ابطال دسترسی سلف جدا و پایان اجاره'],
   ['panel','پنل','مدیریت', 'admin','admin','پنل اینلاین دسته‌بندی‌شده'],
   ['settings','تنظیمات','', 'admin','admin','نمایش تنظیمات فعلی'],
   ['lock','قفل','', 'admin','security','فعال‌کردن یک فیلتر','lock لینک'],
@@ -137,7 +141,7 @@ const rows: [string, string, string, Command['role'], string, string, string?][]
   ['blockgroup','توقف گروه','', 'owner','owner','توقف پردازش یک گروه با تأیید'],
   ['unblockgroup','فعالسازی گروه','', 'owner','owner','ازسرگیری پردازش گروه'],
   ['resetboard','بازنشانی رتبه','', 'owner','owner','صفرکردن امتیاز گروه با تأیید؛ کیف پول حفظ می‌شود'],
-  ['demgram','دمگرام','کلاینت|دانلود|client|download|demgram client', 'member','general','دانلود کلاینت قدرتمند DemGram با 1000 قابلیت'],
+  ['demgram','دمگرام','اپ|app|کلاینت|client|demgram client', 'member','general','دانلود اپ DemGram جدا - اپ جدا، بات جدا، سلف جدا، یه ورکر - دانلودر + کانفیگ ساز'],
 ];
 export const COMMANDS: Command[] = rows.map(([name, fa, aliases, role, category, description, usage]) => ({ name, fa, aliases: aliases ? aliases.split('|') : [], role, category, description, usage }));
 const index = COMMANDS.flatMap(c => [c.name, c.fa, ...c.aliases].map(alias => ({ alias: normalize(alias).toLowerCase(), command: c }))).sort((a, b) => b.alias.length - a.alias.length);

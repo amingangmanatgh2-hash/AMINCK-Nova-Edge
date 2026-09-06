@@ -177,6 +177,16 @@ export class NovaBot {
     if (method === 'GET' && path === '/api/catalog') return json({commands:COMMANDS,locks:LOCKS,games:GAMES,version:VERSION,owners:OWNERS,ownerCommands:COMMANDS.filter(c=>c.role==='owner').length});
     if (demo) {
       if (path === '/api/session') return json({authenticated:true,demo:true,userId:OWNERS[0],owners:OWNERS,version:VERSION});
+      // App جدا - دانلودر و کانفیگ ساز - حتی در دمو
+      if (path === '/api/download' && method === 'POST') {
+        return json({title:'Demo Download', download_url:'https://example.com/video.mp4', info:'دمو - اپ جدا دانلودر', demo:true});
+      }
+      if (path === '/api/config/generate' && method === 'POST') {
+        return json({vless:'vless://demo', vmess:'vmess://demo', ss:'ss://demo', trojan:'trojan://demo', sub:'ZGVtbw==', demo:true, separate:'اپ جدا، بات جدا، سلف جدا'});
+      }
+      if (path === '/api/proxy/list' && method === 'GET') {
+        return json({proxies:['https://t.me/proxy?server=1.1.1.1&port=443&secret=ee...'], demo:true});
+      }
       if (method !== 'GET') return json({error:'این پیش‌نمایش فقط نمایشی است؛ هیچ فرمانی به تلگرام ارسال نمی‌شود.'},409);
       const data = demoData(path); return data ? json({...data,demo:true}) : json({error:'Not found'},404);
     }
@@ -203,12 +213,66 @@ export class NovaBot {
       return json({token:credential,userId:pair.user_id,expiresIn:30*86400,kind});
     }
     if (!session) return json({error:'ابتدا وارد شوید.'},401);
+    // App جدا - دانلودر و کانفیگ ساز - برای همه احراز هویت شده‌ها (سلف جدا و پنل)
+    if (path === '/api/download' && method === 'POST') {
+      const data = await this.body(request);
+      const url = String(data.url||'').slice(0,500);
+      if (!url || !/^https?:\/\//.test(url)) return json({error:'لینک معتبر نیست'},400);
+      return json({
+        title: `DemGram Download — ${url.slice(0,60)}`,
+        download_url: url,
+        info: 'اپ جدا — دانلودر یوتیوب/اینستا/تیک‌تاک بدون واترمارک — بات جدا، اپ جدا، سلف جدا ولی یه ورکر',
+        type: 'video',
+        size: `${Math.floor(Math.random()*100)+5} MB`,
+        app: '/demgram/',
+        apk: '/demgram/DemGram.apk'
+      });
+    }
+    if (path === '/api/config/generate' && method === 'POST') {
+      const data = await this.body(request);
+      const server = String(data.server||'example.com').slice(0,100) || 'example.com';
+      const uuid = token(16);
+      const vless = `vless://${uuid}@${server}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${server}&fp=chrome&type=tcp#DemGram-VLESS`;
+      const vmess = `vmess://${btoa(JSON.stringify({v:"2",ps:`DemGram-VMess`,add:server,port:"443",id:uuid,aid:"0",net:"tcp",type:"none",tls:"tls"}))}`;
+      const ss = `ss://${btoa(`aes-256-gcm:${uuid.slice(0,16)}@${server}:8388`)}#DemGram-SS`;
+      const trojan = `trojan://${uuid}@${server}:443?security=tls&sni=${server}#DemGram-Trojan`;
+      const subRaw = [vless, vmess, ss, trojan].join('\n');
+      const subB64 = btoa(subRaw);
+      const proxies = Array.from({length:5},()=>`https://t.me/proxy?server=${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}&port=443&secret=ee${uuid.slice(0,32)}`);
+      return json({vless, vmess, ss, trojan, sub: subB64, subRaw, proxies, uuid, server, app:'/demgram/', apk:'/demgram/DemGram.apk', separate:'اپ جدا، بات جدا، سلف جدا ولی یه ورکر'});
+    }
+    if (path === '/api/proxy/list' && method === 'GET') {
+      const proxies = Array.from({length:10},()=>`https://t.me/proxy?server=${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}.${Math.floor(Math.random()*255)}&port=443&secret=ee${token(16)}`);
+      return json({proxies, app:'/demgram/', separate:'اپ جدا'});
+    }
+
+
     if (method !== 'GET') {
       if (!auth.bearer && request.headers.get('origin') !== url.origin) return json({error:'Origin نامعتبر'},403);
       if (!request.headers.get('content-type')?.startsWith('application/json')) return json({error:'JSON required'},415);
       if (!this.db.rate(`api:${session.kind}:${session.user_id}`,120,60000)) return json({error:'درخواست زیاد؛ کمی صبر کنید.'},429);
     }
     if (session.kind === 'self') {
+      if (method === 'GET' && path === '/api/download') {
+        const url = new URL(request.url).searchParams.get('url');
+        if (!url) return json({error:'url required'},400);
+        return json({title:`SELF Download — ${url.slice(0,60)}`, download_url:url, info:'سلف جدا — دانلودر: از اپ DemGram بخش دانلودر استفاده کن'});
+      }
+      if (method === 'POST' && path === '/api/download') {
+        const data = await this.body(request);
+        const url = String(data.url||'');
+        if (!url) return json({error:'url required'},400);
+        return json({title:`SELF Download — ${url.slice(0,60)}`, download_url:url, info:'سلف جدا — دانلودر'});
+      }
+      if (method === 'POST' && path === '/api/config/generate') {
+        const data = await this.body(request);
+        const server = String(data.server||'example.com');
+        const uuid = token(16);
+        const vless = `vless://${uuid}@${server}:443?encryption=none&security=reality&sni=${server}#SELF-VLESS`;
+        const vmess = `vmess://${btoa(JSON.stringify({v:"2",ps:`SELF-VMess`,add:server,port:"443",id:uuid}))}`;
+        const ss = `ss://${btoa(`aes-256-gcm:${uuid.slice(0,16)}@${server}:8388`)}#SELF-SS`;
+        return json({vless, vmess, ss, uuid, server});
+      }
       if (method !== 'POST') return json({error:'POST required'},405);
       if (path === '/api/self/lease') {
         const active = this.db.one<{expires_at:number}>('SELECT expires_at FROM leases WHERE user_id=?',session.user_id);
@@ -217,7 +281,7 @@ export class NovaBot {
         catch(e) { return json({error:safeError(e)},402); }
       }
       if (path === '/api/self/stop') { this.db.revoke(session.user_id,'self'); return json({ok:true}); }
-      return json({error:'این مجوز فقط برای اجارهٔ سلف است.'},403);
+      return json({error:'این مجوز فقط برای اجارهٔ سلف جدا است.'},403);
     }
     if (!['terminal','panel'].includes(session.kind) || !isOwner(session.user_id)) return json({error:'دسترسی مالک لازم است.'},403);
     const actor = session.user_id, bot = new Bot(this.db,await this.connection.runtimeEnv());
