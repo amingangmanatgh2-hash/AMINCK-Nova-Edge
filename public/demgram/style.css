@@ -1,0 +1,31 @@
+:root{--bg:#0f1419;--card:#192734;--accent:#2AABEE;--text:#e6e6e6;--muted:#8899a6;--border:#38444d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Vazirmatn,IRANSans,Tahoma,sans-serif;background:var(--bg);color:var(--text);direction:rtl}
+a{color:var(--accent);text-decoration:none}
+.app{display:flex;min-height:100vh}
+.sidebar{width:320px;background:var(--card);border-left:1px solid var(--border);display:flex;flex-direction:column}
+.main{flex:1;display:flex;flex-direction:column}
+.header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--card)}
+.logo{font-size:22px;font-weight:900;color:var(--accent)}
+.btn{background:var(--accent);color:#fff;border:none;padding:10px 18px;border-radius:10px;cursor:pointer;font-weight:700;transition:.2s}
+.btn:hover{opacity:.9;transform:translateY(-1px)}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-danger{background:#e0245e}
+.input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--border);background:#101a24;color:var(--text);font-size:15px}
+.input:focus{outline:none;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.list-item{padding:12px;border-radius:10px;cursor:pointer;transition:.15s;display:flex;justify-content:space-between;align-items:center}
+.list-item:hover{background:#22303c}
+.badge{background:var(--accent);color:#fff;padding:2px 8px;border-radius:20px;font-size:12px}
+.tabs{display:flex;gap:6px;padding:10px;overflow:auto}
+.tab{padding:8px 14px;border-radius:20px;background:#22303c;cursor:pointer;white-space:nowrap}
+.tab.active{background:var(--accent);color:#fff}
+.chat-box{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:8px}
+.msg{max-width:70%;padding:10px 14px;border-radius:18px;background:#22303c;align-self:flex-start}
+.msg.me{align-self:flex-end;background:var(--accent);color:#fff}
+.composer{padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;background:var(--card)}
+.login{max-width:420px;margin:60px auto;padding:24px}
+.feature{padding:8px 0;border-bottom:1px dashed #2a3a48}
+.kbd{background:#22303c;padding:2px 6px;border-radius:4px;font-family:monospace}
+@media(max-width:900px){.sidebar{position:fixed;inset:0;z-index:20;transform:translateX(100%);transition:.3s}.sidebar.open{transform:none}.main{width:100%}}

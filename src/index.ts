@@ -1,955 +1,315 @@
-/**
- * AMINCK GOD Edition — Cloudflare Worker entry.
- *
- * Routing:
- *   GET  /healthz            public health check (CORS)
- *   GET  /                   Persian RTL browser admin panel
- *   GET  /app.js /app.css    minimal static assets
- *   POST /api/login …        JSON admin API (proxied to the Durable Object)
- *   POST /api/hot-update     one-click config regen without domain downtime
- *   GET  /sub/:token         subscriptions (v2ray base64 / clash / sing-box / raw)
- *   WS   /e<slug><userid>    VLESS over WebSocket proxy (random path + jitter)
- *
- * Security: Same-Origin checks on mutating requests, opaque server-stored
- * 256-bit HttpOnly session cookies, security headers (CSP, X-Frame-Options, Referrer-Policy,
- * Permissions-Policy) and server-side permission enforcement in the DO.
- */
-import type { Env } from './store';
-import { AMINCKStore } from './store';
-import type { ConfigFormat, Endpoint, PanelSettings, User } from './types';
-import { MAX_PATHS } from './types';
-import { classifyTarget, VlessSession } from './proxy';
-import type { SessionHooks, TcpSocket } from './proxy';
-import type { VlessTarget } from './protocol';
-import { parseVlessHeader } from './protocol';
-import { isPrivateLiteral } from './utils';
-import { defaultRuntimeHooks, probeAll } from './probe';
-import { aiGameIdReference, deterministicAiBuildPlan, parseAiBuildPlan } from './ai';
-import {
-  UI_APP_CSS,
-  UI_APP_JS,
-  UI_ICON_SVG,
-  UI_MANIFEST_JSON,
-  UI_SW_JS,
-  uiShell,
-} from './ui';
+import { Bot } from './bot';
+import { BotConnection } from './connection';
+import { passwordStamp } from './vault';
+import { COMMANDS } from './commands';
+import { DEFAULT_GLOBAL, GAMES, HOUR, LOCKS, OWNERS, VERSION, isOwner } from './config';
+import { Database } from './database';
+import { demoData } from './demo';
+import type { Env, GlobalSettings, GroupRow, Session, Update } from './types';
+import { hash, integer, json, safeError, secureEqual, token } from './utils';
 
-export { AMINCKStore };
-
-const AMINNOVA_RELEASE = '2026.08.22-ai-low-ping.4';
-const AMINNOVA_VERSION = '1.3.0';
-const DNS_CACHE = new Map<string, { ip: string; expiresAt: number }>();
-let UPDATE_CACHE: { expiresAt: number; value: Record<string, unknown> } | null = null;
-
-const PANEL_ASSETS = new Set([
-  '/', '/app.js', '/app.css', '/manifest.webmanifest', '/sw.js',
-  '/icon.svg', '/icon-192.png', '/icon-512.png', '/favicon.ico',
-]);
-
+const SECURITY: Record<string,string> = {
+  'x-content-type-options':'nosniff', 'referrer-policy':'no-referrer',
+  'permissions-policy':'camera=(), microphone=(), geolocation=()',
+  'content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'self' https://*.arena.ai https://arena.ai https://*.e2b.app",
+};
+async function boundedBody(request: Request): Promise<ArrayBuffer | null> {
+  if (!request.body) return new ArrayBuffer(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = []; let total = 0;
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > 131072) { await reader.cancel(); return null; }
+    chunks.push(value);
+  }
+  const result = new Uint8Array(total); let offset = 0;
+  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+  return result.buffer;
+}
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const host = url.host;
-    const path = url.pathname;
-
-    if (path === '/healthz') {
-      return withHeaders(
-        new Response(JSON.stringify({ ok: true, app: 'AMINNOVA', version: AMINNOVA_VERSION, release: AMINNOVA_RELEASE, ts: Date.now() }), {
-          headers: { 'content-type': 'application/json', 'x-aminck-release': AMINNOVA_RELEASE },
-        }),
-        { cors: true },
-      );
+    let response: Response;
+    if (request.method === 'OPTIONS') response = new Response(null,{status:405}); // No cross-origin API surface.
+    else if (url.pathname === '/health') response = json({ok:true,service:'nova-guard',version:VERSION});
+    else if (url.pathname === '/telegram' || url.pathname.startsWith('/api/')) {
+      if (['POST','PUT','PATCH'].includes(request.method)) {
+        const size = Number(request.headers.get('content-length') || 0);
+        if (size > 131072) return json({error:'درخواست بیش از حد بزرگ است.'},413,SECURITY);
+        const buffer = await boundedBody(request);
+        if (!buffer) return json({error:'درخواست بیش از حد بزرگ است.'},413,SECURITY);
+        request = new Request(request,{body:buffer});
+      }
+      response = await env.NOVA.get(env.NOVA.idFromName('nova-guard-v1')).fetch(request);
+    } else response = await env.ASSETS.fetch(request);
+    const headers = new Headers(response.headers);
+    for (const [key,value] of Object.entries(SECURITY)) headers.set(key,value);
+    // Embeddable read-only demo; authenticated deployments cannot be clickjacked.
+    if (env.DEMO_MODE !== 'true') {
+      headers.set('content-security-policy',SECURITY['content-security-policy'].replace(/frame-ancestors .+$/,"frame-ancestors 'none'"));
+      headers.set('x-frame-options','DENY');
     }
-
-    if (request.method === 'GET' && PANEL_ASSETS.has(path)) {
-      // Static PWA assets are generated from src/ui.ts and still go through
-      // the Worker so security headers apply. API/subscription responses are
-      // deliberately excluded from the service-worker cache.
-      if (env.ASSETS && path !== '/favicon.ico') {
-        const assetRes = await env.ASSETS.fetch(request);
-        if (assetRes.status !== 404) {
-          const headers = new Headers(assetRes.headers);
-          if (path === '/sw.js') {
-            headers.set('cache-control', 'no-cache, no-store, must-revalidate');
-            headers.set('service-worker-allowed', '/');
-          }
-          return withHeaders(new Response(assetRes.body, { status: assetRes.status, headers }), {});
-        }
-      }
-      if (path === '/') return withHeaders(html(uiShell('AMINNOVA')), {});
-      if (path === '/app.js') {
-        return withHeaders(new Response(UI_APP_JS, { headers: { 'content-type': 'application/javascript; charset=utf-8' } }), {});
-      }
-      if (path === '/app.css') {
-        return withHeaders(new Response(UI_APP_CSS, { headers: { 'content-type': 'text/css; charset=utf-8' } }), {});
-      }
-      if (path === '/manifest.webmanifest') {
-        return withHeaders(new Response(UI_MANIFEST_JSON, { headers: { 'content-type': 'application/manifest+json; charset=utf-8' } }), {});
-      }
-      if (path === '/sw.js') {
-        return withHeaders(new Response(UI_SW_JS, { headers: {
-          'content-type': 'application/javascript; charset=utf-8',
-          'cache-control': 'no-cache, no-store, must-revalidate',
-          'service-worker-allowed': '/',
-        } }), {});
-      }
-      if (path === '/icon-192.png' || path === '/icon-512.png') {
-        return withHeaders(json({ error: 'asset-binding-required' }, 404), {});
-      }
-      return withHeaders(new Response(UI_ICON_SVG, { headers: { 'content-type': 'image/svg+xml; charset=utf-8' } }), {});
-    }
-    if (request.method === 'GET' && path === '/robots.txt') return new Response('', { status: 204 });
-
-    if (path.startsWith('/api/')) {
-      return handleApi(request, env, ctx, host);
-    }
-
-    const subMatch = path.match(/^\/sub\/([0-9a-f]{64})(?:\/(raw|clash|singbox|v2ray))?\/?$/i);
-    if (subMatch) {
-      return handleSub(request, env, ctx, host, subMatch[1]!, (subMatch[2] ?? '') as ConfigFormat | '');
-    }
-
-    // Anti-detect path jitter: slug length 6–12
-    if (path.match(/^\/e[a-z0-9]{6,12}[0-9a-f]{24}$/i)) {
-      return handleWs(request, env, ctx, host, path);
-    }
-
-    return withHeaders(json({ error: 'not-found', message: 'مسیر یافت نشد' }, 404), {});
+    if (url.protocol === 'https:') headers.set('strict-transport-security','max-age=31536000');
+    if (url.pathname.startsWith('/api/') || url.pathname === '/') headers.set('cache-control','no-store');
+    return new Response(response.body,{status:response.status,headers});
   },
+} satisfies ExportedHandler<Env>;
 
-  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runCronProbe(env));
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Admin API
-// ---------------------------------------------------------------------------
-
-const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-
-type AiProfileAdvice = {
-  speedPreset: 'stable' | 'balanced' | 'turbo' | 'god' | 'latency';
-  profileMode: 'auto' | 'fallback' | 'balance';
-};
-
-export function parseAiProfileAdvice(value: unknown): AiProfileAdvice | null {
-  const response = value && typeof value === 'object'
-    ? String((value as { response?: unknown; output_text?: unknown }).response
-      ?? (value as { output_text?: unknown }).output_text ?? '')
-    : String(value ?? '');
-  const match = response.match(/\{[\s\S]*?\}/);
-  if (!match) return null;
-  try {
-    const parsed = JSON.parse(match[0]) as Partial<AiProfileAdvice>;
-    if (!['stable', 'balanced', 'turbo', 'god', 'latency'].includes(String(parsed.speedPreset))) return null;
-    if (!['auto', 'fallback', 'balance'].includes(String(parsed.profileMode))) return null;
-    return parsed as AiProfileAdvice;
-  } catch {
-    return null;
+export class NovaBot {
+  readonly db: Database;
+  readonly connection: BotConnection;
+  private tail: Promise<unknown> = Promise.resolve();
+  private stampCache: {value:string;salt:string;digest:string} | null = null;
+  constructor(readonly ctx: DurableObjectState, readonly env: Env) {
+    this.db = new Database(ctx.storage);
+    this.connection = new BotConnection(this.db, env);
+    // In-flight external effects are deliberately not blindly replayed after a crash.
+    this.db.exec("UPDATE updates SET status='uncertain',payload='{}',error='Interrupted during processing; not replayed' WHERE status='processing'");
+    this.db.exec("UPDATE jobs SET state='uncertain' WHERE state='sending'");
   }
-}
-
-async function createAiBuildPlan(prompt: string, env: Env): Promise<Record<string, unknown>> {
-  const fallback = deterministicAiBuildPlan(prompt);
-  if (!env.AI) {
-    return {
-      ok: true,
-      plan: fallback,
-      cloudflareAiUsed: false,
-      deterministicFallback: true,
-      message: 'Binding هوش مصنوعی در دسترس نیست؛ موتور امن فارسی همان طرح را به‌صورت محلی ساخت.',
-    };
+  private exclusive<T>(fn:()=>Promise<T>): Promise<T> {
+    const next = this.tail.then(fn,fn); this.tail = next.catch(()=>{}); return next;
   }
-  try {
-    const instruction = [
-      'You are the constrained AMINNOVA subscription planner. Return one JSON object only.',
-      'Allowed fields: paths, subscriptionCount, usageMode, gameIds, ironMode, ironCount, domesticDirect, speedPreset, profileMode, dynamicPool, rotationMinutes, useCleanCatalog.',
-      'speedPreset must be stable|balanced|turbo|god|latency; profileMode auto|fallback|balance; usageMode normal|gaming.',
-      'Use latency for lowest measured route selection, fallback for interruption resistance, and domesticDirect for explicitly requested Iranian/national-network continuity.',
-      'Never promise a ping, location, universal access, censorship bypass, or uptime. Never return URLs, domains, secrets, code, or extra keys.',
-      `Valid game ids: ${aiGameIdReference()}`,
-    ].join('\n');
-    const result = await Promise.race([
-      env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
-        messages: [
-          { role: 'system', content: instruction },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 450,
-        temperature: 0,
-      }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 5000)),
-    ]);
-    const parsed = parseAiBuildPlan(result, fallback);
-    if (!parsed) throw new Error('ai-invalid-plan');
-    return {
-      ok: true,
-      plan: parsed,
-      cloudflareAiUsed: true,
-      deterministicFallback: false,
-      message: 'Cloudflare AI طرح را ساخت و Backend همه فیلدها و Game IDها را دوباره محدود و اعتبارسنجی کرد.',
-    };
-  } catch {
-    return {
-      ok: true,
-      plan: fallback,
-      cloudflareAiUsed: false,
-      deterministicFallback: true,
-      message: 'AI ابری پاسخ معتبر نداد؛ موتور امن فارسی بدون متوقف‌کردن ساخت، طرح محدودشده را آماده کرد.',
-    };
-  }
-}
-
-async function handleApi(request: Request, env: Env, ctx: ExecutionContext, host: string): Promise<Response> {
-  const url = new URL(request.url);
-  const path = url.pathname;
-
-  if (MUTATING.has(request.method) && !sameOriginOk(request, host)) {
-    return withHeaders(json({ error: 'forbidden', message: 'درخواست از مبدأ خارجی رد شد' }, 403), {});
-  }
-
-  await ensureSelfEndpoint(env, host);
-
-  if (path === '/api/login' && request.method === 'POST') {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const doRes = await callDo(env, '/int/login', {
-      username: body.username ?? '',
-      password: body.password ?? '',
-      ip: clientIp(request),
+  async fetch(request: Request): Promise<Response> {
+    // The webhook only enqueues. Fast acknowledgment happens after durable persistence.
+    if (new URL(request.url).pathname === '/telegram') return this.webhook(request);
+    return this.exclusive(async()=> {
+      try { return await this.route(request); }
+      catch(e) { return json({error:safeError(e)},400); }
     });
-    const data = await doRes.json().catch(() => ({}));
-    const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
-    if (data && typeof data === 'object' && (data as { ok?: boolean }).ok && typeof (data as { session?: string }).session === 'string') {
-      headers.set(
-        'set-cookie',
-        `nova_session=${(data as { session: string }).session}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${12 * 60 * 60}`,
-      );
+  }
+  private async wake(delay=500) {
+    const alarm = await this.ctx.storage.getAlarm();
+    const next = Date.now()+delay;
+    if (!alarm || alarm>next) await this.ctx.storage.setAlarm(next);
+  }
+  async webhook(request: Request) {
+    if (request.method !== 'POST') return json({error:'POST required'},405);
+    if (this.env.DEMO_MODE === 'true') return json({error:'Demo does not receive Telegram updates'},503);
+    const {credentials} = await this.connection.current();
+    if (!credentials?.webhookSecret) return json({error:'Webhook is not configured'},503);
+    const secret = request.headers.get('x-telegram-bot-api-secret-token') || '';
+    if (!await secureEqual(secret,credentials.webhookSecret)) return json({error:'Unauthorized'},401);
+    let update: Update;
+    try { update = await request.json(); } catch { return json({error:'Invalid JSON'},400); }
+    if (!update || !Number.isSafeInteger(update.update_id) || update.update_id<0) return json({error:'Invalid update'},400);
+    const existing = this.db.one('SELECT id FROM updates WHERE id=?',update.update_id);
+    if (!existing) {
+      const count = this.db.one<{n:number}>("SELECT COUNT(*) n FROM updates WHERE status='pending'")!.n;
+      if (count>=2000) return json({error:'Queue is full; retry later'},503);
+      this.db.exec('INSERT OR IGNORE INTO updates(id,payload,created_at) VALUES (?,?,?)',update.update_id,JSON.stringify(update),Date.now());
     }
-    return withHeaders(new Response(JSON.stringify(data), { status: doRes.status, headers }), {});
+    this.db.setMeta('connection.lastReceivedAt',Date.now());
+    const chat = update.message?.chat || update.edited_message?.chat || update.my_chat_member?.chat || update.chat_join_request?.chat || update.callback_query?.message?.chat;
+    if (chat && ['group','supergroup'].includes(chat.type)) this.db.setMeta('connection.lastGroupAt',Date.now());
+    await this.wake(); return json({ok:true});
   }
-
-  if (path === '/api/launch' && (request.method === 'GET' || request.method === 'POST')) {
-    return withHeaders(json(launchInfo()), {});
-  }
-
-  if (path === '/api/update-check' && request.method === 'GET') {
-    return withHeaders(json(await checkForSourceUpdate()), {});
-  }
-
-  if (path === '/api/logout' && request.method === 'POST') {
-    const sessionId = await cookieSession(request, env);
-    if (sessionId) await callDo(env, '/int/session-delete', { sessionId });
-    const headers = new Headers({
-      'set-cookie': 'nova_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0',
-    });
-    return withHeaders(new Response(JSON.stringify({ ok: true }), { status: 200, headers }), {});
-  }
-
-  // on-demand probe: session-gated, executes from the worker (has sockets)
-  if (path === '/api/probe' && request.method === 'POST') {
-    return handleProbe(request, env);
-  }
-
-  const sessionId = (await cookieSession(request, env)) ?? '';
-  const rest = path.slice('/api'.length) || '/';
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-
-  if (path === '/api/ai-plan' && request.method === 'POST') {
-    if (!sessionId) return withHeaders(json({ error: 'unauthorized' }, 401), {});
-    const meResponse = await callDo(env, '/api/me', { sessionId });
-    if (!meResponse.ok) return withHeaders(json({ error: 'unauthorized' }, 401), {});
-    const meData = await meResponse.json() as { me?: { permissions?: string[] } };
-    if (!meData.me?.permissions?.includes('configs:build')) {
-      return withHeaders(json({ error: 'forbidden', message: 'دسترسی ساخت کانفیگ لازم است' }, 403), {});
-    }
-    const prompt = String(body.prompt ?? '').trim().slice(0, 1000);
-    if (prompt.length < 3) {
-      return withHeaders(json({ error: 'bad-prompt', message: 'درخواست خود را حداقل در سه کاراکتر توضیح دهید' }, 400), {});
-    }
-    return withHeaders(json(await createAiBuildPlan(prompt, env)), {});
-  }
-
-  // Auto Build must always measure endpoints immediately before choosing them,
-  // including direct API calls (not only clicks coming from our browser UI).
-  // Only measured-healthy endpoints are passed as a preference; if none pass,
-  // the store safely falls back to the deployment's own registered hostname.
-  if (path === '/api/auto-build' && request.method === 'POST' && sessionId) {
-    delete body.aiApplied;
-    delete body.aiRecommendation;
-    let healthyForAdvice: Array<{ latencyMs: number }> = [];
-    let mayUseAi = false;
-    try {
-      const probeResponse = await handleProbe(request, env);
-      if (probeResponse.ok) {
-        // handleProbe has validated both the session and endpoints:probe
-        // permission, preventing forged cookies from consuming AI quota.
-        mayUseAi = true;
-        const probe = (await probeResponse.json()) as {
-          results?: Record<string, { ok?: boolean; latencyMs?: number }>;
-          ordered?: Endpoint[];
-        };
-        const selectedIds = new Set((Array.isArray(body.endpointIds) ? body.endpointIds : []).map(String));
-        const healthy = (probe.ordered ?? []).filter((endpoint) =>
-          probe.results?.[endpoint.id]?.ok === true && (selectedIds.size === 0 || selectedIds.has(endpoint.id)),
-        );
-        healthyForAdvice = healthy.map((endpoint) => ({
-          latencyMs: Math.max(0, Math.round(Number(probe.results?.[endpoint.id]?.latencyMs ?? 0))),
-        }));
-        if (healthy.length > 0) body.orderedEndpoints = healthy;
-      }
-    } catch {
-      // Fresh deployments still have their own hostname as a safe fallback.
-    }
-
-    if (body.useCloudflareAi === true && mayUseAi && env.AI) {
+  async drain() {
+    const runtime = await this.connection.runtimeEnv();
+    if (!runtime.BOT_TOKEN || !runtime.WEBHOOK_SECRET) return false;
+    const bot = new Bot(this.db,runtime);
+    const updates = this.db.all<{id:number;payload:string}>("SELECT id,payload FROM updates WHERE status='pending' ORDER BY created_at,id LIMIT 3");
+    for (const update of updates) {
+      this.db.exec("UPDATE updates SET status='processing' WHERE id=?",update.id);
       try {
-        const prompt = [
-          'You select conservative AMINNOVA client profile settings from measured data.',
-          'Return only JSON with speedPreset (stable|balanced|turbo|god|latency) and profileMode (auto|fallback|balance).',
-          `routeCount=${Math.max(1, Math.min(MAX_PATHS, Number(body.paths ?? 20) || 20))}`,
-          `healthyEndpointLatenciesMs=${healthyForAdvice.map((item) => item.latencyMs).join(',') || 'none'}`,
-          'Use latency/auto for Gaming or lowest measured delay; prefer fallback/stable when measurements are sparse or interruption resistance is requested. Never claim guaranteed connectivity or ping.',
-        ].join('\n');
-        const inference = env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast', {
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 80,
-          temperature: 0,
-        });
-        const result = await Promise.race([
-          inference,
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ai-timeout')), 4000)),
-        ]);
-        const advice = parseAiProfileAdvice(result);
-        if (advice) {
-          body.speedPreset = advice.speedPreset;
-          body.profileMode = advice.profileMode;
-          body.aiApplied = true;
-          body.aiRecommendation = `${advice.speedPreset}/${advice.profileMode}`;
-        }
-      } catch {
-        // AI is optional and can be quota/model restricted. Deterministic probe
-        // defaults remain authoritative and Auto Build must still succeed.
+        await bot.handle(JSON.parse(update.payload));
+        this.db.exec("UPDATE updates SET status='done',payload='{}' WHERE id=?",update.id);
+        this.db.setMeta('connection.lastProcessedAt',Date.now());
+      } catch(e) {
+        this.db.exec("UPDATE updates SET status='failed',payload='{}',error=? WHERE id=?",safeError(e),update.id);
+        this.db.log(0,null,'update.failed',`${update.id}: ${safeError(e)}`);
       }
     }
+    await bot.jobs();
+    if (Date.now()-this.db.meta('last.cleanup',0)>HOUR) { this.db.cleanup(); this.db.setMeta('last.cleanup',Date.now()); }
+    return true;
   }
-
-  const payload: Record<string, unknown> = { ...body, sessionId, ip: clientIp(request), reqHost: host };
-  const doRes = await callDo(env, `/api${rest}`, payload);
-  return withHeaders(doRes, {});
-}
-
-async function cookieSession(request: Request, _env: Env): Promise<string | null> {
-  const cookie = request.headers.get('cookie') ?? '';
-  const m = cookie.match(/(?:^|;\s*)nova_session=([0-9a-f]{64})(?:;|$)/i);
-  // The cookie itself is a cryptographically random 256-bit bearer token.
-  // The Durable Object checks that it exists, is active and has not expired.
-  return m ? m[1]!.toLowerCase() : null;
-}
-
-/** Run an on-demand endpoint probe from the worker edge and store results. */
-async function handleProbe(request: Request, env: Env): Promise<Response> {
-  const sessionId = (await cookieSession(request, env)) ?? '';
-  if (!sessionId) return withHeaders(json({ error: 'unauthorized' }, 401), {});
-  const meRes = await callDo(env, '/api/me', { sessionId });
-  const meData = (await meRes.json()) as { me?: { permissions?: string[] } };
-  const perms = meData.me?.permissions ?? [];
-  if (!perms.includes('endpoints:probe')) {
-    return withHeaders(json({ error: 'forbidden', message: 'دسترسی کافی نیست' }, 403), {});
-  }
-  const res = await callDo(env, '/int/cron-probe', {});
-  const data = (await res.json()) as { ok: boolean; endpoints: Endpoint[] };
-  const endpoints = data.endpoints ?? [];
-  const settingsLike = { endpoints } as PanelSettings;
-  const results = await probeAll(defaultRuntimeHooks, settingsLike, 'balanced');
-  await callDo(env, '/int/probe-results', { results });
-  const ordered = endpoints
-    .slice()
-    .sort((a, b) => {
-      const ra = results[a.id];
-      const rb = results[b.id];
-      const okA = ra?.ok ? 0 : 1;
-      const okB = rb?.ok ? 0 : 1;
-      if (okA !== okB) return okA - okB;
-      if (ra?.ok && rb?.ok) return (ra.latencyMs ?? Infinity) - (rb.latencyMs ?? Infinity);
-      return 0;
-    });
-  return withHeaders(json({ ok: true, results, ordered }), {});
-}
-
-function clientIp(request: Request): string {
-  return request.headers.get('cf-connecting-ip') ?? request.headers.get('x-forwarded-for') ?? '';
-}
-
-function sameOriginOk(request: Request, host: string): boolean {
-  const secFetchSite = request.headers.get('sec-fetch-site');
-  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') return false;
-  const origin = request.headers.get('origin');
-  if (origin) {
-    let o: URL;
-    try {
-      o = new URL(origin);
-    } catch {
-      return false;
-    }
-    if (o.host !== host) return false;
-  }
-  return true;
-}
-
-export async function callDo(env: Env, path: string, body: Record<string, unknown>): Promise<Response> {
-  const id = env.AMINCK_STORE.idFromName('global');
-  const stub = env.AMINCK_STORE.get(id);
-  return stub.fetch(`https://nova-edge.internal${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-const seededHosts = new Set<string>();
-
-/** Make sure this deployment's own host is a known endpoint (workers.dev default). */
-async function ensureSelfEndpoint(env: Env, host: string): Promise<void> {
-  const clean = host.replace(/:\d+$/, '').toLowerCase();
-  if (!clean || seededHosts.has(clean)) return;
-  // Mark the host as seeded only after Durable Object persistence succeeds.
-  // A transient cold-start failure must not poison this isolate and leave the
-  // deployment's own (known-working) hostname absent from generated routes.
-  try {
-    const response = await callDo(env, '/int/ensure-self', { host: clean });
-    if (response.ok) seededHosts.add(clean);
-  } catch {
-    // Retry on the next API request.
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Subscriptions
-// ---------------------------------------------------------------------------
-
-async function handleSub(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-  host: string,
-  token: string,
-  forcedFormat: ConfigFormat | '',
-): Promise<Response> {
-  const ua = request.headers.get('user-agent') ?? '';
-  const doRes = await callDo(env, '/int/sub-fetch', {
-    token,
-    ua: ua.slice(0, 200),
-    ip: clientIp(request),
-    host,
-  });
-  if (!doRes.ok) {
-    return withHeaders(new Response('not-found', { status: doRes.status >= 400 ? doRes.status : 404 }), {});
-  }
-  const data = (await doRes.json()) as {
-    user: User;
-    settings: PanelSettings;
-    payloads: Record<ConfigFormat, string>;
-    rotation?: {
-      enabled: boolean;
-      epoch: number;
-      nextRotationAt: number;
-      rotationMinutes: number;
-      activeRoutes: number;
-    };
-  };
-
-  let format: ConfigFormat;
-  const fmtParam = forcedFormat || (request.headers.get('x-format') ?? '');
-  if (fmtParam && ['v2ray', 'raw', 'clash', 'singbox'].includes(fmtParam)) {
-    format = fmtParam as ConfigFormat;
-  } else {
-    const u = ua.toLowerCase();
-    if (u.includes('clash') || u.includes('mihomo') || u.includes('stash')) format = 'clash';
-    else if (u.includes('sing-box') || u.includes('singbox')) format = 'singbox';
-    else format = 'v2ray';
-  }
-
-  const payload = data.payloads[format] ?? data.payloads.v2ray;
-  const user = data.user;
-  const settings = data.settings;
-
-  const headers = new Headers();
-  headers.set('content-type', contentTypeFor(format));
-  const safeName = user.name.replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 40) || 'sub';
-  // Keep payload visible when the operator opens a test/raw link in a browser;
-  // subscription clients still consume the exact same response body.
-  headers.set('content-disposition', `inline; filename="AMINCK-Nova-Edge-${safeName}.txt"`);
-  headers.set(
-    'subscription-userinfo',
-    `upload=0; download=${user.usageBytes}; total=${user.limitBytes}; expire=${user.expiresAt}`,
-  );
-  headers.set('profile-update-interval', `${settings.updateIntervalHours || 24}h`);
-  if (settings.supportUrl) headers.set('support-url', settings.supportUrl);
-  const rotation = data.rotation;
-  if (rotation?.enabled) {
-    headers.set('x-aminck-pool-mode', 'rolling');
-    headers.set('x-aminck-rotation-epoch', String(rotation.epoch));
-    headers.set('x-aminck-rotation-minutes', String(rotation.rotationMinutes));
-    headers.set('x-aminck-next-rotation', String(rotation.nextRotationAt));
-    headers.set('x-aminck-active-routes', String(rotation.activeRoutes));
-    headers.set('x-aminck-refresh-seconds', String(rotation.rotationMinutes * 60));
-  } else {
-    headers.set('x-aminck-pool-mode', 'fixed');
-  }
-  headers.set('etag', `W/"aminnova-${data.user.id}-${settings.configGeneration}-${rotation?.epoch ?? 0}-${format}"`);
-  headers.set('x-aminck-release', AMINNOVA_RELEASE);
-  headers.set('x-aminck-version', AMINNOVA_VERSION);
-  headers.set('cache-control', 'private, no-store, max-age=0, must-revalidate');
-  headers.set('pragma', 'no-cache');
-  return withHeaders(new Response(payload, { status: 200, headers }), {});
-}
-
-function contentTypeFor(format: ConfigFormat): string {
-  if (format === 'clash') return 'text/yaml; charset=utf-8';
-  if (format === 'singbox') return 'application/json; charset=utf-8';
-  if (format === 'raw') return 'text/plain; charset=utf-8';
-  return 'application/octet-stream; charset=utf-8';
-}
-
-// ---------------------------------------------------------------------------
-// VLESS over WebSocket
-// ---------------------------------------------------------------------------
-
-async function handleWs(request: Request, env: Env, ctx: ExecutionContext, host: string, path: string): Promise<Response> {
-  if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-    return withHeaders(json({ error: 'bad-request', message: 'اتصال باید WebSocket باشد' }, 400), {});
-  }
-  const m = path.match(/^\/e([a-z0-9]{6,12})([0-9a-f]{24})$/i);
-  if (!m) return withHeaders(json({ error: 'not-found' }, 404), {});
-  const userId = m[2]!.toLowerCase();
-
-  const connectRes = await callDo(env, '/int/connect-by-id', { userId, path, ip: clientIp(request) });
-  const conn = (await connectRes.json()) as {
-    ok: boolean;
-    reason?: string;
-    uuid?: string;
-    policy?: {
-      dohList: string[];
-      tcpPorts: number[];
-      tcpRetries: number;
-      connectTimeoutMs: number;
-      maxEarlyData: number;
-    };
-  };
-
-  if (!conn.ok) {
-    return withHeaders(json({ ok: false, reason: conn.reason ?? 'denied' }, connectRes.status >= 400 ? connectRes.status : 403), {});
-  }
-
-  const pair = new WebSocketPair();
-  // WebSocketPair[0] is returned to the client; [1] is the Worker-side socket.
-  // Reversing them still produced HTTP 101 but Worker message handlers never
-  // received client frames, so every valid VLESS config stalled until timeout.
-  const client = pair[0];
-  const server = pair[1];
-  server.accept();
-
-  const bridge = new WsVlessBridge(server, env, ctx, conn.uuid!, conn.policy!);
-  server.addEventListener('message', (ev: MessageEvent) => {
-    if (typeof ev.data === 'string') return;
-    if (ev.data instanceof ArrayBuffer || ArrayBuffer.isView(ev.data)) {
-      bridge.feed(ev.data as ArrayBuffer | ArrayBufferView);
-      return;
-    }
-    // Some local/runtime WebSocket adapters surface binary frames as Blob.
-    // Accepting it prevents a successful 101 followed by an empty VLESS parser.
-    if (ev.data instanceof Blob) {
-      void ev.data.arrayBuffer().then((data) => bridge.feed(data)).catch(() => bridge.shutdown());
-    }
-  });
-  server.addEventListener('close', () => bridge.shutdown());
-  server.addEventListener('error', () => bridge.shutdown());
-  const earlyData = decodeWsEarlyData(
-    request.headers.get('sec-websocket-protocol'),
-    conn.policy!.maxEarlyData,
-  );
-  if (earlyData) bridge.feed(earlyData);
-  ctx.waitUntil(bridge.finished());
-
-  return withHeaders(new Response(null, { status: 101, webSocket: client }), {});
-}
-
-/** Bridges one WebSocket client to one VLESS session. */
-class WsVlessBridge {
-  private engine: VlessSession | null = null;
-  private headerBuf: Uint8Array = new Uint8Array(0);
-  private settled = false;
-  private closed = false;
-  private resolveFinished!: (r: unknown) => void;
-  readonly finishedPromise: Promise<unknown>;
-
-  constructor(
-    private server: WebSocket,
-    private env: Env,
-    private ctx: ExecutionContext,
-    private uuid: string,
-    private policy: {
-      dohList: string[];
-      tcpPorts: number[];
-      tcpRetries: number;
-      connectTimeoutMs: number;
-      maxEarlyData: number;
-    },
-  ) {
-    this.finishedPromise = new Promise((resolve) => {
-      this.resolveFinished = resolve;
+  async alarm() {
+    await this.exclusive(async()=> {
+      let ready = false;
+      try { ready = await this.drain(); }
+      finally {
+        const pending = this.db.one<{n:number}>("SELECT COUNT(*) n FROM updates WHERE status='pending'")!.n;
+        const jobs = this.db.one<{at:number|null}>("SELECT MIN(next_at) at FROM jobs WHERE state='pending'")?.at;
+        const duels = this.db.one<{at:number|null}>("SELECT MIN(expires_at) at FROM duels WHERE state IN ('creating','open','active')")?.at;
+        const captcha = this.db.one<{at:number|null}>('SELECT MIN(expires_at) at FROM captchas')?.at;
+        const next = Math.min(Date.now()+HOUR,...[jobs,duels,captcha].filter((v):v is number=>typeof v==='number'));
+        await this.ctx.storage.setAlarm(pending ? Date.now()+(ready ? 1000 : 60000) : Math.max(Date.now()+(ready ? 1000 : 60000),next));
+      }
     });
   }
-
-  async finished(): Promise<unknown> {
-    return this.finishedPromise;
+  private async body(request: Request): Promise<Record<string,unknown>> {
+    if (!request.headers.get('content-type')?.startsWith('application/json')) throw new Error('Content-Type باید application/json باشد.');
+    let data: unknown;
+    try { data = await request.json(); } catch { throw new Error('فرم ارسالی معتبر نیست؛ صفحه را تازه کنید و دوباره امتحان کنید.'); }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('بدنهٔ JSON نامعتبر');
+    return data as Record<string,unknown>;
   }
-
-  feed(data: ArrayBuffer | ArrayBufferView): void {
-    if (this.closed) return;
-    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength);
-    if (!this.engine) {
-      this.headerBuf = this.headerBuf.length === 0 ? bytes : concatBytes(this.headerBuf, bytes);
-      const parsed = parseVlessHeader(this.headerBuf);
-      if (parsed.state === 'need-more') return;
-      if (parsed.state === 'invalid') {
-        this.close(1002, parsed.reason);
-        return;
+  private async auth(request: Request): Promise<{session?:Session;digest:string;bearer:boolean}> {
+    const previous = this.db.meta<{kdf?:string;salt?:string;digest?:string} | null>('panel.epoch',null);
+    const salt = previous?.kdf === 'pbkdf2-sha256-100k' && typeof previous.salt === 'string' && /^[a-f0-9]{32}$/.test(previous.salt) ? previous.salt : token(16);
+    const value = (this.env.PANEL_PASSWORD || '') + ':' + (this.env.WEBHOOK_SECRET || '');
+    const digest = this.stampCache?.value === value && this.stampCache.salt === salt ? this.stampCache.digest : await passwordStamp(value,salt);
+    this.stampCache = {value,salt,digest};
+    if (previous?.digest !== digest || previous.kdf !== 'pbkdf2-sha256-100k') {
+      this.db.exec("DELETE FROM tokens WHERE kind='panel'");
+      this.db.setMeta('panel.epoch',{kdf:'pbkdf2-sha256-100k',salt,digest});
+    }
+    const bearer = request.headers.get('authorization')?.startsWith('Bearer ') || false;
+    const credential = bearer ? request.headers.get('authorization')!.slice(7) : /(?:^|;\s*)nova_session=([a-f0-9]+)/.exec(request.headers.get('cookie') || '')?.[1] || '';
+    const credentialDigest = await hash(credential);
+    return { session: credential ? this.db.session(credentialDigest) : undefined, digest:credentialDigest, bearer };
+  }
+  private groups() {
+    return this.db.all<GroupRow>('SELECT * FROM groups ORDER BY joined_at DESC LIMIT 200').map(g=>({...g,settings:this.db.settings(g.id),members:this.db.one<{n:number}>('SELECT COUNT(*) n FROM members WHERE chat_id=?',g.id)!.n,messages:this.db.one<{n:number}>('SELECT COALESCE(SUM(messages),0) n FROM members WHERE chat_id=?',g.id)!.n}));
+  }
+  private users(chat?:number) {
+    const users = chat ? this.db.all<Record<string,unknown>>('SELECT u.id,u.name,u.coins,u.diamonds,u.frozen,m.xp,m.wins,m.losses FROM members m JOIN users u ON u.id=m.user_id WHERE chat_id=? ORDER BY m.wins DESC,m.xp DESC LIMIT 100',chat) : this.db.all<Record<string,unknown>>('SELECT id,name,coins,diamonds,frozen,xp,wins,losses FROM users ORDER BY wins DESC,xp DESC LIMIT 100');
+    return users.map(u=>({...u,diamonds:isOwner(Number(u.id)) ? null : u.diamonds,unlimited:isOwner(Number(u.id)),lease:this.db.one<{expires_at:number}>('SELECT expires_at FROM leases WHERE user_id=?',Number(u.id))?.expires_at || null}));
+  }
+  private duels() { return this.db.all('SELECT d.*,a.name creator_name,b.name opponent_name FROM duels d JOIN users a ON a.id=d.creator LEFT JOIN users b ON b.id=d.opponent ORDER BY d.created_at DESC LIMIT 100'); }
+  private logs() { return this.db.all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'); }
+  private async route(request: Request): Promise<Response> {
+    const url = new URL(request.url), path = url.pathname, method = request.method;
+    const demo = this.env.DEMO_MODE === 'true';
+    if (method === 'GET' && path === '/api/catalog') return json({commands:COMMANDS,locks:LOCKS,games:GAMES,version:VERSION,owners:OWNERS,ownerCommands:COMMANDS.filter(c=>c.role==='owner').length});
+    if (demo) {
+      if (path === '/api/session') return json({authenticated:true,demo:true,userId:OWNERS[0],owners:OWNERS,version:VERSION});
+      if (method !== 'GET') return json({error:'این پیش‌نمایش فقط نمایشی است؛ هیچ فرمانی به تلگرام ارسال نمی‌شود.'},409);
+      const data = demoData(path); return data ? json({...data,demo:true}) : json({error:'Not found'},404);
+    }
+    const auth = await this.auth(request), session = auth.session;
+    if (path === '/api/session' && method === 'GET') return json({authenticated:!!session && ['panel','terminal'].includes(session.kind) && isOwner(session.user_id),demo:false,version:VERSION,userId:session?.user_id,owners:session && isOwner(session.user_id) ? OWNERS : undefined});
+    if (path === '/api/login' && method === 'POST') {
+      if (request.headers.get('origin') !== url.origin) return json({error:'Origin نامعتبر'},403);
+      if (!this.env.PANEL_PASSWORD || this.env.PANEL_PASSWORD.length<16 || this.env.PANEL_PASSWORD.startsWith('REPLACE_')) return json({error:'رمز پنل هنوز به‌صورت امن در Secrets تنظیم نشده.'},503);
+      const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+      if (!this.db.rate(`login:${await hash(ip)}`,5,15*60000)) return json({error:'تلاش‌های زیاد؛ ۱۵ دقیقه بعد دوباره امتحان کنید.'},429);
+      const data = await this.body(request);
+      if (typeof data.password !== 'string' || !await secureEqual(data.password,this.env.PANEL_PASSWORD)) return json({error:'رمز ورود نادرست است.'},401);
+      const credential = token(32); this.db.addToken(await hash(credential),OWNERS[0],'panel',Date.now()+12*HOUR);
+      this.db.log(OWNERS[0],null,'panel.login');
+      return json({ok:true},200,{'set-cookie':`nova_session=${credential}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200${url.protocol==='https:' ? '; Secure' : ''}`});
+    }
+    if (['/api/self/pair','/api/terminal/pair'].includes(path) && method === 'POST') {
+      const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+      if (!this.db.rate(`pair:${await hash(ip)}`,10,10*60000)) return json({error:'درخواست زیاد؛ بعداً تلاش کنید.'},429);
+      const data = await this.body(request), kind = path.includes('/terminal/') ? 'terminal' : 'self';
+      if (typeof data.code !== 'string' || !/^[a-f0-9]{32}$/.test(data.code)) return json({error:'کد اتصال ۳۲ کاراکتری معتبر نیست.'},400);
+      const userId = kind === 'self' ? integer(data.userId as number,1,Number.MAX_SAFE_INTEGER) : undefined;
+      const credential = token(32), pair = this.db.pair(await hash(data.code),await hash(credential),kind,userId);
+      return json({token:credential,userId:pair.user_id,expiresIn:30*86400,kind});
+    }
+    if (!session) return json({error:'ابتدا وارد شوید.'},401);
+    if (method !== 'GET') {
+      if (!auth.bearer && request.headers.get('origin') !== url.origin) return json({error:'Origin نامعتبر'},403);
+      if (!request.headers.get('content-type')?.startsWith('application/json')) return json({error:'JSON required'},415);
+      if (!this.db.rate(`api:${session.kind}:${session.user_id}`,120,60000)) return json({error:'درخواست زیاد؛ کمی صبر کنید.'},429);
+    }
+    if (session.kind === 'self') {
+      if (method !== 'POST') return json({error:'POST required'},405);
+      if (path === '/api/self/lease') {
+        const active = this.db.one<{expires_at:number}>('SELECT expires_at FROM leases WHERE user_id=?',session.user_id);
+        if (this.db.global().maintenance && !isOwner(session.user_id) && (!active || active.expires_at<=Date.now())) return json({error:'اجارهٔ تازه در حالت نگهداری متوقف است.'},503);
+        try { return json({...this.db.lease(session.user_id),userId:session.user_id,serverTime:Date.now(),checkEvery:60}); }
+        catch(e) { return json({error:safeError(e)},402); }
       }
-      if (parsed.uuid.toLowerCase() !== this.uuid.toLowerCase()) {
-        this.close(1008, 'uuid-mismatch');
-        return;
-      }
-      const decision = classifyTarget(parsed.target, this.policy.tcpPorts);
-      if (!decision.allowed) {
-        this.close(1008, decision.reason);
-        return;
-      }
-      this.headerBuf = new Uint8Array(0);
-      const engine = this.createEngine(parsed.target);
-      this.engine = engine;
-      void engine.start().then(() => engine.report).then((report) => {
-        if (this.closed) return;
-        if (report.status === 'ok') this.close(1000, 'upstream-closed');
-        else this.close(1011, safeWsReason(report.reason ?? report.status));
-      }).catch((error: unknown) => {
-        if (!this.closed) this.close(1011, safeWsReason(error instanceof Error ? error.message : 'upstream-error'));
+      if (path === '/api/self/stop') { this.db.revoke(session.user_id,'self'); return json({ok:true}); }
+      return json({error:'این مجوز فقط برای اجارهٔ سلف است.'},403);
+    }
+    if (!['terminal','panel'].includes(session.kind) || !isOwner(session.user_id)) return json({error:'دسترسی مالک لازم است.'},403);
+    const actor = session.user_id, bot = new Bot(this.db,await this.connection.runtimeEnv());
+    if (path === '/api/logout' && method === 'POST') { this.db.exec('DELETE FROM tokens WHERE hash=?',auth.digest); return json({ok:true},200,{'set-cookie':'nova_session=; Max-Age=0; HttpOnly; SameSite=Strict; Path=/'}); }
+    if (path === '/api/overview' && method === 'GET') {
+      const count = (table:string,where='')=>this.db.one<{n:number}>(`SELECT COUNT(*) n FROM ${table} ${where}`)!.n;
+      return json({
+        stats:{groups:count('groups','WHERE active=1'),users:count('users'),messages:this.db.one<{n:number}>('SELECT COALESCE(SUM(messages),0) n FROM members')!.n,blocked:count('audit',"WHERE action='message.filtered'"),duels:count('duels',"WHERE state='settled'"),activeDuels:count('duels',"WHERE state IN ('open','active')"),leases:this.db.one<{n:number}>('SELECT COUNT(*) n FROM leases WHERE expires_at>?',Date.now())!.n,diamonds:this.db.one<{n:number}>('SELECT COALESCE(SUM(diamonds),0) n FROM users WHERE id NOT IN (?,?)',...OWNERS)!.n},
+        groups:this.groups(),duels:this.duels().slice(0,5),logs:this.logs().slice(0,6),leaderboard:this.users().slice(0,5),global:this.db.global(),
+        series:this.db.all<{day:string;count:number}>("SELECT strftime('%Y-%m-%d',created_at/1000,'unixepoch') day,COUNT(*) count FROM audit WHERE action='message.filtered' AND created_at>? GROUP BY day ORDER BY day",Date.now()-7*24*HOUR),
+        queue:{pending:count('updates',"WHERE status='pending'"),failed:count('updates',"WHERE status IN ('failed','uncertain')")},
       });
-      if (parsed.payload.length > 0) engine.feed(parsed.payload);
-      return;
     }
-    this.engine.feed(bytes);
-  }
-
-  private createEngine(target: VlessTarget): VlessSession {
-    return new VlessSession(target, {
-      client: {
-        send: (data) => {
-          try {
-            this.server.send(data);
-          } catch {
-            /* closed */
-          }
-        },
-      },
-      hooks: makeSessionHooks(this.policy),
-      policy: {
-        tcpPorts: this.policy.tcpPorts,
-        dohList: this.policy.dohList,
-        tcpRetries: this.policy.tcpRetries,
-        connectTimeoutMs: this.policy.connectTimeoutMs,
-      },
-      onStats: (up, down) => {
-        if (up + down > 0) {
-          this.ctx.waitUntil(callDo(this.env, '/int/stats', { uuid: this.uuid, up, down }).catch(() => undefined));
-        }
-      },
-    });
-  }
-
-  shutdown(): void {
-    if (this.closed) return;
-    this.closed = true;
-    if (this.engine) this.engine.clientClosed();
-    this.ctx.waitUntil(callDo(this.env, '/int/disconnect', { uuid: this.uuid }).catch(() => undefined));
-    this.resolveFinished(undefined);
-  }
-
-  private close(code: number, reason: string): void {
-    if (this.closed) return;
-    try {
-      this.server.close(code, reason);
-    } catch {
-      /* already closed */
+    if (path === '/api/groups' && method === 'GET') return json({groups:this.groups()});
+    if (['/api/users','/api/leaderboard'].includes(path) && method === 'GET') return json({users:this.users(url.searchParams.has('chatId') ? integer(url.searchParams.get('chatId')!,-Number.MAX_SAFE_INTEGER,-1) : undefined)});
+    if (path === '/api/duels' && method === 'GET') return json({duels:this.duels()});
+    if (path === '/api/logs' && method === 'GET') return json({logs:this.logs()});
+    if (path === '/api/jobs' && method === 'GET') return json({jobs:this.db.all('SELECT id,chat_id,actor,type,state,next_at,attempts,created_at FROM jobs ORDER BY created_at DESC LIMIT 100')});
+    if (path === '/api/export' && method === 'GET') { this.db.log(actor,null,'settings.export'); return json(this.db.snapshot(),200,{'content-disposition':'attachment; filename="nova-settings.json"'}); }
+    if (path === '/api/global' && method === 'GET') return json({settings:this.db.global()});
+    if (path === '/api/connection' && method === 'GET') {
+      if (!this.db.rate(`connection:${actor}`,40,60000)) return json({error:'بررسی اتصال زیاد تکرار شده؛ چند ثانیه صبر کنید.'},429);
+      return json(await this.connection.status(url.origin));
     }
-    this.shutdown();
-  }
-}
-
-function safeWsReason(reason: string): string {
-  const safe = reason.replace(/[^\x20-\x7e]/g, '').slice(0, 100);
-  return safe || 'upstream-error';
-}
-
-function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-/** Decode Xray-style base64url WebSocket early data, rejecting large headers. */
-export function decodeWsEarlyData(value: string | null, maxBytes: number): Uint8Array | null {
-  if (!value || value.includes(',') || value.length > Math.max(32, maxBytes * 2)) return null;
-  const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/');
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) return null;
-  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-  try {
-    const binary = atob(padded);
-    if (binary.length === 0 || binary.length > maxBytes) return null;
-    return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
-
-function makeSessionHooks(policy: {
-  dohList: string[];
-  tcpPorts: number[];
-  tcpRetries: number;
-  connectTimeoutMs: number;
-  maxEarlyData: number;
-}): SessionHooks {
-  return {
-    async tcpConnect(host, port, opts) {
-      let ip = host;
-      const isIpLiteral = /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':');
-      if (!isIpLiteral) {
-        // Prefer a public IP validated through DoH. If every configured DoH
-        // provider is temporarily unreachable, let the Workers Sockets runtime
-        // resolve the already policy-checked public hostname instead of making
-        // every website fail with dns-unresolvable. Cloudflare still blocks
-        // private-network and same-Worker socket targets at the platform layer.
-        const resolved = await resolvePublic(host, policy.dohList, Math.min(opts.timeoutMs, 2500));
-        ip = resolved || host;
-      }
-      const { connect } = await import('cloudflare:sockets');
-      // VLESS carries the client's own TLS handshake. The Worker must open a
-      // raw TCP socket; wrapping it in another TLS layer breaks HTTPS.
-      const socket = connect(
-        { hostname: ip, port },
-        { secureTransport: 'off', allowHalfOpen: false },
-      );
-      return socketAdapter(socket);
-    },
-    async dohQuery(packet) {
-      for (const doh of policy.dohList) {
-        try {
-          const res = await fetch(doh, {
-            method: 'POST',
-            headers: { 'content-type': 'application/dns-message', accept: 'application/dns-message' },
-            body: packet,
-            signal: AbortSignal.timeout(5000),
-          });
-          if (res.ok) return new Uint8Array(await res.arrayBuffer());
-        } catch {
-          // resolver down — DNS failover
-        }
-      }
-      return null;
-    },
-  };
-}
-
-function socketAdapter(socket: Socket): TcpSocket {
-  const dataCbs: Array<(d: Uint8Array) => void> = [];
-  const closeCbs: Array<() => void> = [];
-  const errorCbs: Array<(e: unknown) => void> = [];
-  const writer = socket.writable.getWriter();
-  void (async () => {
-    const reader = socket.readable.getReader();
-    try {
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        for (const cb of dataCbs) cb(value);
-      }
-    } catch (err) {
-      for (const cb of errorCbs) cb(err);
-    } finally {
-      for (const cb of closeCbs) cb();
+    const diagnostic = /^\/api\/groups\/(-\d+)\/diagnostics$/.exec(path);
+    if (diagnostic && method === 'GET') {
+      const chat = integer(diagnostic[1],-Number.MAX_SAFE_INTEGER,-1);
+      if (!this.db.group(chat)) throw new Error('گروه هنوز ثبت نشده؛ از گزینهٔ پیدا کردن گروه استفاده کنید.');
+      return json(await this.connection.groupDiagnostic(chat));
     }
-  })();
-  return {
-    opened: socket.opened as Promise<unknown>,
-    write: (d) => {
-      writer.write(d).catch((error) => {
-        for (const cb of errorCbs) cb(error);
+    if (method !== 'POST') return json({error:'Not found'},404);
+    const body = await this.body(request);
+    if (path === '/api/setup') {
+      if (!this.db.rate(`setup:${actor}`,10,10*60000)) return json({error:'برای جلوگیری از محدودیت تلگرام، چند دقیقه بعد دوباره اتصال را ثبت کنید.'},429);
+      const result = await this.connection.setup(url.origin,body.botToken,actor);
+      await this.wake(); return json(result);
+    }
+    if (path === '/api/groups/lookup') {
+      if (!this.db.rate(`lookup:${actor}`,20,60000)) return json({error:'بررسی گروه زیاد تکرار شده؛ یک دقیقه صبر کنید.'},429);
+      return json(await this.connection.recoverGroup(body.reference,actor));
+    }
+    if (path === '/api/queue/run') { const ready = await this.drain(); await this.wake(); return json({ok:ready,paused:!ready}); }
+    if (path === '/api/messages') {
+      const chat = integer(body.chatId as number,-Number.MAX_SAFE_INTEGER,-1);
+      if (typeof body.text !== 'string' || (body.pin !== undefined && typeof body.pin !== 'boolean')) throw new Error('متن یا گزینهٔ پین نامعتبر است.');
+      const m = await bot.announce(chat,body.text,body.pin === true,actor); return json({ok:true,messageId:m.message_id});
+    }
+    const groupSettings = /^\/api\/groups\/(-\d+)\/settings$/.exec(path);
+    if (groupSettings) return json({settings:this.db.patchGroup(integer(groupSettings[1],-Number.MAX_SAFE_INTEGER,-1),body,actor)});
+    if (path === '/api/purge/prepare') {
+      const chat = integer(body.chatId as number,-Number.MAX_SAFE_INTEGER,-1), count = integer(body.count as number,1,5000);
+      if (!this.db.group(chat) || this.db.group(chat)?.active !== 1) throw new Error('گروه فعال نیست.');
+      const ids = this.db.eligibleMessages(chat,count);
+      if (!ids.length) throw new Error('هیچ پیام ثبت‌شدهٔ قابل‌حذفی وجود ندارد.');
+      return json({confirmationId:this.db.confirm(actor,chat,'purge',{ids}),chatId:chat,count:ids.length,expiresIn:90});
+    }
+    if (path === '/api/confirm') {
+      if (typeof body.confirmationId !== 'string') throw new Error('تأیید نامعتبر');
+      const chat = integer(body.chatId as number,-Number.MAX_SAFE_INTEGER,Number.MAX_SAFE_INTEGER);
+      const c = this.db.consumeConfirm(body.confirmationId,actor,chat);
+      const result = await bot.executeConfirmation(c.action,JSON.parse(c.payload),actor,chat); await this.wake(); return json({ok:true,message:result});
+    }
+    if (path === '/api/jobs') {
+      const chat = integer(body.chatId as number,-Number.MAX_SAFE_INTEGER,-1);
+      if (this.db.group(chat)?.active !== 1 || typeof body.text !== 'string' || !body.text.trim() || body.text.length>3500 || (body.pin !== undefined && typeof body.pin !== 'boolean')) throw new Error('گروه، متن یا گزینهٔ پین نامعتبر است.');
+      const id = this.db.job(chat,actor,'schedule',{text:body.text,pin:body.pin===true},Date.now()+integer(body.minutes as number,1,10080)*60000);
+      this.db.log(actor,chat,'schedule.create',id); await this.wake(); return json({id});
+    }
+    const cancel = /^\/api\/jobs\/([a-f0-9]+)\/cancel$/.exec(path);
+    if (cancel) { const changes = this.db.exec("UPDATE jobs SET state='cancelled',payload='{}' WHERE id=? AND state='pending'",cancel[1]).rowsWritten; this.db.log(actor,null,'job.cancel',cancel[1]); return json({ok:changes>0}); }
+    if (path === '/api/economy') {
+      const user = integer(body.userId as number,1,Number.MAX_SAFE_INTEGER);
+      if (!['coins','diamonds'].includes(String(body.currency)) || !['add','subtract','set'].includes(String(body.action))) throw new Error('عملیات مالی نامعتبر');
+      const amount = integer(body.amount as number,body.action==='set' ? 0 : 1,1000000000), currency = body.currency as 'coins'|'diamonds';
+      const balance = this.db.atomic(()=> {
+        const u = this.db.requireUser(user), delta = body.action==='set' ? amount-u[currency] : body.action==='subtract' ? -amount : amount;
+        const value = this.db.money(user,currency,delta,'owner.web',String(actor)); this.db.log(actor,null,'economy.adjust',`${user}: ${currency} ${delta}`); return value;
       });
-    },
-    end: () => {
-      socket.close().catch(() => undefined);
-    },
-    onData: (cb) => dataCbs.push(cb),
-    onClose: (cb) => closeCbs.push(cb),
-    onError: (cb) => errorCbs.push(cb),
-  };
-}
-
-async function resolvePublic(hostname: string, dohList: string[], timeoutMs: number): Promise<string | null> {
-  const cacheKey = hostname.toLowerCase().replace(/\.$/, '');
-  const cached = DNS_CACHE.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.ip;
-  if (cached) DNS_CACHE.delete(cacheKey);
-  const { buildDnsQuery, parseDnsAnswers } = await import('./protocol');
-  const resolvers = [...new Set(dohList.filter((doh) => /^https:\/\//i.test(doh)))];
-  // Run resolver failover concurrently. The old serial loop could consume
-  // three full timeout windows before even opening TCP, which mobile clients
-  // correctly surfaced as a tunnel timeout.
-  const answers = await Promise.all(resolvers.map(async (doh) => {
-    try {
-      const id = Math.floor(Math.random() * 65535);
-      const res = await fetch(doh, {
-        method: 'POST',
-        headers: { 'content-type': 'application/dns-message', accept: 'application/dns-message' },
-        body: buildDnsQuery(id, hostname, 1),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) return null;
-      const parsed = parseDnsAnswers(new Uint8Array(await res.arrayBuffer()));
-      return parsed.find((answer) => answer.type === 1 && answer.data && !isPrivateLiteral(answer.data))?.data ?? null;
-    } catch {
-      return null;
+      return json({balance:isOwner(user) && currency==='diamonds' ? null : balance});
     }
-  }));
-  const ip = answers.find((answer): answer is string => typeof answer === 'string' && answer.length > 0) ?? null;
-  if (ip) {
-    if (DNS_CACHE.size >= 512) DNS_CACHE.delete(DNS_CACHE.keys().next().value as string);
-    DNS_CACHE.set(cacheKey, { ip, expiresAt: Date.now() + 60_000 });
+    const selfRevoke = /^\/api\/self\/(\d+)\/revoke$/.exec(path);
+    if (selfRevoke) { const user = integer(selfRevoke[1],1,Number.MAX_SAFE_INTEGER); this.db.revoke(user,'self'); this.db.log(actor,null,'self.revoked',String(user)); return json({ok:true}); }
+    if (path === '/api/global') {
+      const patch: Partial<GlobalSettings> = {};
+      const limits: Record<string,[number,number]> = {maxBet:[1,1000000],diamondOdds:[50,10000],duelSeconds:[60,900],dailyCoins:[1,10000]};
+      for (const [key,value] of Object.entries(body)) {
+        if (key === 'maintenance' && typeof value==='boolean') patch.maintenance = value;
+        else if (limits[key]) { const [min,max] = limits[key]; (patch as Record<string,unknown>)[key] = integer(value as number,min,max); }
+        else throw new Error('گزینهٔ سراسری نامعتبر');
+      }
+      this.db.setGlobal(patch); this.db.log(actor,null,'global.update',Object.keys(patch).join(',')); return json({settings:this.db.global()});
+    }
+    return json({error:'Not found'},404);
   }
-  return ip;
-}
-
-// ---------------------------------------------------------------------------
-// Cron probe (every 30 minutes)
-// ---------------------------------------------------------------------------
-
-async function runCronProbe(env: Env): Promise<void> {
-  try {
-    const res = await callDo(env, '/int/cron-probe', {});
-    const data = (await res.json()) as { ok: boolean; endpoints: Endpoint[] };
-    if (!data.ok || data.endpoints.length === 0) return;
-    const settingsLike = { endpoints: data.endpoints } as PanelSettings;
-    const results = await probeAll(defaultRuntimeHooks, settingsLike, 'balanced');
-    await callDo(env, '/int/probe-results', { results });
-  } catch {
-    // never break the schedule
-  }
-}
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-const REPO = 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
-const CF_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(REPO)}`;
-
-function launchInfo(): Record<string, unknown> {
-  return {
-    ok: true,
-    repo: REPO,
-    deployUrl: CF_DEPLOY_URL,
-    dashUrl: 'https://dash.cloudflare.com/?to=/:account/workers-and-pages',
-    workerName: 'aminnova',
-    version: AMINNOVA_VERSION,
-    release: AMINNOVA_RELEASE,
-    hint: 'Deploy رسمی را باز کنید؛ توکن کلودفلر هرگز داخل پنل وارد یا ارسال نمی‌شود.',
-  };
-}
-
-async function checkForSourceUpdate(): Promise<Record<string, unknown>> {
-  if (UPDATE_CACHE && UPDATE_CACHE.expiresAt > Date.now()) return UPDATE_CACHE.value;
-  const source = 'https://raw.githubusercontent.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/arena/01a01b70-aminck-nova-edge/package.json';
-  try {
-    const response = await fetch(source, {
-      headers: { accept: 'application/json', 'user-agent': 'AMINNOVA-Update-Check' },
-      signal: AbortSignal.timeout(5000),
-      cf: { cacheTtl: 300, cacheEverything: true },
-    });
-    if (!response.ok) throw new Error(`github-${response.status}`);
-    const remote = await response.json() as { version?: unknown };
-    const latestVersion = /^\d+\.\d+\.\d+$/.test(String(remote.version)) ? String(remote.version) : AMINNOVA_VERSION;
-    const value = {
-      ok: true,
-      currentVersion: AMINNOVA_VERSION,
-      latestVersion,
-      updateAvailable: compareVersions(latestVersion, AMINNOVA_VERSION) > 0,
-      release: AMINNOVA_RELEASE,
-      source,
-      deployUrl: CF_DEPLOY_URL,
-      checkedAt: Date.now(),
-      autoUpdate: false,
-      message: 'بررسی نسخه خودکار است؛ نصب کد جدید فقط از Deploy امن Cloudflare/Git Integration انجام می‌شود و پنل توکن Cloudflare دریافت نمی‌کند.',
-    };
-    UPDATE_CACHE = { expiresAt: Date.now() + 5 * 60_000, value };
-    return value;
-  } catch (error) {
-    return {
-      ok: false,
-      currentVersion: AMINNOVA_VERSION,
-      latestVersion: null,
-      updateAvailable: false,
-      release: AMINNOVA_RELEASE,
-      source,
-      deployUrl: CF_DEPLOY_URL,
-      checkedAt: Date.now(),
-      autoUpdate: false,
-      message: `GitHub فعلاً قابل بررسی نیست: ${error instanceof Error ? error.message : 'network-error'}`,
-    };
-  }
-}
-
-export function compareVersions(a: string, b: string): number {
-  const av = a.split('.').map(Number);
-  const bv = b.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    const diff = (av[i] ?? 0) - (bv[i] ?? 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  });
-}
-
-function html(body: string): Response {
-  return new Response(body, { headers: { 'content-type': 'text/html; charset=utf-8' } });
-}
-
-const SECURITY_HEADERS: Record<string, string> = {
-  'content-security-policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-  'x-frame-options': 'DENY',
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'no-referrer',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-  'x-robots-tag': 'noindex, nofollow',
-};
-
-function withHeaders(resp: Response, extra: { cors?: boolean }): Response {
-  const headers = new Headers(resp.headers);
-  for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
-  if (extra.cors) {
-    headers.set('access-control-allow-origin', '*');
-    headers.set('access-control-allow-methods', 'GET, OPTIONS');
-    headers.set('access-control-max-age', '86400');
-  }
-  const init: ResponseInit = { status: resp.status, statusText: resp.statusText, headers };
-  if (resp.webSocket) init.webSocket = resp.webSocket;
-  return new Response(resp.body, init);
 }

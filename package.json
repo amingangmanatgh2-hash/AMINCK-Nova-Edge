@@ -1,43 +1,39 @@
 {
-  "name": "aminnova",
-  "version": "1.3.0",
+  "name": "nova-guard",
+  "version": "2.1.0",
   "private": true,
-  "description": "AMINNOVA — Persian RTL subscription panel and VLESS over WebSocket gateway for Cloudflare Workers, with Durable Objects, endpoint probes, multi-format configs and seller controls.",
   "type": "module",
+  "description": "Persian Telegram group guardian, emoji duels and a private Termux companion on Cloudflare Workers.",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "wrangler dev",
-    "dev:local": "wrangler dev --config wrangler.local.jsonc --ip 0.0.0.0",
-    "build": "npm run build:public && npm run check",
-    "predeploy": "npm run build:public",
-    "check": "npm run check:ts && npm run check:ui",
-    "check:ts": "tsc --noEmit",
-    "check:ui": "node scripts/check-ui.mjs",
-    "build:public": "node scripts/build-public.mjs",
+    "dev": "wrangler dev --ip 0.0.0.0",
+    "dev:demo": "wrangler dev --ip 0.0.0.0 --var DEMO_MODE:true --port 8787",
+    "check": "tsc --noEmit && node --check public/app.js && node scripts/catalog.mjs --check",
+    "build": "npm run check",
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy": "wrangler deploy",
-    "cf-typegen": "wrangler types"
-  },
-  "engines": {
-    "node": ">=20"
+    "dry-run": "wrangler deploy --dry-run --outdir .cache/worker",
+    "catalog": "node scripts/catalog.mjs",
+    "check:termux": "python3 -m py_compile termux/console.py termux/self_client.py && python3 -m unittest discover -s termux -p \"test_*.py\""
   },
   "cloudflare": {
     "bindings": {
-      "ADMIN_PASSWORD": {
-        "description": "رمز ورود مالک پنل AMINNOVA (نام کاربری AMINCK)؛ حداقل ۱۰ کاراکتر. این مقدار به‌صورت Secret رمزگذاری می‌شود."
+      "PANEL_PASSWORD": {
+        "description": "فقط یک رمز دلخواه و قوی برای ورود پنل تعیین کنید (حداقل ۱۶ کاراکتر). توکن بات را بعد از نصب، داخل خود پنل می‌پرسیم؛ اتصال خودکار است."
       }
     }
   },
-  "dependencies": {
-    "@cloudflare/workers-types": "^5.20260817.1",
-    "wrangler": "^4.123.0"
-  },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260817.1",
     "@types/node": "^22.20.1",
     "esbuild": "^0.28.2",
     "miniflare": "^4.20260730.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.129.0"
   },
   "overrides": {
     "undici": "7.29.0"

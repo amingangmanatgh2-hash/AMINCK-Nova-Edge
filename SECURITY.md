@@ -1,157 +1,94 @@
-# Security Policy — AMINNOVA
+# Security & privacy — NOVA Guard 2.1
 
-## Supported versions
+## Rotate exposed secrets first
 
-| Version | Supported |
+Never deploy a token that was posted in a chat or public repository. Revoke it through BotFather and install the replacement through the authenticated HTTPS setup page on your own deployed Worker (or keep using existing Cloudflare secret bindings). Do not open an issue or send a support message containing a token, phone login code, 2FA password, `api_hash`, pairing credential, or session file.
+
+The only required deployment secret for a new installation is `PANEL_PASSWORD`. The panel accepts the bot token after owner login, validates it with Telegram and generates the webhook secret. Existing `BOT_TOKEN` / `WEBHOOK_SECRET` environment bindings remain supported until a panel-managed configuration is saved. `.dev.vars`/`.env`, Python sessions, dependency trees and local Wrangler storage are ignored by Git. Example files contain a deliberately invalid panel-password placeholder. Owner login is fail-closed without a valid panel password; webhooks are fail-closed until usable bot credentials and a webhook secret exist.
+
+## Authenticated bot-token setup (2.1)
+
+This version intentionally adds a bot-token form because manual Secret/webhook setup was error-prone. It is **not** an unauthenticated first-visitor setup page. `PANEL_PASSWORD` must be chosen in the trusted Cloudflare deployment flow first.
+
+- `POST /api/setup` is owner-authenticated, JSON-only, same-origin for browser cookies, rate-limited and rejects non-HTTPS URLs. It never accepts a Cloudflare API token, phone number, personal Telegram login code or MTProto session.
+- Validate `getMe`, token-prefix/response identity and existing bot binding before changing credentials. Wrong/revoked tokens do not overwrite the working configuration. A different bot ID cannot silently take over an existing wallet/group database.
+- Store `{botToken, webhookSecret}` only as an AES-256-GCM authenticated envelope with random 128-bit salt, 96-bit nonce, a fixed service-purpose AAD and PBKDF2-SHA256 at 100,000 iterations (validated in the pinned Workers runtime). The key is derived from `PANEL_PASSWORD`, not stored alongside the ciphertext. Use a long random unique panel password; length alone is not entropy.
+- Password-rotation tracking stores a separately salted PBKDF2 stamp at the same work factor; its computed value is also cached per instance. It does not leave a fast SHA-256 verifier of the panel password alongside the encrypted vault. Upgrading the old rotation-stamp format invalidates existing browser sessions once; log in again with the same password.
+- Credential plaintext and derived keys exist transiently in the Worker runtime to call Telegram. A per-instance cache avoids repeating expensive derivation on every webhook. This does not protect against compromise of the running Worker or its Cloudflare account.
+- The token form is masked and cleared before its network submission. No token echo endpoint, masked-token suffix, localStorage persistence, URL token, audit token or settings-export credential is provided. The read-only demo disables this input entirely.
+- A token verified by Telegram is saved before registration, so an ambiguous/failed `setWebhook` can be repaired without pasting it again. Responses distinguish `saved`, webhook registration and actual incoming-update receipt; a saved token is not presented as a working connection.
+- Webhook health compares the actual target to this Worker's HTTPS endpoint, not merely a nonempty URL. Other webhook targets are shown as origin + redacted path; webhook error descriptions redact known secrets.
+- Changing `PANEL_PASSWORD` invalidates panel sessions **and makes the existing credential envelope unreadable**. Re-enter the same bot's new/current token to encrypt it under the new password; group/wallet data remain intact. The runtime fails closed instead of falling back to a potentially stale environment token when an envelope exists but cannot be decrypted.
+- Group recovery via a public Telegram username/link or numeric ID calls only Telegram's fixed Bot API host; arbitrary URL fetching and private-invite auto-join are not supported. Membership is checked before registering a group. A deliberate owner block is not silently undone.
+- Missing Restrict/Ban rights are diagnosed independently of panel/send rights. The default add-group link does not demand Ban rights; a second explicit link requests broader admin permissions. Both are official Telegram group-picker links, not autonomous bot joins.
+
+## Authentication and authority
+
+- Telegram webhook authentication uses `X-Telegram-Bot-Api-Secret-Token`, checked through constant-length digest comparison. The public URL does not contain a credential.
+- Update IDs are durably deduplicated for seven days. The raw pending update is wiped after processing. A bounded queue rejects new requests with 503 when full, allowing Telegram to retry.
+- Group permissions come from Telegram `getChatMember`, not a client-supplied role. Admin identity is checked anew per update, callback and queued-operation execution. Specific rights (delete, restrict, pin, change info, invite, promote) are enforced for corresponding operations.
+- The two configured numeric owners have deliberate global authority over groups known to this bot. Group owners should understand this operator trust model before adding it. These owners cannot bypass actual Telegram permissions or delete-message age limits.
+- Anonymous/channel sender identities and forwarded/edited commands never gain authority. Edits are still moderated. Merely trusting a user exempts them from filters, not authorization.
+- Shared panel password gives global-owner authority and is attributed to the first owner in audit logs. Store it accordingly; this is **not** a multi-tenant, per-group web login system.
+- Panel sessions are random 256-bit tokens, stored as hashes, HttpOnly, SameSite=Strict, Secure on HTTPS, with a 12-hour expiry. Mutation requests require JSON and a matching Origin. Password/webhook-secret rotation invalidates existing panel sessions on the next authentication check.
+- Login and pairing attempts are rate-limited. In production Cloudflare supplies the client-IP header. For public high-volume deployments add Cloudflare WAF/rate limits as another layer.
+- Termux and self credentials are separately scoped, randomly generated, hashed server-side, expire in 30 days and are revocable. Pairing codes have 128 bits of entropy, expire in ten minutes and can be consumed once. The bot gives codes only in private chats; self codes are bound to the requesting Telegram user ID.
+- A self bearer cannot read groups, adjust balances, export settings, or execute owner API operations. The local account ID must match its pairing identity. No unauthenticated endpoint grants a role based on a claimed owner ID.
+- Owner messages only target active groups already seen by this bot. Deletion requires actor/chat-bound, expiring, one-use confirmation. Pending scheduled messages recheck the actor's admin and pin rights before execution.
+
+## Economy and replay resistance
+
+The SQLite ledger, escrow, duel state, refunds, awards, daily cooldowns and hourly leases are changed in synchronous transactions. Insufficient funds cannot produce negative balances. Repeating a heartbeat during an already-paid hour does not charge again.
+
+Native dice must be fresh, from one of two participants, with the correct emoji and a reply to the stored challenge message in the same chat. Forwarded/edited/bot/inline dice, another player's dice and second rolls do not count. A player cannot avoid losing by withholding their roll after seeing the opponent: the player who did roll wins on timeout. Forfeit wins do not receive rare diamonds.
+
+Rare rewards use Web Crypto with rejection sampling, a minimum stake, rolling 24-hour per-user and opponent limits. These are useful friction against simplistic farming, not Sybil-proof identity or guaranteed collusion prevention. Virtual credits have no purchase/redemption or monetary transfer interface.
+
+## External API effects and failure boundaries
+
+SQLite transactions cannot make Telegram network calls transactional. We do **not** promise exactly-once delivery of outbound Telegram messages. Interrupted update processing is marked `uncertain`, not blindly replayed. A challenge that fails to post is cancelled and its escrow is returned; a possibly delivered ghost challenge cannot be joined after cancellation. Open games expire with a refund or forfeit settlement.
+
+Scheduled sends mark `sending` before network I/O. A crash in that window becomes `uncertain`, and an ambiguous send error is terminal rather than an automatic duplicate. A purge can be retried because deletion is idempotent; retries are bounded and requests are paced. Audit logs expose failures without printing tokens or raw incoming texts.
+
+## Data storage and retention
+
+| Data | Default retention / purpose |
 |---|---|
-| main (this repository) | ✅ |
-| older releases | ❌ |
+| Panel-managed bot token + webhook secret | Persistent AES-GCM ciphertext until replaced; excluded from settings exports |
+| Last webhook receipt/processing/group timestamps | Diagnostics only; no message contents |
+| Group IDs/titles, settings, trusted IDs | Until changed by operator; required for management |
+| User ID/name, balances, group statistics | Persistent; no phone/email required |
+| Message ID, chat ID, timestamp, sender ID | 48 hours, metadata only, for bounded purge |
+| Pending webhook body | Until processing; no persistent message-body history index |
+| Completed/failed/uncertain update ID | 7 days; payload erased |
+| Captcha | Until answer/expiry handling |
+| Confirmation | 90 seconds, one-use |
+| Pairing code | 10 minutes, hash only, one-use |
+| Panel token | 12 hours, hash only |
+| Termux/self token | 30 days, hash only |
+| Scheduled-message body | Until delivery/cancellation; completed jobs normally erase it |
+| Completed job metadata | 7 days |
+| Audit | 30 days |
+| Duel history | 30 days; active duels retained to settle |
+| Ledger | 90 days; aggregate balances remain |
+| Notes, automatic replies, blacklist text/sticker IDs | Intentional group configuration; retained until removed |
 
-## Reporting a vulnerability
+Cleanup runs through the Durable Object alarm, approximately hourly when idle. Expired rows can remain until a scheduled cleanup but are not valid credentials after expiry. Operator-initiated `/export` and `/api/export` export **settings, notes, replies and blacklist only** — not a full account/economy backup, and never tokens or local account sessions. Treat configuration exports as private group data.
 
-Please do **not** open a public issue for security problems. Report privately by
-opening a GitHub security advisory on this repository, or contact the repository
-owner (`AMINCK`) directly.
+There is no external analytics, advertising script, third-party AI inference or browser CDN dependency. The dashboard uses locally hosted Vazirmatn (SIL OFL) and local assets. Server observability is off in Wrangler by default; enabling additional platform logging is an operator decision.
 
-We aim to acknowledge reports within 72 hours and ship a fix as soon as possible.
+## Local self-client boundary
 
-## Security model
+Personal-account login happens directly between Telethon and Telegram on the user's device. The worker receives a one-time Nova pairing code and numeric Telegram ID, not phone, login code, 2FA password, API hash, or session. Local files are private (`700` directory / `600` config / `umask 077`) but not encrypted against a compromised OS. Session files are credentials. Terminate a leaked session using Telegram Settings → Devices.
 
-### Secrets
+The self client is open source. Its heartbeat is an entitlement mechanism for the provided client, **not unbreakable DRM** on software running on someone else's machine. A modified client can remove local checks; this does not give it authority to mutate the server ledger or call owner routes. The server does not accept a user-supplied billing exemption.
 
-- `ADMIN_PASSWORD` is **never** stored in the repository. The official Deploy
-  wizard requests it as an encrypted Worker secret; local development uses the
-  git-ignored `.dev.vars` file.
-- No Cloudflare API token is ever requested, stored, rendered, or proxied by
-  the panel. The public update checker reads only the repository `package.json`,
-  caches successful results for five minutes, and links to the official Deploy
-  button. Deploys happen via that button or Wrangler in CI (encrypted GitHub
-  secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`).
-- Login fails closed with `503 setup-required` when `ADMIN_PASSWORD` has not
-  been configured.
+The companion accepts commands only from the account's outgoing messages. Private auto-replies are opt-in, skip bots/Telegram's service account, and are limited to one per peer per 30 minutes. Cleanup only targets that account's own outgoing messages. No bulk unsolicited messaging, member scraping or third-party login collection is implemented.
 
-### Authentication & sessions
+## Demo and production
 
-- Owner login uses the `ADMIN_PASSWORD` secret compared in constant time.
-- Staff passwords are stored as **PBKDF2-SHA256** (210,000 iterations) with a
-  random 16-byte salt. Minimum password length: 10 characters.
-- Sessions are random 32-byte bearer tokens kept server-side in the Durable
-  Object; cookies are `HttpOnly; Secure; SameSite=Strict` with a 12-hour Max-Age.
-- Disabling or deleting an admin revokes **all** of their sessions; the very
-  next request with an old session gets `401`.
-- Failed logins incur a server-side delay (300 ms – 6 s exponential backoff);
-  after 10 failures the username/IP is locked for 10 minutes.
+`DEMO_MODE=true` serves an isolated synthetic dataset, disables the token form, rejects all mutations and Telegram webhooks, and enables limited frame embedding for live preview. **Remove it in production.** Production uses frame-ancestors none / X-Frame-Options DENY. All HTTP responses add CSP, no-sniff and no-referrer; HTTPS additionally adds HSTS. API/session responses are not cached.
 
-### Authorization
+## Reporting
 
-- Every API operation checks permissions in the backend (the Durable Object):
-  `users:view|create|edit|delete`, `configs:build`, `settings:manage`,
-  `endpoints:probe`, `backup:export`, `admins:manage`, `audit:view`. The
-  conversational `/api/ai-plan` endpoint first validates the server-side
-  session and requires `configs:build` before it can consume inference quota.
-- Power levels (`Limited 5 / Normal 100 / Strong 500 / Ultra 2000`) are enforced
-  in the backend on every config build — a Limited admin cannot exceed 5 paths
-  even with hand-crafted API requests. Giant profiles above 200 are explicit
-  opt-in because large client files can exhaust mobile memory or health checks.
-- The owner is seeded automatically and **cannot** be deleted, disabled,
-  demoted, or have their password changed through the admin API.
-- Hash/salt/iterations are never returned by the admin-list API. Only an
-  owner-created full backup includes staff hashes so disaster recovery can keep
-  staff passwords; non-owner exports omit staff records. Treat backups as secrets.
-- Restore is owner-only, caps imported users/staff, validates ids/tokens/routes,
-  keeps the new deployment's owner, and rebinds subscriber routes to the
-  current Worker hostname.
-
-### Proxy hardening (no open proxy)
-
-- Only authenticated subscribers with an active, non-expired account and a
-  known route path can open a WebSocket session.
-- Target classification rejects:
-  - UDP on any port except 53 (DNS only);
-  - SMTP ports (25, 465, 587, 2525);
-  - TCP ports outside the conservative HTTP/HTTPS destination allow-list;
-  - private/reserved IP literals (RFC1918, link-local, CGNAT, TEST-NET,
-    multicast, loopback, IPv6 ULA/link-local/mapped, …);
-  - hostnames whose DNS answers are private-only (metadata endpoints like
-    `169.254.169.254` are blocked before connect).
-- DNS is resolved through DoH with resolver failover; UDP/53 client queries are
-  answered through the same DoH chain (RFC 8484).
-- The validated public IP is dialed with a raw TCP socket. Client TLS passes
-  through unchanged; the Worker does not create a broken nested TLS session.
-- The parsed VLESS UUID must match the subscriber selected by the private path.
-- Per-subscriber live connection caps are enforced at connect time.
-- Third-party SNI/Host impersonation is not generated. Optional Host aliases
-  must also be configured Endpoint hostnames for this deployment.
-- Gaming selections are allow-listed catalogue ids. Only official publisher
-  hostname suffixes compiled into the release are emitted; untrusted API values
-  cannot inject Clash/sing-box/Xray rules. Arbitrary game UDP remains blocked.
-- AI plans are not executable configuration. Prompts are capped at 1,000
-  characters; model output is reduced to fixed enums, numeric ceilings,
-  booleans and catalogue game ids before the existing Auto Build validation
-  path sees it. Model-supplied URLs, domains, SNI/Host values, secrets, code and
-  unknown fields are discarded. Invalid, unavailable or timed-out inference
-  falls back to the deterministic parser.
-- Endpoint location labels are operator-provided display metadata for real
-  deployments. The Worker never derives a country claim from an Anycast IP.
-
-### Web
-
-- Mutating requests are checked for Same-Origin (`Origin`/`Sec-Fetch-Site`).
-- All responses carry CSP (`default-src 'self'`, no inline scripts),
-  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
-- No third-party CDN, analytics, or tracking is used by the panel.
-- When an authenticated user invokes the conversational studio and the `AI`
-  binding is available, only that prompt plus the fixed planner instruction and
-  public game-id list are sent to Cloudflare Workers AI in the operator's
-  account. Passwords, session cookies, subscription tokens, UUIDs and backups
-  are not appended. Inference may consume account quota and follows
-  Cloudflare's applicable data handling terms. With no binding/model/quota,
-  planning remains local to the Worker through the deterministic parser.
-
-### PWA and rolling subscriptions
-
-- The service worker caches only the public shell (HTML, CSS, JavaScript,
-  manifest and icons). `/api`, `/sub`, `/healthz`, `/connect` and `/e…`
-  WebSocket paths are excluded.
-- Subscription responses use `private, no-store, must-revalidate` plus legacy
-  `pragma: no-cache`; tokens and generated profiles are not offline-cached.
-- Rolling mode keeps the token, UUID and authorized paths stable. Automatically
-  rotating credentials every minute would break installed clients and active
-  sessions, so only route order and validated Cloudflare connection IPs rotate.
-- Manual front IPs must belong to Cloudflare's published IPv4 ranges; TLS SNI
-  and WebSocket Host remain the real Worker/custom-domain hostname.
-- Client health checks use an independent non-Cloudflare target. Sending a
-  tunneled health request back to the same Worker creates a TCP loop, while
-  Workers Sockets intentionally block outbound connections to Cloudflare IPs.
-- Every hostname-direct route is a no-early-data, no-padding, no-fragment
-  `DIRECT SAFE` compatibility route. Socket-open deadlines and concurrent DoH
-  failover prevent indefinite pending sessions, but cannot override
-  Cloudflare's destination restrictions.
-- Rule-capable outputs keep LAN/private traffic direct. When Domestic Direct is
-  enabled, Clash also emits `.ir` and Iran GeoIP direct rules, sing-box emits
-  `.ir` direct routing, and Xray Iron emits `geosite:ir`/`geoip:ir` rules.
-  This split routing occurs in the client and cannot restore traffic during an
-  ISP, DNS, domestic-routing or nationwide outage. Raw/Base64 URIs cannot carry
-  these policy rules.
-- If all configured DoH providers are temporarily unavailable, special-use and
-  local hostnames are rejected before Workers Sockets native DNS is used as a
-  bounded availability fallback. Cloudflare still blocks private-network and
-  same-Worker socket destinations at the platform layer.
-
-### Honest measurements
-
-- The scanner reports HTTPS response-header latency measured from the
-  Cloudflare edge — it is **not** the user device's ping, and the UI says so.
-- Gaming rules and LOW PING can select the lowest measured healthy candidate
-  among deployed routes and shorten failure-detection settings, but cannot
-  shorten physical distance to a game server. A faster health interval is not
-  the game's RTT. No sub-90 ms ping, foreign geolocation, universal DPI bypass,
-  all-service access, speed, uptime, or uninterrupted-session guarantee is
-  claimed.
-
-## Dependency policy
-
-`npm audit --audit-level=high` must stay clean in CI. The only runtime
-dependencies shipped to the worker are the worker bundle itself; Node-side
-packages (wrangler, miniflare, vitest, typescript) are development-only.
+Report vulnerabilities privately through the repository's private vulnerability reporting feature if available. Otherwise contact the maintainer without including exploit secrets or personal session data. Include affected version, minimal reproduction with dummy data, impact, and relevant redacted logs. Do not publish live credentials in an issue or PR.

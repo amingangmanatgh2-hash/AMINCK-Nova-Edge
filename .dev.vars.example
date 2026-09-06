@@ -1,6 +1,2 @@
-# AMINNOVA — required secret shown by the official Deploy to Cloudflare wizard.
-# Local development: copy this file to `.dev.vars` and choose your password.
-# CLI deployment: npx wrangler secret put ADMIN_PASSWORD
-#
-# Owner username is AMINCK. Minimum length is 10 characters.
-ADMIN_PASSWORD=
+# Choose only a strong panel password. Add your NEW bot token inside the authenticated panel.
+PANEL_PASSWORD=REPLACE_WITH_A_STRONG_UNIQUE_PASSWORD

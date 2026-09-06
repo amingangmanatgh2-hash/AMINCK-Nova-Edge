@@ -1,0 +1,12 @@
+{
+  "name": "DemGram",
+  "version": "2.1-goulakh",
+  "package": "com.demgram.app",
+  "features": 1000,
+  "type": "PWA + Native WebView",
+  "web_url": "/demgram/",
+  "apk_direct": "/demgram/DemGram.apk",
+  "github_actions": "https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/actions/workflows/build-demgram-apk.yml",
+  "install_pwa": "Open /demgram/ in Chrome Android -> Menu -> Add to Home Screen",
+  "build_native": "Push triggers GitHub Actions that builds real APK with Android SDK"
+}

@@ -1,26 +1,63 @@
-<!--NOVA-SHELL-START-->
 <!doctype html>
-<html lang="fa" dir="rtl" data-theme="dark">
+<html lang="fa" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AMINNOVA</title>
-<meta name="robots" content="noindex, nofollow">
-<meta name="description" content="AMINNOVA — پنل نصب‌پذیر مدیریت ساب VLESS روی Cloudflare Workers">
-<meta name="theme-color" content="#7c3aed">
-<meta name="color-scheme" content="dark light">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="AMINNOVA">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="stylesheet" href="/app.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0c1015">
+  <meta name="description" content="نُوا گارد؛ اتاق فرمان فارسی ربات مدیریت گروه تلگرام، دوئل ایموجی و ابزار امن ترموکس.">
+  <title>نُوا گارد — اتاق فرمان</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
 </head>
 <body>
-<div id="app"></div>
-<script src="/app.js" defer></script>
+  <div id="loading" class="loading-screen"><span class="brand-symbol">✦</span><b>نُوا گارد</b><span class="muted">در حال اتصال به اتاق فرمان…</span><div class="loading-line"></div></div>
+  <section id="login-screen" class="login-screen" hidden>
+    <div class="login-decoration" aria-hidden="true"></div>
+    <form id="login-form" class="login-card">
+      <span class="brand-symbol large">✦</span><span class="eyebrow">NOVA GUARD / CONTROL ROOM</span>
+      <h1>به اتاق فرمان خوش اومدی.</h1><p class="muted">ورود امن مالک برای مدیریت ربات و گروه‌ها</p>
+      <label for="password">رمز اختصاصی پنل</label><input id="password" name="password" type="password" autocomplete="current-password" minlength="16" required placeholder="رمزی که در Cloudflare Secrets تنظیم کردی">
+      <button class="button primary full" type="submit">ورود به پنل <span>←</span></button>
+      <p id="login-error" class="error-text" role="alert"></p>
+      <div class="login-note">توکن بات یا کد ورود تلگرام را اینجا وارد نکنید.<br>رمز پنل از Secret با نام <code>PANEL_PASSWORD</code> خوانده می‌شود.</div>
+      <a href="https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a07081-aminck-nova-edge#نصب-روی-کلودفلر" target="_blank" rel="noopener noreferrer" class="text-link">راهنمای نصب و راه‌اندازی ↗</a>
+    </form>
+  </section>
+  <div id="app" class="app-shell" hidden>
+    <button id="mobile-scrim" class="mobile-scrim" aria-label="بستن منو" hidden></button>
+    <aside class="sidebar" id="sidebar">
+      <a href="#overview" class="brand"><span class="brand-symbol">✦</span><div><strong>نُوا گارد<span class="brand-dot">.</span></strong><small>NOVA GUARD</small></div></a>
+      <div class="workspace"><span class="workspace-icon">N</span><div><b>اتاق فرمان نُوا</b><small><i class="status-dot"></i> مدیریت متمرکز گروه‌ها</small></div><span class="workspace-chevron">⌄</span></div>
+      <nav aria-label="منوی اصلی">
+        <span class="nav-label">فضای مدیریت</span>
+        <button class="nav-item active" data-page="overview"><span data-icon="dashboard"></span>نمای کلی</button>
+        <button class="nav-item" data-page="groups"><span data-icon="users"></span>گروه‌های من<span id="nav-groups" class="nav-count">۰</span></button>
+        <button class="nav-item" data-page="security"><span data-icon="shield"></span>امنیت و قفل‌ها</button>
+        <span class="nav-label">رقابت و سرگرمی</span>
+        <button class="nav-item" data-page="duels"><span data-icon="game"></span>آرکید و دوئل‌ها<span class="tiny-pill">۶ بازی</span></button>
+        <button class="nav-item" data-page="leaderboard"><span data-icon="trophy"></span>لیدربرد</button>
+        <button class="nav-item" data-page="diamonds"><span data-icon="diamond"></span>اقتصاد و الماس</button>
+        <span class="nav-label">ابزارهای مالک</span>
+        <button class="nav-item" data-page="self"><span data-icon="sparkles"></span>سلف محلی</button>
+        <button class="nav-item" data-page="terminal"><span data-icon="terminal"></span>کنسول ترموکس</button>
+        <button class="nav-item" data-page="commands"><span data-icon="command"></span>کتابخانه دستورات</button>
+        <button class="nav-item" data-page="logs"><span data-icon="activity"></span>گزارش رویدادها</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="owner-card"><span data-icon="crown"></span><div><b>دسترسی مالک سراسری</b><small>محدودیت کمتر، کنترل بیشتر</small></div><span>∞</span></div><button class="nav-item" data-page="settings"><span data-icon="settings"></span>ثبت و اتصال بات</button><div class="sidebar-version"><span>نسخهٔ ۲.۱.۰</span><span>ساخته‌شده برای جمع شما ✦</span></div></div>
+    </aside>
+    <div class="stage">
+      <header class="topbar">
+        <div class="breadcrumb"><button id="mobile-toggle" class="icon-button mobile-only" aria-label="باز کردن منو"><span data-icon="menu"></span></button><span class="muted">اتاق فرمان</span><span class="breadcrumb-slash">/</span><strong id="page-title">نمای کلی</strong></div>
+        <div class="topbar-actions"><form id="global-search" class="search-field header-search"><span data-icon="search"></span><input name="q" aria-label="جستجوی دستور" placeholder="دنبال چه قابلیتی می‌گردی؟"><kbd>/</kbd></form><button id="theme-toggle" class="icon-button" aria-label="تغییر پوسته"><span data-icon="sun"></span></button><button class="icon-button" data-page="logs" aria-label="رویدادها"><span data-icon="bell"></span><i class="notification-dot"></i></button><span class="topbar-divider"></span><button id="account-button" class="account-button" aria-label="حساب مالک"><span class="avatar owner-avatar">آ</span><span class="account-text"><b>مالک نُوا</b><small>دسترسی کامل</small></span><span data-icon="chevron"></span></button></div>
+      </header>
+      <div id="demo-banner" class="demo-banner" hidden><span><i class="status-dot amber"></i> پیش‌نمایش تعاملی <span class="demo-detail">· اطلاعات نمونه‌اند و هیچ فرمانی به تلگرام ارسال نمی‌شود.</span></span><button data-page="settings">راه‌اندازی نسخهٔ واقعی <span>←</span></button></div>
+      <div id="connection-banner" class="connection-banner" hidden></div>
+      <main id="main" tabindex="-1"></main>
+      <footer class="footer"><span>✦ NOVA GUARD <span class="footer-separator">/</span> جمع‌تون گرم، گروه‌تون امن.</span><span>Cloudflare Workers <i class="status-dot"></i></span></footer>
+    </div>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 </body>
 </html>
-<!--NOVA-SHELL-END-->

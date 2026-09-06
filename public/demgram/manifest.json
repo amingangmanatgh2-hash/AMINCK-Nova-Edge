@@ -1,0 +1,17 @@
+{
+  "name": "DemGram - کلاینت قدرتمند تلگرام",
+  "short_name": "DemGram",
+  "description": "کلاینت تلگرام با سلف گولاخ، مدیریت مخاطبین هوشمند، فونت ساز، هوش مصنوعی",
+  "start_url": "/demgram/",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#2AABEE",
+  "orientation": "any",
+  "icons": [
+    {"src": "/demgram/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/demgram/icon-512.png", "sizes": "512x512", "type": "image/png"}
+  ],
+  "categories": ["social", "productivity"],
+  "lang": "fa",
+  "dir": "rtl"
+}

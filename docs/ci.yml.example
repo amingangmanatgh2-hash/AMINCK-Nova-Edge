@@ -1,0 +1,30 @@
+name: Nova Guard checks
+on:
+  push:
+    branches: [arena/01a07081-aminck-nova-edge]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nova-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:termux
+      - run: npm test
+      - run: npm run dry-run
+      - run: npm audit --audit-level=moderate

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DemGram — کلاینت قدرتمند تلگرام</title>
+<link rel="manifest" href="/demgram/manifest.json"/>
+<link rel="stylesheet" href="/demgram/style.css"/>
+<meta name="theme-color" content="#2AABEE"/>
+</head>
+<body>
+<div id="app">
+  <div id="loginView" class="login card">
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="font-size:42px">⚡</div>
+      <h1 class="logo">DemGram</h1>
+      <p style="color:var(--muted);margin-top:6px">کلاینت تلگرام + سلف گولاخ + مدیریت هوشمند مخاطبین</p>
+      <p style="color:var(--muted);font-size:12px;margin-top:4px">۱۰۰۰ قابلیت — نسخه وب قابل نصب به عنوان APK</p>
+    </div>
+    <div id="loginForm">
+      <label>API ID (از my.telegram.org)</label>
+      <input id="apiId" class="input" placeholder="1234567" style="margin:6px 0 12px"/>
+      <label>API HASH</label>
+      <input id="apiHash" class="input" placeholder="32 کاراکتری" style="margin:6px 0 12px"/>
+      <label>شماره با کد کشور</label>
+      <input id="phone" class="input" placeholder="+98..." style="margin:6px 0 12px" dir="ltr"/>
+      <button class="btn" style="width:100%" onclick="startLogin()">ورود امن — فقط روی دستگاه شما</button>
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">هیچ داده‌ای به سرور ارسال نمی‌شود. نشست فقط در مرورگر شما می‌ماند. چند اکانت با پروفایل‌های مختلف مرورگر یا <span class="kbd">--session</span> ترموکس.</p>
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="showDemo()">دمو بدون ورود</button>
+        <button class="btn btn-ghost" style="flex:1" onclick="window.open('/demgram/FEATURES.html','_blank')">۱۰۰۰ قابلیت</button>
+      </div>
+    </div>
+    <div id="codeView" style="display:none">
+      <label>کد ورود تلگرام</label>
+      <input id="code" class="input" placeholder="12345" dir="ltr" style="margin:6px 0 12px"/>
+      <label>رمز دومرحله‌ای (اگر دارد)</label>
+      <input id="pwd" class="input" type="password" style="margin:6px 0 12px"/>
+      <button class="btn" style="width:100%" onclick="confirmCode()">تایید</button>
+    </div>
+  </div>
+
+  <div id="mainView" class="app" style="display:none">
+    <div class="sidebar" id="sidebar">
+      <div class="header">
+        <span class="logo">DemGram</span>
+        <span class="badge" id="sessionBadge">my1</span>
+        <button class="btn btn-ghost" style="margin-right:auto" onclick="toggleSidebar()">✕</button>
+      </div>
+      <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="chats" onclick="switchTab('chats')">چت‌ها</div>
+        <div class="tab" data-tab="contacts" onclick="switchTab('contacts')">مخاطبین</div>
+        <div class="tab" data-tab="self" onclick="switchTab('self')">سلف گولاخ</div>
+        <div class="tab" data-tab="tools" onclick="switchTab('tools')">ابزار</div>
+        <div class="tab" data-tab="ai" onclick="switchTab('ai')">هوش مصنوعی</div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:8px">
+        <div id="tab-chats"></div>
+        <div id="tab-contacts" style="display:none"></div>
+        <div id="tab-self" style="display:none"></div>
+        <div id="tab-tools" style="display:none"></div>
+        <div id="tab-ai" style="display:none"></div>
+      </div>
+      <div style="padding:10px;border-top:1px solid var(--border)">
+        <input id="globalSearch" class="input" placeholder="جستجو... .filter .find" oninput="onSearch(this.value)"/>
+      </div>
+    </div>
+    <div class="main">
+      <div class="header">
+        <button class="btn btn-ghost" onclick="toggleSidebar()">☰ منو</button>
+        <div id="chatTitle" style="font-weight:700">به DemGram خوش آمدید</div>
+        <div style="margin-right:auto;display:flex;gap:6px">
+          <button class="btn btn-ghost" onclick="showAddAll()">افزودن همه</button>
+          <button class="btn btn-ghost" onclick="exportSession()">خروجی سشن</button>
+        </div>
+      </div>
+      <div id="chatBox" class="chat-box">
+        <div class="card">
+          <h3>🚀 DemGram — نسخه گولاخ</h3>
+          <p style="color:var(--muted);margin-top:8px">این کلاینت وب، تمام قابلیت‌های سلف ترموکس رو داخل مرورگر داره + قابل نصب به عنوان APK (Add to Home Screen).</p>
+          <ul style="margin:12px 0 0 18px;color:var(--muted);line-height:1.9">
+            <li>👥 مدیریت مخاطبین: لیست، فیلتر، جستجو، افزودن تکی/همه با تایید و تاخیر ضداسپم</li>
+            <li>🔤 فونت ساز ۷ استایل + بولد/ایتالیک/کد</li>
+            <li>🤖 هوش مصنوعی محلی + اتصال OpenAI با کلید محلی شما</li>
+            <li>📊 آمار گروه، لیست ادمین‌ها، لینک دعوت، پین</li>
+            <li>🛡️ ضداسپم، بدون ارسال انبوه بی‌اجازه</li>
+            <li>👤 چند اکانت: هر پروفایل مرورگر یک سشن جدا</li>
+          </ul>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" onclick="switchTab('contacts')">مدیریت مخاطبین</button>
+            <button class="btn btn-ghost" onclick="switchTab('self')">دستورات سلف</button>
+            <button class="btn btn-ghost" onclick="switchTab('tools')">فونت و ابزار</button>
+          </div>
+        </div>
+      </div>
+      <div class="composer">
+        <input id="msgInput" class="input" placeholder="پیام... از .font .ai .add .contacts استفاده کن"/>
+        <button class="btn" onclick="sendMsg()">ارسال</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/demgram/app.js"></script>
+</body>
+</html>

@@ -1,917 +1,366 @@
-/*NOVA-UI-START*/
-(function () {
-  'use strict';
+'use strict';
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const h = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const n = value => Number(value || 0).toLocaleString('fa-IR');
+const norm = value => String(value || '').normalize('NFKC').replace(/ي/g,'ی').replace(/ك/g,'ک').replace(/[\u200b-\u200d]/g,'').toLowerCase().trim();
+const PATHS = {
+  dashboard:'<rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/>',
+  shield:'<path d="M12 3 3.5 6v5.5c0 5 5.3 8.5 8.5 10 3.2-1.5 8.5-5 8.5-10V6L12 3Z"/><path d="m8.5 12 2.3 2.3 4.7-5"/>',
+  users:'<circle cx="9" cy="7" r="3.5"/><path d="M2.5 20v-2A6.5 6.5 0 0 1 9 11.5h0a6.5 6.5 0 0 1 6.5 6.5v2M16 4a3.5 3.5 0 0 1 0 6.8M17 13a5 5 0 0 1 4.5 5v2"/>',
+  game:'<path d="M7 7h10c4 0 5 4.5 5 8s-1 5-3 4l-4-3H9l-4 3c-2 1-3-.5-3-4S3 7 7 7Z"/><path d="M7 10v5M4.5 12.5h5"/><circle cx="16" cy="11" r=".7"/><circle cx="19" cy="14" r=".7"/>',
+  trophy:'<path d="M7 3h10v7a5 5 0 0 1-10 0V3ZM8 21h8M12 15v6M7 5H3v3a5 5 0 0 0 4 5M17 5h4v3a5 5 0 0 1-4 5"/>',
+  diamond:'<path d="m3 8 4-5h10l4 5-9 13L3 8ZM3 8h18M7 3l5 18 5-18M7 8l5-5 5 5"/>',
+  sparkles:'<path d="m12 4 2.3 6.2L21 13l-6.7 2.7L12 22l-2.3-6.3L3 13l6.7-2.8L12 4ZM4 2v5M1.5 4.5h5M20 2v4M18 4h4"/>',
+  terminal:'<rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 3 3-3 3M12 15h5"/>',
+  command:'<path d="M9 9V5a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v14a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V9Z"/>',
+  activity:'<path d="M2 12h4l3-8 5 16 3-8h5"/>',
+  settings:'<path d="m10 3-.8 2.5-2.6 1-2.4-.7-2 3.4 1.8 1.9v2.8l-1.8 1.9 2 3.4 2.4-.7 2.6 1L10 22h4l.8-2.5 2.6-1 2.4.7 2-3.4-1.8-1.9v-2.8l1.8-1.9-2-3.4-2.4.7-2.6-1L14 3h-4Z"/><circle cx="12" cy="12.5" r="3.5"/>',
+  crown:'<path d="m3 6 4 5 5-7 5 7 4-5-2 13H5L3 6ZM6 22h12"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2m-3-9-1.5 1.5M5.5 18.5 4 20m16 0-1.5-1.5M5.5 5.5 4 4"/>',
+  moon:'<path d="M21 13a9 9 0 1 1-10-10 7 7 0 0 0 10 10Z"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/>',
+  chevron:'<path d="m8 10 4 4 4-4"/>',
+  arrow:'<path d="M20 12H4m5-5-5 5 5 5"/>',
+  plus:'<path d="M12 4v16M4 12h16"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h1m4 0h1m-6 3h1"/>',
+  lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V6a4 4 0 0 1 8 0v4M12 14v3"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  refresh:'<path d="M20 8a8 8 0 0 0-14-3L3 8M3 3v5h5M4 16a8 8 0 0 0 14 3l3-3M21 21v-5h-5"/>',
+  message:'<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2v-10.5A8.5 8.5 0 0 1 10.5 3h2a8.5 8.5 0 0 1 8.5 8.5Z"/><path d="M7 9h10M7 13h6"/>',
+  trash:'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>',
+  copy:'<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M15 8V3H3v12h5"/>',
+  check:'<path d="m5 12 4 4L19 6"/>',
+  warning:'<path d="m12 3 10 18H2L12 3ZM12 9v5M12 17h.01"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  close:'<path d="m6 6 12 12M6 18 18 6"/>',
+  external:'<path d="M14 3h7v7m0-7L10 14M10 3H3v18h18v-7"/>',
+  download:'<path d="M12 3v12m-5-5 5 5 5-5M3 16v5h18v-5"/>',
+  menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+  logout:'<path d="M9 3H3v18h6M10 12h11m-4-4 4 4-4 4"/>',
+};
+const icon = (name, cls='') => `<svg class="icon ${h(cls)}" viewBox="0 0 24 24" aria-hidden="true">${PATHS[name] || PATHS.sparkles}</svg>`;
+const state = {session:null,connection:null,watchUntil:0,watchTimer:null,setupBusy:false,catalog:null,overview:null,groups:[],users:[],duels:[],logs:[],jobs:[],page:'overview',role:'all',groupFilter:'all',query:'',render:0};
+const TITLES = {overview:'نمای کلی',groups:'گروه‌های من',security:'امنیت و قفل‌ها',duels:'آرکید و دوئل‌ها',leaderboard:'لیدربرد',diamonds:'اقتصاد و الماس',self:'سلف محلی',terminal:'کنسول ترموکس',commands:'کتابخانه دستورات',logs:'گزارش رویدادها',settings:'ثبت و اتصال بات'};
+const ACTIONS = {'message.filtered':'پیام مزاحم فیلتر شد','settings.update':'تنظیمات گروه تغییر کرد','duel.settled':'دوئل به پایان رسید','message.send':'پیام از طرف بات ارسال شد','self.hour':'مجوز سلف برای یک ساعت فعال شد','panel.login':'ورود مالک به پنل','purge.queued':'پاک‌سازی به صف اضافه شد','purge.finished':'پاک‌سازی پایان یافت','schedule.create':'پیام زمان‌بندی شد','bot.membership':'وضعیت عضویت بات تغییر کرد','webhook.setup':'وبهوک ثبت شد','self.revoked':'مجوز سلف ابطال شد','economy.adjust':'موجودی کاربر تغییر کرد','global.update':'تنظیمات سراسری تغییر کرد','callback.denied_or_failed':'عملیات دکمه رد شد یا ناموفق بود','command_or_moderation.failed':'فرمان یا مدیریت پیام ناموفق بود','member.warn':'اخطار ثبت شد','job.failed':'عملیات صف ناموفق بود','update.failed':'پردازش آپدیت ناموفق بود','settings.export':'خروجی تنظیمات دریافت شد'};
+const STAGES = {active:['در حال بازی','green'],open:['منتظر حریف','amber'],creating:['در حال ساخت','gray'],settled:['پایان‌یافته','purple'],cancelled:['لغوشده','gray'],pending:['در صف','amber'],done:['تمام‌شده','green'],failed:['ناموفق','red'],uncertain:['وضعیت نامشخص','red'],sending:['در حال ارسال','gray']};
+const roleLabel = role => ({member:'همهٔ اعضا',admin:'مدیر گروه',owner:'مالک سراسری'}[role] || role);
+const roleTag = role => `<span class="tag ${role==='owner'?'amber':role==='admin'?'purple':'green'}">${roleLabel(role)}</span>`;
+const statusTag = (status='active') => `<span class="tag ${(STAGES[status]||STAGES.active)[1]}">${h((STAGES[status]||[status])[0])}</span>`;
+const date = value => new Date(value).toLocaleString('fa-IR',{timeZone:'Asia/Tehran',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const since = value => { const minutes=Math.max(0,Math.floor((Date.now()-value)/60000)); return minutes<1?'همین حالا':minutes<60?`${n(minutes)} دقیقه پیش`:minutes<1440?`${n(Math.floor(minutes/60))} ساعت پیش`:`${n(Math.floor(minutes/1440))} روز پیش`; };
+const groupName = id => state.groups.find(g=>g.id===id)?.title || String(id || 'سراسری');
+const avatar = (name,index=0,extra='') => `<span class="avatar a${index%4+1} ${h(extra)}">${h([...String(name||'ن')][0])}</span>`;
+const btn = (label,action,kind='secondary',ico='',attrs='') => `<button class="button ${kind}" data-action="${action}" ${attrs}>${ico?icon(ico):''}${label}</button>`;
+const pageBtn = (label,page,kind='primary',ico='arrow') => `<button class="button ${kind}" data-page="${page}">${label}${icon(ico)}</button>`;
+const empty = (title,description,ico='users',action='') => `<div class="empty-state">${icon(ico)}<h3>${h(title)}</h3><p>${h(description)}</p>${action}</div>`;
+const notice = (text,success=false) => `<div class="notice ${success?'success':''}">${icon(success?'shield':'warning')}<div>${text}</div></div>`;
+const head = (title,subtitle,actions='') => `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div><div class="page-actions">${actions}</div></div>`;
+const switchField = (key,title,description,value) => `<div class="setting-row"><div><strong>${title}</strong><small>${description}</small></div><label class="switch"><input type="checkbox" name="${key}" data-bool ${value?'checked':''} aria-label="${title}"><span class="switch-track"></span></label></div>`;
+const field = (key,label,value,type='text',extra='') => `<div class="setting-input"><label for="f-${key}">${label}</label><input id="f-${key}" name="${key}" type="${type}" value="${h(value)}" ${type==='number'?'data-number':''} ${extra}></div>`;
+const area = (key,label,value,extra='') => `<div class="setting-input"><label for="f-${key}">${label}</label><textarea id="f-${key}" name="${key}" ${/maxlength=/.test(extra)?'':'maxlength="3000"'} ${extra}>${h(value)}</textarea></div>`;
+const selectField = (key,label,options,selected) => `<div class="setting-input"><label for="f-${key}">${label}</label><select id="f-${key}" name="${key}">${options.map(([value,title])=>`<option value="${h(value)}" ${String(value)===String(selected)?'selected':''}>${h(title)}</option>`).join('')}</select></div>`;
+const formActions = label => `<div class="form-actions"><span class="hint">${state.session?.demo?'پیش‌نمایش؛ تغییر واقعی انجام نمی‌شود.':'تغییرات در دفتر رویدادها ثبت می‌شود.'}</span><button type="button" class="button ghost" data-action="close">انصراف</button><button type="submit" class="button primary">${label}${icon('check')}</button></div>`;
+const groupSelect = selected => selectField('chatId','گروه مقصد',state.groups.filter(g=>g.active===1).map(g=>[g.id,g.title]),selected);
+const codeBox = text => `<div class="code-box"><pre>${h(text)}</pre><button class="icon-button" data-copy="${h(text)}" aria-label="کپی فرمان">${icon('copy')}</button></div>`;
+const INSTALL = 'pkg update && pkg install python git\ngit clone --branch arena/01a07081-aminck-nova-edge --single-branch https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge.git nova-guard\ncd nova-guard\npython termux/console.py';
 
-  var APP = 'AMINNOVA';
-  var EDITION = 'AMINNOVA — پنل فروش ساب AMINCK';
-  var TAB = 'dash';
-  var INSTALL_EVENT = null;
-  var MONITOR_TIMER = null;
-  var STATE = { me: null, users: [], stats: null, endpoints: [], probe: {}, settings: null, iron: null, clean: [], games: [], ironUser: '', launch: null, caps: [] };
-  var ICON_PATHS = {
-    dash: '<path d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"/>',
-    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm13 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
-    iron: '<path d="m12 2 8 4v6c0 5-3.4 9.2-8 10-4.6-.8-8-5-8-10V6l8-4Zm-3 10 2 2 4-5"/>',
-    scan: '<path d="M4 17V7m4 10v-6m4 6V4m4 13v-9m4 9v-3M3 21h18"/>',
-    settings: '<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-3.5a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.7 3h-4l-.4 3a8 8 0 0 0-1.7 1L6.1 6 4 9.4 6.1 11a7 7 0 0 0 0 2L4 14.6 6 18l2.5-1a8 8 0 0 0 1.7 1l.4 3h4l.4-3a8 8 0 0 0 1.7-1l2.5 1 2-3.4-2-1.6a7 7 0 0 0 .1-1Z"/>',
-    app: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4M9 6h6"/>',
-    help: '<circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.7 2.7 0 1 1 4.4 2.1c-1.2.8-1.9 1.3-1.9 2.9M12 18h.01"/>',
-    install: '<path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/>',
-    spark: '<path d="m12 3 1.4 4.6L18 9l-4.6 1.4L12 15l-1.4-4.6L6 9l4.6-1.4L12 3Zm7 11 .8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14ZM5 15l.8 2.2L8 18l-2.2.8L5 21l-.8-2.2L2 18l2.2-.8L5 15Z"/>',
-    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
-    share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/>',
-    shield: '<path d="m12 2 8 4v6c0 5-3.4 9.2-8 10-4.6-.8-8-5-8-10V6l8-4Z"/><path d="m9 12 2 2 4-5"/>',
-    infinity: '<path d="M8.5 8.5c-5-4-8 5-3 7 3 1 5-2 6.5-4 1.5-2 3.5-5 6.5-4 5 2 2 11-3 7l-7-6Z"/>',
-    cloud: '<path d="M17.5 19H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9.5 4.8 4.8 0 0 1 17.5 19Z"/>',
-    book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5v14Zm0 0A2.5 2.5 0 0 0 6.5 22H20"/>',
-    logout: '<path d="M10 17l5-5-5-5m5 5H3m10-9h7v18h-7"/>',
-    theme: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-    menu: '<path d="M4 6h16M4 12h16M4 18h16"/>'
-  };
-
-  function icon(name) {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + (ICON_PATHS[name] || ICON_PATHS.spark) + '</svg>';
-  }
-  function $(sel, root) { return (root || document).querySelector(sel); }
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-  function toast(msg, ok) {
-    var box = $('#toasts');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'toasts';
-      box.style.cssText = 'position:fixed;top:16px;left:16px;z-index:50;display:flex;flex-direction:column;gap:8px';
-      document.body.appendChild(box);
-    }
-    var t = document.createElement('div');
-    t.style.cssText = 'background:var(--bg2);border:1px solid ' + (ok ? 'var(--ok)' : 'var(--err)') + ';border-radius:12px;padding:10px 14px;font-size:13px;box-shadow:var(--shadow);max-width:320px';
-    t.textContent = msg;
-    box.appendChild(t);
-    setTimeout(function () { t.remove(); }, 3800);
-  }
-  function copyText(text, label) {
-    function done() { toast((label || 'متن') + ' کپی شد', true); }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); done(); });
-    } else { fallbackCopy(text); done(); }
-  }
-  function fallbackCopy(text) {
-    var ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); } catch (e) {}
-    ta.remove();
-  }
-  function downloadJson(data, name) {
-    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-  }
-  function isStandalone() {
-    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  }
-  function installApp() {
-    if (isStandalone()) { toast('AMINNOVA همین حالا به‌صورت اپ اجرا شده', true); return; }
-    if (!INSTALL_EVENT) { toast('از منوی مرورگر گزینه Add to Home Screen / نصب برنامه را بزنید'); return; }
-    INSTALL_EVENT.prompt();
-    INSTALL_EVENT.userChoice.then(function (choice) {
-      if (choice.outcome === 'accepted') toast('اپ AMINNOVA نصب شد', true);
-      INSTALL_EVENT = null;
-    });
-  }
-  function registerPwa() {
-    if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
-      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-      reg.addEventListener('updatefound', function () {
-        var worker = reg.installing;
-        if (worker) worker.addEventListener('statechange', function () {
-          if (worker.state === 'installed' && navigator.serviceWorker.controller) toast('نسخه جدید اپ آماده شد', true);
-        });
-      });
-    }).catch(function () {});
-  }
-  function shareValue(title, text, url) {
-    if (navigator.share) {
-      navigator.share({ title: title, text: text, url: url }).catch(function () {});
-    } else copyText(url || text, title);
-  }
-  function api(method, path, body) {
-    var opts = { method: method || 'GET', headers: { 'content-type': 'application/json' }, credentials: 'same-origin' };
-    if (body !== undefined) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        if (!res.ok) {
-          var err = new Error(data.message || data.error || ('HTTP ' + res.status));
-          err.status = res.status;
-          err.data = data;
-          throw err;
-        }
-        return data;
-      });
-    });
-  }
-  function can(me, p) { return me && me.permissions && me.permissions.indexOf(p) >= 0; }
-  function subLink(token, fmt) { return location.origin + '/sub/' + token + (fmt ? '/' + fmt : ''); }
-  function testWsRoute(user) {
-    return new Promise(function (resolve) {
-      if (!user || !user.routes || !user.routes[0]) { resolve({ ok: false, error: 'مسیر ساخته نشد' }); return; }
-      var uuidHex = String(user.uuid || '').replace(/-/g, '');
-      if (!/^[0-9a-f]{32}$/i.test(uuidHex)) { resolve({ ok: false, error: 'UUID نامعتبر است' }); return; }
-      var started = Date.now();
-      var scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
-      var socket;
-      var settled = false;
-      function finish(result) { if (settled) return; settled = true; clearTimeout(timer); resolve(result); }
-      function packet() {
-        var domain = new TextEncoder().encode('connectivitycheck.gstatic.com');
-        var request = new TextEncoder().encode('GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n');
-        var header = new Uint8Array(23 + domain.length);
-        var off = 0; header[off++] = 0;
-        for (var i = 0; i < 16; i++) header[off++] = parseInt(uuidHex.slice(i * 2, i * 2 + 2), 16);
-        header[off++] = 0; header[off++] = 1; header[off++] = 0; header[off++] = 80;
-        header[off++] = 2; header[off++] = domain.length; header.set(domain, off);
-        var frame = new Uint8Array(header.length + request.length); frame.set(header); frame.set(request, header.length);
-        return frame;
+async function api(path,body) {
+  const response=await fetch(path,{method:body===undefined?'GET':'POST',credentials:'same-origin',headers:body===undefined?{}:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  let result; try{result=await response.json();}catch{throw new Error('پاسخ سرور معتبر نیست. اتصال را بررسی کنید.');}
+  if(response.status===401&&path!=='/api/login'){showLogin();throw new Error('نشست تمام شده؛ دوباره وارد شوید.');}
+  if(!response.ok)throw new Error(result.error || 'عملیات انجام نشد.');
+  return result;
+}
+function toast(text,error=false){const item=document.createElement('div');item.className=`toast ${error?'error':''}`;item.innerHTML=icon(error?'warning':'check')+`<span>${h(text)}</span>`;$('#toast-region').append(item);setTimeout(()=>item.remove(),error?8500:4500);}
+function modal(title,subtitle,content,wide=false){const dialog=$('#modal');dialog.classList.toggle('wide',wide);$('#modal-content').innerHTML=`<div class="modal-header"><div><h2 id="modal-title">${title}</h2><p>${subtitle}</p></div><button class="icon-button" data-action="close" aria-label="بستن">${icon('close')}</button></div><div class="modal-body">${content}</div>`;if(!dialog.open)dialog.showModal();}
+function closeModal(){$('#modal').close();}
+function closeMenu(){$('#sidebar').classList.remove('open');$('#mobile-scrim').hidden=true;}
+function showLogin(){$('#loading').hidden=true;$('#app').hidden=true;$('#login-screen').hidden=false;}
+async function copy(text){try{await navigator.clipboard.writeText(text);toast('کپی شد؛ در محل مناسب جای‌گذاری کن.');}catch{modal('کپی دستی','مرورگر اجازهٔ دسترسی به کلیپ‌بورد نداد.',`<div class="code-box"><pre>${h(text)}</pre></div>`);}}
+function locksMarkup(settings){return `<div class="lock-grid">${state.catalog.locks.map(([key,title,desc])=>`<label class="lock-card"><input type="checkbox" name="lock" value="${h(key)}" ${settings.locks.includes(key)?'checked':''}><span><b>${h(title)}</b><small>${h(desc)}</small></span></label>`).join('')}</div>`;}
+function parseSettings(form){const data=new FormData(form),patch={locks:data.getAll('lock')};$$('[data-bool]',form).forEach(i=>patch[i.name]=i.checked);$$('[data-number]',form).forEach(i=>patch[i.name]=Number(i.value));$$('textarea,select,input[type=text]',form).forEach(i=>{if(i.name)patch[i.name]=i.value;});return patch;}
+function groupTable(groups){return `<div class="table-wrap"><table class="group-table"><thead><tr><th>نام گروه</th><th>وضعیت</th><th class="hide-medium">پیام ثبت‌شده</th><th>امنیت</th><th></th></tr></thead><tbody>${groups.map((g,i)=>`<tr><td><button class="table-group" data-action="group-settings" data-id="${g.id}">${avatar(g.title,i)}<span><b>${h(g.title)}</b><small>${g.id}</small></span></button></td><td><span class="tag ${g.active===1?'green':'gray'}">${g.active===1?'<i class="status-dot"></i> فعال':'غیرفعال'}</span></td><td class="cell-muted hide-medium">${n(g.messages)}</td><td><span class="inline-locks">${icon('lock')}${n(g.settings.locks.length)} قفل</span></td><td><button class="icon-button" data-action="group-settings" data-id="${g.id}" aria-label="مدیریت ${h(g.title)}">${icon('more')}</button></td></tr>`).join('')}</tbody></table></div>`;}
+function statCard(title,value,unit,note,ico,color){return `<div class="stat-card"><div class="stat-top"><span>${title}</span><span class="stat-icon ${color}">${icon(ico)}</span></div><div class="stat-bottom"><strong class="stat-number">${n(value)}</strong><span class="stat-unit">${unit}</span></div><p class="stat-note">${note}</p></div>`;}
+function activities(logs){return logs.length?`<div class="activity-list">${logs.slice(0,5).map((r,i)=>`<div class="activity-item"><span class="activity-symbol">${icon(r.action.includes('filter')?'shield':r.action.includes('self')?'diamond':r.action.includes('message')?'message':'activity')}</span><div class="activity-info"><strong>${h(ACTIONS[r.action]||r.action)}</strong><p>${h(groupName(r.chat_id))}</p></div><time class="activity-time" datetime="${new Date(r.created_at).toISOString()}">${h(since(r.created_at))}</time></div>`).join('')}</div>`:`<div class="panel-body muted small">هنوز رویدادی ثبت نشده است.</div>`;}
+function gameShortcuts(){return state.catalog.games.map(g=>`<button class="game-shortcut" data-action="game-help" data-emoji="${g.emoji}" aria-label="آموزش دوئل ${h(g.name)}"><span class="emoji">${g.emoji}</span><span>${h(g.name)}</span></button>`).join('');}
+function overviewPage(data){const s=data.stats,groups=data.groups,protectedCount=groups.filter(g=>g.active===1&&g.settings.antiflood).length,total=groups.filter(g=>g.active===1).length,pct=total?Math.round(protectedCount/total*100):0;
+  const days=Array.from({length:7},(_,i)=>{const d=new Date(Date.now()-(6-i)*86400000),key=d.toISOString().slice(0,10);return {date:d,value:data.series.find(x=>x.day===key)?.count||0};});const max=Math.max(1,...days.map(d=>d.value));
+  const graph=`<svg viewBox="0 0 280 100" role="img" aria-label="رویدادهای فیلتر پیام در هفت روز گذشته"><path d="M0 15h280M0 50h280M0 85h280" stroke="var(--border)" stroke-dasharray="3 5" stroke-width=".5"/>${days.map((d,i)=>`<rect x="${i*39+7}" y="${90-d.value/max*74}" width="22" height="${Math.max(2,d.value/max*74)}" rx="4" fill="${i===6?'var(--mint)':'#73dcb038'}"><title>${h(d.date.toLocaleDateString('fa-IR'))}: ${n(d.value)}</title></rect>`).join('')}</svg>`;
+  const hero=`<section class="hero"><div class="hero-content"><span class="hero-kicker">${icon('sparkles')} دستیار همیشه بیدارِ گروه تو</span><h2>گروه شلوغ؛ <span>خیال تو راحت.</span></h2><p>از امنیت گروه تا رقابت‌های دوستانه، نُوا کنارته.<br>کمتر مدیریت کن، بیشتر از دورهمی لذت ببر.</p><div class="hero-actions">${pageBtn('بریم سراغ گروه‌ها','groups','primary')}<button class="text-link" data-page="commands">آشنایی با دستورات ${icon('external')}</button></div></div><div class="hero-art" aria-hidden="true"><div class="hero-orbit"><svg class="shield-illustration" viewBox="0 0 120 140"><defs><linearGradient id="shield-fill" x1="0" x2="1" y2="1"><stop stop-color="#82e7b9" stop-opacity=".55"/><stop offset="1" stop-color="#347d6b" stop-opacity=".3"/></linearGradient><linearGradient id="shield-edge"><stop stop-color="#a5efd0"/><stop offset="1" stop-color="#3f8c76"/></linearGradient></defs><path d="M60 7 105 24v35c0 31-25 51-45 65C40 110 15 90 15 59V24L60 7Z" fill="url(#shield-fill)" stroke="url(#shield-edge)" stroke-width="2"/><path d="M60 18 96 31v28c0 25-19 44-36 56-17-12-36-31-36-56V31L60 18Z" fill="#153a3125" stroke="#a5efd040"/><path d="m39 62 14 14 29-30" fill="none" stroke="#bdffe0" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span class="orbit-star">✦</span><span class="floating-chip one">🎲</span><span class="floating-chip two">💎</span><span class="floating-chip three"><i class="status-dot"></i> GUARD MODE</span></div></section>`;
+  return head(`همه‌چیز تحت کنترله${state.session.demo?'، امین':''} 👋`,'یه نگاه سریع به حال‌وهوای ربات و گروه‌هات.',`<span class="date-label">${icon('calendar')}${new Date().toLocaleDateString('fa-IR',{day:'numeric',month:'long',year:'numeric'})}</span>${btn('افزودن گروه','add-group','primary','plus')}`)+hero+
+  `<section class="stats-grid">${statCard('گروه‌های فعال',s.groups,'گروه','تحت مدیریت نُوا','users','')}${statCard('پیام‌های فیلترشده',s.blocked,'پیام','رویدادهای امنیتی ۳۰ روز اخیر','shield','mint')}${statCard('اعضای دیده‌شده',s.users,'کاربر','کاربران ثبت‌شده در ربات','activity','purple')}${statCard('دوئل‌های تمام‌شده',s.duels,'دوئل','رقابت‌های ۳۰ روز اخیر','game','gold')}</section>`+
+  `<div class="dashboard-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>گروه‌های من <span class="tag gray">${n(groups.length)}</span></h2><button class="text-link" data-page="groups">همهٔ گروه‌ها ${icon('arrow')}</button></div>${groups.length?groupTable(groups.slice(0,4)):empty('اولین گروهت رو اضافه کن','بات را به گروه اضافه کن و دسترسی مدیریتی بده.','users',btn('راهنمای افزودن گروه','add-group','secondary','plus'))}<div class="panel-table-footer"><span>فقط گروه‌هایی که بات در آن‌ها دیده شده است.</span><button class="text-link" data-action="refresh">${icon('refresh')} تازه‌سازی</button></div></section><section class="panel"><div class="panel-head"><div><h2>یه رقابت دوستانه، چطوره؟ 🎮</h2><p>۶ بازی ایموجی · حریف واقعی · شانس برابر</p></div><button class="text-link" data-page="duels">ورود به آرکید ${icon('arrow')}</button></div><div class="quick-games">${gameShortcuts()}</div><div class="games-bottom"><span>روی پیام بات ریپلای کن و بازی رو شروع کن.</span><span class="mint">${n(s.activeDuels)} دوئل باز</span></div></section><section class="panel"><div class="panel-head"><h2>آخرین اتفاق‌ها</h2><button class="text-link" data-page="logs">همهٔ رویدادها ${icon('arrow')}</button></div>${activities(data.logs)}</section><section class="diamond-strip"><span>💎</span><div><b>هر برد، یه قدم به الماس نزدیک‌تر.</b><p>پاداش کمیاب برای رقابت واقعی؛ بدون ارزش نقدی.</p></div><button class="text-link" data-page="diamonds">اقتصاد ربات ${icon('arrow')}</button></section></div><div class="stack"><section class="panel"><div class="panel-head"><h2>${icon('shield')} مرکز امنیت</h2><span class="tag green">ضداسپم</span></div><div class="protection-content"><div class="protection-ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="41" fill="none" stroke="var(--surface-3)" stroke-width="5"/><circle cx="50" cy="50" r="41" fill="none" stroke="var(--mint)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${pct*2.576} 258"/></svg><div class="ring-label">${n(pct)}٪<small>پوشش ضداسپم</small></div></div><div class="protection-info"><b>${protectedCount===total&&total?'سپر گروه‌ها بالاست.':'تنظیم سپر گروه‌ها'}</b><p>${n(protectedCount)} گروه از ${n(total)} گروه فعال<br>ضداسپم روشن دارند.</p><button class="text-link spaced" data-page="security">تنظیمات امنیت ${icon('arrow')}</button></div></div><div class="protection-footer"><span>ورود تأییدشده با کپچا</span><b>${n(groups.filter(g=>g.settings.captcha).length)} گروه</b></div></section><section class="panel"><div class="panel-head"><div><h2>نبض امنیت</h2><p>پیام‌های فیلترشده در ۷ روز اخیر</p></div><span class="tag gray">۷ روز</span></div><div class="mini-metrics"><div><i class="status-dot"></i><b>${n(days.reduce((a,d)=>a+d.value,0))}</b> رویداد</div></div><div class="graph">${graph}</div><div class="graph-labels">${days.map(d=>`<span>${h(d.date.toLocaleDateString('fa-IR',{weekday:'short'}))}</span>`).join('')}</div></section><section class="panel"><div class="panel-head"><h2>قهرمان‌های نُوا 🏆</h2><span class="tag amber">بر اساس برد</span></div><div class="leader-mini">${data.leaderboard.length?data.leaderboard.slice(0,4).map((u,i)=>`<div class="leader-row"><span class="leader-position">${i===0?'♛':n(i+1)}</span>${avatar(u.name,i)}<div><b>${h(u.name)}</b><p>سطح ${n(Math.floor(Math.sqrt(u.xp/100))+1)}</p></div><span class="leader-score">${n(u.wins)}<small>برد</small></span></div>`).join(''):'<p class="muted small">اولین قهرمان هنوز نرسیده.</p>'}</div><div class="panel-table-footer"><span>رقابت ادامه داره…</span><button class="text-link" data-page="leaderboard">لیدربرد کامل ${icon('arrow')}</button></div></section></div></div>`;
+}
+function groupCards(groups){return groups.length?groups.map((g,i)=>`<article class="panel group-card"><div class="group-card-header">${avatar(g.title,i)}<div><h3>${h(g.title)}</h3><p>${g.id}</p></div><span class="tag ${g.active===1?'green':'gray'}">${g.active===1?'فعال':'غیرفعال'}</span></div><div class="group-meta"><div><p>کاربر دیده‌شده</p><b>${n(g.members)}</b></div><div><p>پیام ثبت‌شده</p><b>${n(g.messages)}</b></div></div><div class="group-flags"><span class="tag green">${icon('lock')}${n(g.settings.locks.length)} قفل</span>${g.settings.games?'<span class="tag purple">دوئل روشن</span>':''}${g.settings.captcha?'<span class="tag gray">کپچا</span>':''}</div><div class="group-card-actions">${btn('تنظیمات','group-settings','secondary','settings',`data-id="${g.id}"`)}${btn('پیام','send','ghost','message',`data-id="${g.id}"`)}<button class="icon-button border" data-action="purge" data-id="${g.id}" aria-label="پاکسازی گروه">${icon('trash')}</button></div><button class="text-link group-diagnostic-link" data-action="group-diagnostics" data-id="${g.id}">${icon('shield')} بررسی دسترسی بات</button></article>`).join(''):empty('گروهی پیدا نشد','بات را به گروه اضافه کنید یا عبارت جستجو را تغییر دهید.','users',btn('افزودن گروه','add-group','primary','plus'));}
+function groupsPage(){return head('گروه‌های تو، یک‌جا.','برای هر جمع، تنظیمات مخصوص خودش را داشته باش.',btn('افزودن گروه','add-group','primary','plus'))+`<div class="toolbar"><div class="search-field">${icon('search')}<input id="group-search" placeholder="جستجوی نام یا شناسهٔ گروه" aria-label="جستجوی گروه"></div><div class="tabs"><button class="tab ${state.groupFilter==='all'?'active':''}" data-group-filter="all">همهٔ گروه‌ها</button><button class="tab ${state.groupFilter==='active'?'active':''}" data-group-filter="active">فعال‌ها</button><button class="tab ${state.groupFilter==='inactive'?'active':''}" data-group-filter="inactive">غیرفعال‌ها</button></div></div><div id="group-grid" class="group-grid">${groupCards(state.groups)}</div>`+notice('تعداد اعضا در پنل، کاربران دیده‌شده توسط بات است؛ نه فهرست کامل اعضای تلگرام. فقط پیام‌های پس از اضافه‌شدن بات ثبت می‌شوند.');}
+function securityPage(group){return head('سپر گروهت رو تنظیم کن.','قفل‌ها، ضداسپم و کنترل ورود؛ دقیق و مستقل برای هر گروه.',btn('پاک‌سازی پیام‌ها','purge','secondary','trash',group?`data-id="${group.id}"`:''))+`<div class="toolbar"><span class="soft small">تنظیمات گروه انتخاب‌شده</span><select class="filter-select" id="security-group" aria-label="گروه امنیت">${state.groups.map(g=>`<option value="${g.id}" ${g.id===group?.id?'selected':''}>${h(g.title)}</option>`).join('')}</select></div>`+(group?`<form id="security-form" data-id="${group.id}"><section class="panel content-card"><h2>قفل‌های محتوا</h2><p>هر مورد روشن، همان نوع پیام را برای اعضای عادی فیلتر می‌کند. مالک‌ها و مدیرهای تلگرام معاف‌اند.</p>${locksMarkup(group.settings)}<div class="field-grid"><div>${switchField('antiflood','ضداسپم','مقابله با ارسال سریع و پشت‌سرهم پیام',group.settings.antiflood)}${switchField('captcha','کپچای ورود','تأیید دکمه‌ای تازه‌واردها',group.settings.captcha)}${switchField('raid','ضدهجوم','اخراج تازه‌واردها تا خاموش‌شدن',group.settings.raid)}</div><div>${field('floodLimit','حد پیام در پنجرهٔ ضداسپم',group.settings.floodLimit,'number','min="3" max="30" required')}${field('warnLimit','حد اخطار برای مجازات',group.settings.warnLimit,'number','min="1" max="10" required')}</div></div><div class="form-actions"><span class="hint">دسترسی Delete و Restrict برای بات ضروری است.</span><button type="submit" class="button primary">ذخیرهٔ تنظیمات ${icon('check')}</button></div></section></form>`:empty('هنوز گروهی نداریم','اول بات را به یک گروه اضافه و ادمین کنید.','shield',btn('افزودن گروه','add-group','primary','plus')))+`<div class="feature-grid spaced"><article class="feature-card">${icon('lock')}<h3>لیست سیاه متن و استیکر</h3><p>روی پیام یا استیکر ریپلای کن و «دیمن» بفرست. متنِ دقیق یا همان استیکر، حتی بعد از ویرایش، حذف می‌شود. «رفع دیمن» آن را آزاد می‌کند.</p></article><article class="feature-card">${icon('trash')}<h3>پاک‌سازی مسئولانه</h3><p>«حذف ۱۰۰۰» قدیمی‌ترین هزار پیام ثبت‌شدهٔ قابل‌حذف را، پس از تأیید، پردازش می‌کند. تلگرام برای تاریخچهٔ قدیمی محدودیت دارد.</p></article><article class="feature-card">${icon('crown')}<h3>دسترسی، نه اعتماد کور</h3><p>مجوز هر دستور و هر دکمه در سرور بررسی می‌شود. معافیت از فیلتر، هیچ اختیار مدیریتی به عضو عادی نمی‌دهد.</p></article></div>`;}
+function duelTable(duels){return duels.length?`<div class="table-wrap"><table><thead><tr><th>بازی</th><th>بازیکن‌ها</th><th>گروه</th><th>شرط هر نفر</th><th>وضعیت</th><th>امتیاز خام</th></tr></thead><tbody>${duels.map(d=>`<tr><td><span class="duel-emoji">${d.emoji}</span></td><td><div class="duel-players"><span>${h(d.creator_name)}</span><span>vs</span><span>${h(d.opponent_name||'منتظر حریف')}</span></div><small class="muted ltr">${h(d.id)}</small></td><td class="small soft">${h(groupName(d.chat_id))}</td><td>${n(d.stake)} <small class="muted">سکه</small></td><td>${statusTag(d.state)}</td><td class="ltr soft">${d.roll1===null?'—':n(d.roll1)} : ${d.roll2===null?'—':n(d.roll2)}</td></tr>`).join('')}</tbody></table></div>`:empty('هنوز دوئلی ثبت نشده','یکی از فرمان‌های بالا را داخل گروه بفرست و منتظر حریف بمان.','game');}
+function duelsPage(){return head('اینجا شانس، حریف می‌طلبه. 🎲','شش بازی بومی تلگرام؛ یک قانون ساده: امتیاز بیشتر، برنده.',btn('تازه‌سازی','refresh','secondary','refresh'))+`<div class="page-intro"><div><span class="hero-kicker">${icon('game')} NOVA ARCADE</span><h2>رقابت واقعی. جایزهٔ مجازی.</h2><p>سکهٔ هر دو بازیکن پیش از شروع رزرو می‌شود. فقط اولین پرتاب تازه، در پاسخ به پیام چالش، حساب می‌شود. تاس فورواردی، ویرایش‌شده یا شخص سوم؟ اینجا نه.</p></div><span class="intro-symbol">⚔️</span></div><div class="game-grid">${state.catalog.games.map(g=>`<button class="arcade-game" data-action="game-help" data-emoji="${g.emoji}"><span class="emoji">${g.emoji}</span><h3>${h(g.name)}</h3><p>دو نفره · امتیاز بیشتر</p><span class="copy-game">راهنمای بازی ${icon('arrow')}</span></button>`).join('')}</div><div class="instructions">${[['چالش بساز','مثلاً «دوئل 🎲 ۵۰» را بفرست.'],['حریف بپذیرد','سکهٔ هر دو نفر رزرو می‌شود.'],['روی بات ریپلای کن','هر بازیکن ایموجی همان بازی را بفرستد.'],['نتیجه مشخص شود','امتیاز بیشتر می‌برد؛ تساوی یعنی استرداد.']].map(([t,d],i)=>`<div class="instruction"><span class="step-number">${n(i+1)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div><section class="panel"><div class="panel-head"><h2>دوئل‌های اخیر</h2><span class="tag purple">${n(state.duels.length)} مورد اخیر</span></div>${duelTable(state.duels)}</section>`+notice('اگر پس از پذیرش دوئل فقط یک نفر تا پایان مهلت پرتاب کند، همان بازیکن برنده می‌شود. در اسلات، مقدار خام با امتیاز فرق دارد: ۷۷۷ = ۱۰۰؛ سه نماد یکسان = ۳۰؛ جفت = ۱۰؛ بقیه = صفر.');}
+function usersTable(users,wallet=false){return users.length?`<div class="table-wrap"><table><thead><tr><th>${wallet?'کاربر':'رتبه / بازیکن'}</th><th>برد / باخت</th><th>امتیاز</th><th>سکه</th><th>الماس</th>${wallet?'<th>مدیریت</th>':''}</tr></thead><tbody>${users.map((u,i)=>`<tr><td><div class="table-group">${!wallet?`<span class="leader-position">${i<3?['🥇','🥈','🥉'][i]:n(i+1)}</span>`:''}${avatar(u.name,i,'round')}<span><b>${h(u.name)} ${u.unlimited?'👑':''}</b><small>${u.id}</small></span></div></td><td><span class="mint">${n(u.wins)}</span> <span class="muted">/ ${n(u.losses)}</span></td><td class="soft">${n(u.xp)}</td><td>${n(u.coins)}</td><td class="purple">${u.unlimited?'∞':n(u.diamonds)}</td>${wallet?`<td>${btn('ویرایش موجودی','wallet','secondary small-button','diamond',`data-id="${u.id}"`)}</td>`:''}</tr>`).join('')}</tbody></table></div>`:empty('هنوز کاربری دیده نشده','با شروع ربات یا فرستادن پیام در گروه، کاربران ثبت می‌شوند.','users');}
+function leaderboardPage(){const users=state.users;const podium=users.length>=3?`<section class="panel"><div class="podium">${[1,0,2].map((index)=>{const u=users[index];return `<div class="podium-person ${index===0?'first':index===2?'third':''}">${avatar(u.name,index,'round')}<b>${h(u.name)}</b><p>${n(u.wins)} برد · ${n(u.xp)} XP</p><div class="podium-block">${['🥇','🥈','🥉'][index]}</div></div>`;}).join('')}</div></section>`:'';return head('قهرمان بعدی، کیه؟ 🏆','رتبه‌بندی بر اساس برد، سپس امتیاز؛ هر گروه جدول خودش را هم دارد.',`<select id="leader-group" class="filter-select" aria-label="گروه لیدربرد"><option value="">همهٔ ربات</option>${state.groups.map(g=>`<option value="${g.id}">${h(g.title)}</option>`).join('')}</select>`)+`<div id="leader-content">${podium}<section class="panel"><div class="panel-head"><h2>جدول بازیکن‌ها</h2><span class="tag amber">تا ۱۰۰ نفر</span></div>${usersTable(users)}</section></div>`+notice('امتیاز فعالیت برای هر کاربر، حداکثر یک بار در دقیقه ثبت می‌شود. خرید امتیاز، فروش الماس و برداشت پول در این ربات وجود ندارد.',true);}
+function diamondsPage(){return head('الماس کم‌یابه؛ بردن می‌چسبه. 💎','اقتصاد کاملاً مجازی، حساب‌وکتاب شفاف و کنترل در اختیار تو.',btn('خروجی تنظیمات','export','secondary','download'))+`<section class="page-intro wallet-banner"><div><span class="hero-kicker purple">${icon('crown')} ویژهٔ مالک‌های سراسری</span><h2>الماس تو محدودیت نداره.</h2><p>دو شناسهٔ اصلی، در همهٔ گروه‌های ربات اختیار مالک دارند و هزینهٔ سلف برایشان صفر است. موجودی دیگران با دفتر تراکنش اتمی مدیریت می‌شود.</p><div class="owner-ids">${state.session.owners.map(id=>`<code>${id}</code>`).join('')}</div></div><span class="unlimited-badge">∞</span></section><div class="metric-trio"><div class="stat-card"><strong>۵ 💎</strong><p>هزینهٔ هر ساعت شروع‌شدهٔ سلف</p></div><div class="stat-card"><strong>۱ / ${n(state.overview?.global?.diamondOdds||50)}</strong><p>شانس الماس در برد واجد شرایط</p></div><div class="stat-card"><strong>۱ 💎</strong><p>سقف پاداش در هر ۲۴ ساعت</p></div></div><div class="toolbar"><div class="search-field">${icon('search')}<input id="user-search" placeholder="نام یا شناسهٔ کاربر" aria-label="جستجوی کاربر"></div><span class="small muted">فقط دو مالک می‌توانند موجودی را ویرایش کنند.</span></div><section class="panel"><div class="panel-head"><h2>کیف پول کاربران</h2><span class="tag purple">ارز مجازی و غیرنقدی</span></div><div id="wallet-table">${usersTable(state.users,true)}</div></section>`+notice('الماس فقط در برد واقعی با شرط حداقل ۵۰ سکه و اولین بازی با هر حریف در ۲۴ ساعت امکان دریافت دارد. پاداش روزانه فقط سکه است. اجارهٔ سلف پیش‌پرداخت است و توقف زودتر بازپرداخت ندارد.');}
+function selfPage(){const active=state.users.filter(u=>u.lease>Date.now());return head('اکانت خودت. روی دستگاه خودت.','سلف محلی اختیاری، بدون سپردن کد ورود یا نشست تلگرام به سرور.',btn('کپی نصب سلف','copy-self','primary','terminal'))+`<div class="two-column"><section class="panel content-card"><span class="hero-kicker">${icon('shield')} LOCAL-FIRST / PRIVATE BY DESIGN</span><h2>کلید حساب، فقط پیش خودت.</h2><p>کلودفلر ربات و اعتبار را مدیریت می‌کند؛ اتصال حساب شخصی با Telethon روی ترموکس خودت اجرا می‌شود.</p><ul class="check-list">${['شماره، کد ورود و رمز دومرحله‌ای فقط در ترموکس دریافت می‌شوند.','فایل نشست با دسترسی محدود روی دستگاه خودت می‌ماند.','کد اتصال نُوا یک‌بارمصرف و فقط ۱۰ دقیقه معتبر است.','مجوز هر ۶۰ ثانیه بررسی می‌شود؛ قطع اعتبار، یعنی توقف برنامهٔ رسمی.','هر ساعت شروع‌شده ۵ الماس؛ مالک‌های سراسری معاف‌اند.'].map(t=>`<li>${icon('check')}${t}</li>`).join('')}</ul>${notice('فایل account.session معادل دسترسی به حساب توست. آن را به کسی نده، روی گیت نگذار و به وب‌سایت‌ها آپلود نکن.')}</section><div><div class="terminal-window"><div class="terminal-bar"><span class="terminal-dots"><i></i><i></i><i></i></span><span>nova-self / termux</span>${icon('terminal')}</div><div class="terminal-content"><span class="comment"># after cloning the project</span><pre><span class="prompt">$</span> pip install -r termux/requirements.txt\n<span class="prompt">$</span> python termux/self_client.py\n\n<span class="comment"># local-only authentication</span>\nAPI ID: ••••••••\nAPI HASH: ••••••••••••••••\n\n<span class="comment"># send to Nova in a private chat</span>\nسلف\n\n<span class="comment"># then use your one-time pairing code</span>\n.help   .afk   .save   .remind</pre></div></div><p class="terminal-caption">نمونهٔ راه‌اندازی محلی؛ این صفحه فرم ورود حساب تلگرام نیست.</p>${codeBox('pip install -r termux/requirements.txt\npython termux/self_client.py')}</div></div><section class="panel spaced"><div class="panel-head"><h2>مجوزهای ساعت جاری</h2><span class="tag green">${n(active.length)} اجاره</span></div>${active.length?`<div class="table-wrap"><table><thead><tr><th>کاربر</th><th>اعتبار تا</th><th>نوع اعتبار</th><th>کنترل مالک</th></tr></thead><tbody>${active.map(u=>`<tr><td>${h(u.name)} <small class="muted">${u.id}</small></td><td>${date(u.lease)}</td><td>${u.unlimited?'مالک · بدون هزینه':'۵ الماس / ساعت'}</td><td>${btn('ابطال مجوز','revoke-self','ghost small-button','close',`data-id="${u.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty('اجارهٔ فعالی وجود ندارد','این فهرست اعتبار سرور را نشان می‌دهد، نه تضمین آنلاین‌بودن دستگاه.','clock')}</section>`+notice('کلاینت متن‌باز است و قفل غیرقابل‌دورزدن محسوب نمی‌شود؛ کاربر می‌تواند نسخهٔ محلی را تغییر دهد. حسابداری و مجوزهای سرور مستقل و محافظت‌شده‌اند.');}
+function terminalPage(){return head('اتاق فرمان، توی جیب تو.','هم از تلگرام مدیریت کن، هم از منوی تعاملی ترموکس.',btn('کپی دستورهای نصب','copy-install','primary','copy'))+`<div class="two-column"><section class="panel content-card"><span class="hero-kicker">${icon('terminal')} BUILT FOR TERMUX</span><h2>یک منو. کلی اختیار.</h2><p>برای ارسال پیام، سنجاق، کنترل قفل‌ها و مدیریت اعتبار، لازم نیست دوباره به پنل وب برگردی.</p><div class="instructions">${[['پروژه را دریافت کن','دستورهای نصب زیر را در ترموکس اجرا کن.'],['کد اتصال بگیر','در خصوصی بات، با اکانت مالک «ترموکس» بفرست.'],['فقط به ورکر خودت وصل شو','آدرس HTTPS و کد یک‌بارمصرف را محلی وارد کن.'],['از منو انتخاب کن','ارسال و پاک‌سازی، تأیید صریح خودت را می‌خواهند.']].map(([t,d],i)=>`<div class="instruction"><span class="step-number">${n(i+1)}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div>${codeBox(INSTALL)}</section><div><div class="terminal-window"><div class="terminal-bar"><span class="terminal-dots"><i></i><i></i><i></i></span><span>owner@nova ~</span>${icon('terminal')}</div><div class="terminal-content"><pre><span class="prompt">$</span> python termux/console.py\n\n╭──────────────────────────────╮\n│   ✦ NOVA GUARD · CONTROL     │\n╰──────────────────────────────╯\n\n  01  Status       02  Groups\n  03  Message      04  Send & pin\n  05  Locks        06  Purge\n  07  Diamonds     08  Schedule\n  09  Audit        10  Webhook\n  11  Local self   12  Disconnect\n\n<span class="prompt">❯</span> Choose an action <span class="prompt">▍</span></pre></div></div><p class="terminal-caption">نمای نمونهٔ منو. کنسول واقعی روی دستگاه خودت اجرا می‌شود.</p><section class="panel content-card spaced"><h3>پیام از طرف بات، با سنجاق 📌</h3><p class="muted small spaced">در گروه بفرست:</p>${codeBox('پیام درخواست دسترسی کامل لطفا ؛پین')}<p class="small muted">یا از خصوصی بات، با شناسهٔ گروه:</p>${codeBox('ارسال پین -1001234567890 درخواست دسترسی کامل لطفا')}${btn('ارسال از همین پنل','send','secondary full','message')}</section></div></div>`+notice('کنسول فقط با کد اتصال مالک مجوز می‌گیرد. نیازی به قراردادن BOT_TOKEN یا رمز پنل در ترموکس نیست. مجوز کنسول تا ۳۰ روز معتبر و قابل ابطال است.',true);}
+function commandCards(){const query=norm($('#command-search')?.value||state.query);const commands=state.catalog.commands.filter(c=>(state.role==='all'||c.role===state.role)&&norm([c.name,c.fa,c.description,...c.aliases].join(' ')).includes(query));return {count:commands.length,html:commands.length?commands.map(c=>`<article class="command-card"><div class="command-card-top"><h3>${h(c.fa)}</h3>${roleTag(c.role)}</div><p>${h(c.description)}</p><div class="command-code"><code>/${h(c.usage||c.name)}</code><button class="icon-button" data-copy="/${h(c.usage||c.name)}" aria-label="کپی ${h(c.name)}">${icon('copy')}</button></div></article>`).join(''):empty('چیزی پیدا نشد','نام فارسی، انگلیسی یا یک کلمه از توضیح قابلیت را امتحان کن.','search')};}
+function commandsPage(){const result=commandCards();return head('هر کاری، یک دستور.','فارسی و English؛ با اسلش یا بدون اسلش. تکراری‌ها را قابلیت جدا حساب نکرده‌ایم.',`<span class="tag green">نسخهٔ ${h(state.catalog.version)}</span>`)+`<div class="catalog-summary"><span><b>${n(state.catalog.commands.length)}</b> دستور مستقل</span><span><b>${n(state.catalog.locks.length)}</b> فیلتر محتوا</span><span><b>${n(state.catalog.games.length)}</b> بازی بومی تلگرام</span><span><b>${n(state.catalog.ownerCommands)}</b> دستور اختصاصی مالک</span></div><div class="toolbar"><div class="search-field">${icon('search')}<input id="command-search" placeholder="مثلاً دیمن، duel، ترموکس یا الماس…" value="${h(state.query)}" aria-label="جستجوی قابلیت"></div><div class="tabs">${[['all','همه'],['member','اعضا'],['admin','مدیرها'],['owner','مالک']].map(([key,label])=>`<button class="tab ${state.role===key?'active':''}" data-role-filter="${key}">${label}</button>`).join('')}</div></div><p id="command-results" class="small muted">${n(result.count)} دستور پیدا شد</p><div id="command-grid" class="command-grid spaced">${result.html}</div>`+notice('برای استفادهٔ بدون اسلش، حالت دستور گروه باید all باشد. برای هدف‌گرفتن عضو، روی پیامش ریپلای کن یا شناسهٔ عددی بده. محدودیت‌های واقعی تلگرام همچنان اعمال می‌شوند.',true);}
+function logsPage(){return head('هیچ تغییری بی‌ردپا نیست.','دفتر رویدادها و صف کارها؛ بدون ثبت توکن یا کد ورود.',btn('تازه‌سازی','refresh','secondary','refresh'))+`<section class="panel"><div class="panel-head"><h2>دفتر رویدادها</h2><span class="tag gray">۱۰۰ مورد اخیر · نگهداری ۳۰ روز</span></div>${state.logs.length?`<div class="table-wrap"><table><thead><tr><th>رویداد</th><th>گروه</th><th>عامل</th><th>توضیح</th><th>زمان</th></tr></thead><tbody>${state.logs.map(l=>`<tr><td><span class="small">${h(ACTIONS[l.action]||l.action)}</span><br><small class="muted ltr">${h(l.action)}</small></td><td class="small soft">${h(groupName(l.chat_id))}</td><td class="ltr small">${l.actor||'سیستم'}</td><td class="log-detail">${h(l.detail)}</td><td class="small muted">${h(date(l.created_at))}</td></tr>`).join('')}</tbody></table></div>`:empty('فعلاً همه‌جا آرومه','اولین عملیات مدیریتی اینجا ثبت می‌شود.','activity')}</section><section class="panel spaced"><div class="panel-head"><h2>صف پاک‌سازی و پیام‌های زمان‌بندی‌شده</h2>${btn('زمان‌بندی پیام','schedule','secondary small-button','clock')}</div>${state.jobs.length?`<div class="job-list">${state.jobs.map(j=>`<div class="job-row"><span class="activity-symbol">${icon(j.type==='purge'?'trash':'clock')}</span><div><strong>${j.type==='purge'?'پاک‌سازی':j.type==='joins'?'بررسی تازه‌واردها':'پیام زمان‌بندی‌شده'} · ${h(j.id)}</strong><small>${h(groupName(j.chat_id))} · ${date(j.next_at)}</small></div>${statusTag(j.state)}${j.state==='pending'?btn('توقف','cancel-job','ghost small-button','close',`data-id="${h(j.id)}"`):''}</div>`).join('')}</div>`:'<div class="panel-body small muted">کاری در صف نیست. پیام‌های زمان‌بندی‌شده و پاک‌سازی‌های دسته‌ای اینجا نمایش داده می‌شوند.</div>'}</section>`+notice('ارسال پیام پس از خطای مبهم شبکه خودکار تکرار نمی‌شود؛ ممکن است پیام قبلاً رسیده باشد. وضعیت «نامشخص» را در گروه بررسی کنید تا پیام دوباره ارسال نشود.');}
+function connectionProgress(connection) {
+  const steps = [
+    ['توکن بات', connection.tokenValid], ['اتصال خودکار', connection.canReceive],
+    ['آزمایش پیام', connection.receiving], ['افزودن گروه', connection.groupCount > 0 && connection.receiving],
+  ];
+  return `<div class="connect-steps" aria-label="مراحل راه‌اندازی">${steps.map(([label,done],i)=>`<div class="connect-step ${done?'complete':''}"><span>${done?icon('check'):n(i+1)}</span><b>${label}</b></div>`).join('')}</div>`;
+}
+function connectionStatusMarkup(connection) {
+  const good = connection.stage === 'connected';
+  const waiting = connection.stage === 'waiting_for_update';
+  const iconName = good ? 'check' : waiting ? 'clock' : 'warning';
+  return `<div class="connection-state ${good?'connect-ok':''}" role="status"><span class="connect-state-icon">${icon(iconName)}</span><div><b>${h(connection.message || 'وضعیت اتصال در حال بررسی است.')}</b><p>${connection.bot ? `${h(connection.bot.first_name)} · <bdi>@${h(connection.bot.username)}</bdi>` : 'ثبت بات فقط در پنل نصب‌شدهٔ خودتان انجام می‌شود.'}</p></div></div>
+    <div class="connect-receipt"><span>${icon('activity')} آخرین دریافت از تلگرام</span><b>${connection.lastReceivedAt?h(date(connection.lastReceivedAt)):'هنوز پیامی نرسیده'}</b></div>
+    ${connection.warnings?.length?`<details class="connect-details"><summary>راهنما و هشدارها (${n(connection.warnings.length)})</summary><ul>${connection.warnings.map(w=>`<li>${h(w)}</li>`).join('')}</ul></details>`:''}`;
+}
+function connectionNextMarkup(connection) {
+  const demo = state.session.demo;
+  const ready = connection.canReceive && !demo;
+  return `<div class="connect-action-grid">
+    ${ready && connection.startUrl?`<a class="button primary" href="${h(connection.startUrl)}" target="_blank" rel="noopener noreferrer" data-telegram-open>۱. آزمایش در تلگرام ${icon('external')}</a>`:'<button class="button secondary" disabled>۱. آزمایش در تلگرام</button>'}
+    ${ready && connection.addGroupUrl?`<a class="button secondary" href="${h(connection.addGroupUrl)}" target="_blank" rel="noopener noreferrer" data-telegram-open>۲. انتخاب گروه و افزودن بات ${icon('users')}</a>`:'<button class="button secondary" disabled>۲. افزودن بات به گروه</button>'}
+    </div>${connection.bot?.can_join_groups===false?notice('افزودن این بات به گروه در BotFather خاموش است؛ گزینهٔ Allow Groups را روشن کن.'):''}<p class="small muted spaced">در گفت‌وگوی بات، دکمهٔ Start را بزن؛ بعد در گروه این دستور را بفرست:</p>${codeBox(connection.panelCommand || '/panel')}
+    <div class="connect-action-grid">${btn('بررسی دوبارهٔ اتصال','check-connection','ghost','refresh')}${btn('بات از قبل در گروه بود','recover-group','ghost','search')}</div>
+    ${connection.groupCount?`<p class="small mint spaced">${n(connection.groupCount)} گروه ثبت شده است. <button class="text-link" data-page="groups">مشاهدهٔ گروه‌ها ←</button></p>`:''}`;
+}
+function updateConnectionBanner() {
+  const banner=$('#connection-banner'), c=state.connection;
+  if (!banner || !c || state.session?.demo || c.stage==='connected' && c.groupCount>0) { if(banner)banner.hidden=true; return; }
+  banner.hidden=false;
+  banner.innerHTML=`<span>${icon(c.canReceive?'clock':'warning')} ${h(c.canReceive?'اتصال ثبت شده؛ آزمایش پیام و افزودن گروه را کامل کن.':'بات هنوز به این پنل وصل نشده؛ از «ثبت و اتصال بات» شروع کن.')}</span><button class="text-link" data-page="settings">ادامهٔ راه‌اندازی ${icon('arrow')}</button>`;
+}
+function paintConnection(connection) {
+  state.connection=connection; updateConnectionBanner();
+  if($('#connection-progress'))$('#connection-progress').innerHTML=connectionProgress(connection);
+  if($('#connection-status'))$('#connection-status').innerHTML=connectionStatusMarkup(connection);
+  if($('#connection-next'))$('#connection-next').innerHTML=connectionNextMarkup(connection);
+  if($('#connection-repair'))$('#connection-repair').hidden=!connection.tokenValid;
+}
+async function checkConnection(showToast=false) {
+  const connection=await api('/api/connection'); paintConnection(connection);
+  if(showToast)toast(connection.message || 'وضعیت اتصال تازه شد.', !['connected','waiting_for_update'].includes(connection.stage));
+  return connection;
+}
+function watchConnection(mode='setup') {
+  if(state.session?.demo || !state.session?.authenticated)return;
+  state.watchUntil=Date.now()+180000;
+  state.watchMode=mode;state.watchLastGroup=state.connection?.lastGroupAt||0;state.watchLastReceived=state.connection?.lastReceivedAt||0;
+  if(state.watchTimer)clearTimeout(state.watchTimer);
+  state.watchTimer=setTimeout(pollOnboarding,4000);
+}
+async function pollOnboarding() {
+  if(!state.session?.authenticated || state.session.demo || Date.now()>state.watchUntil)return;
+  try {
+    if(!document.hidden && !state.setupBusy) {
+      // Never re-render a token form or an unsaved settings dialog in the background.
+      const typingToken=!!$('#setup-bot-token')?.value;
+      if(!typingToken)await checkConnection(false);
+      if(['overview','groups'].includes(state.page) && !$('#modal').open && !$('#group-search')?.value) {
+        const groupData=await api('/api/groups');
+        if(JSON.stringify(groupData.groups)!==JSON.stringify(state.groups)) { state.groups=groupData.groups;state.overview=null;await render(); }
       }
-      function inspect(buffer) {
-        var bytes = new Uint8Array(buffer);
-        if (bytes.length >= 2 && bytes[0] === 0) finish({ ok: true, latencyMs: Date.now() - started, bytes: bytes.length });
-        else finish({ ok: false, error: 'پاسخ VLESS معتبر دریافت نشد' });
-        try { socket.close(); } catch (e) {}
-      }
-      var timer = setTimeout(function () {
-        try { if (socket) socket.close(); } catch (e) {}
-        finish({ ok: false, error: 'Timeout تست کامل تونل؛ فقط Handshake کافی نیست' });
-      }, 20000);
-      try {
-        socket = new WebSocket(scheme + location.host + user.routes[0].path);
-        socket.binaryType = 'arraybuffer';
-        socket.onopen = function () { socket.send(packet()); };
-        socket.onmessage = function (event) {
-          if (event.data instanceof ArrayBuffer) inspect(event.data);
-          else if (event.data && event.data.arrayBuffer) event.data.arrayBuffer().then(inspect).catch(function () { finish({ ok: false, error: 'پاسخ باینری خوانده نشد' }); });
-        };
-        socket.onclose = function (event) {
-          if (settled) return;
-          if (event.code === 1000 && event.reason === 'upstream-closed') {
-            finish({ ok: false, tcpOpened: true, latencyMs: Date.now() - started, error: 'TCP باز شد اما مقصد تست بدون ارسال داده بسته شد' });
-            return;
-          }
-          finish({ ok: false, error: 'تونل بسته شد: ' + event.code + (event.reason ? ' / ' + event.reason : '') });
-        };
-        socket.onerror = function () { finish({ ok: false, error: 'WebSocket روی این دامنه/ISP باز نشد' }); };
-      } catch (e) { finish({ ok: false, error: String(e.message || e) }); }
-    });
-  }
-  function numOrZero(id) {
-    var el = $('#' + id);
-    if (!el) return 0;
-    var n = Number(el.value);
-    return isFinite(n) && n > 0 ? n : 0;
-  }
-  function limRow(label, id) {
-    return '<label>' + label + ' (۰ = نامحدود)</label><div class="row"><input id="' + id + '" value="0"><button class="btn" type="button" data-inf="' + id + '">∞ نامحدود</button></div>';
-  }
-  function bindInf() {
-    document.querySelectorAll('[data-inf]').forEach(function (el) {
-      el.onclick = function () {
-        var t = $('#' + el.getAttribute('data-inf'));
-        if (t) t.value = '0';
-      };
-    });
-  }
-  function ironOptions(sel) {
-    var h = '';
-    [0, 1, 2, 3, 4, 5].forEach(function (n) {
-      h += '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + ' آهنین JSON</option>';
-    });
-    return h;
-  }
-  function subscriptionOptions(sel) {
-    var h = '';
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].forEach(function (n) {
-      h += '<option value="' + n + '"' + (n === sel ? ' selected' : '') + '>' + n + ' ساب</option>';
-    });
-    return h;
-  }
-
-  function domainMenuHtml() {
-    var html = '<div class="card domain-menu-card" style="position:relative">';
-    html += '<div class="row" style="justify-content:space-between">';
-    html += '<div><b>دامنه این پنل</b><div class="mono">' + esc(location.host) + '</div></div>';
-    html += '<button class="btn primary" id="cf-menu-btn">راه‌اندازی امن کلودفلر ▾</button></div>';
-    html += '<div id="cf-menu" style="display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px">';
-    html += '<div class="row">';
-    html += '<a class="btn primary" id="btn-deploy" target="_blank" rel="noopener">Deploy رسمی روی Cloudflare</a>';
-    html += '<a class="btn" id="btn-repo" target="_blank" rel="noopener">مشاهده مخزن</a>';
-    html += '</div>';
-    html += '<p class="muted">توکن API را داخل هیچ پنل عمومی Paste نکنید. Deploy رسمی یا GitHub Actions توکن را در Secret رمزگذاری‌شده نگه می‌دارد.</p>';
-    html += '<ol class="muted"><li>Deploy را باز کنید.</li><li>همان‌جا فقط رمز ADMIN_PASSWORD را وارد کنید.</li><li>دامنه Worker را باز کنید و ساب بسازید.</li></ol>';
-    html += '</div></div>';
-    return html;
-  }
-  function bindDomainMenu() {
-    var L = STATE.launch || {};
-    var depA = $('#btn-deploy');
-    var repoA = $('#btn-repo');
-    if (depA) depA.href = L.deployUrl || 'https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
-    if (repoA) repoA.href = L.repo || 'https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a01b70-aminck-nova-edge';
-    var mb = $('#cf-menu-btn');
-    if (mb) mb.onclick = function () {
-      var box = $('#cf-menu');
-      if (box) box.style.display = box.style.display === 'none' ? 'block' : 'none';
-    };
-  }
-
-  function renderLogin() {
-    var theme = localStorage.getItem('edge-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    var html = '<div class="wrap">';
-    html += '<div class="topbar"><span class="status-dot' + (navigator.onLine ? '' : ' offline') + '">' + (navigator.onLine ? 'Cloudflare Online' : 'Offline') + '</span><button class="btn" id="install-btn">' + icon('install') + 'نصب اپ</button><button class="btn" id="theme-btn">' + icon('theme') + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button></div>';
-    html += '<div class="hero hero-panel card"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">AMINCK NOVA EDGE</div><h1>AMINNOVA Liquid</h1><div class="sub">' + esc(EDITION) + ' · PWA امن و نصب‌پذیر</div></div></div>';
-    html += '<div class="grid"><div>' + domainMenuHtml() + '</div><div class="card login-box"><div class="section-title"><div><div class="eyebrow">Secure Access</div><h2>ورود مرکز کنترل</h2></div>' + icon('shield') + '</div>';
-    html += '<p class="muted">مالک: <b>AMINCK</b> · رمز فقط در Secret امن <code>ADMIN_PASSWORD</code></p>';
-    html += '<label>نام کاربری</label><input id="u" value="AMINCK" autocomplete="username" style="width:100%;margin-bottom:8px">';
-    html += '<label>رمز</label><input id="p" type="password" autocomplete="current-password" style="width:100%;margin-bottom:12px">';
-    html += '<button class="btn primary big" id="login-btn" style="width:100%;justify-content:center">' + icon('shield') + 'ورود امن</button></div></div>';
-    html += '<div class="feature-grid"><div class="feature-tile">' + icon('infinity') + '<h3>Smart Pool ∞</h3><p class="muted">پنجره فعال سبک با چرخش دوره‌ای بدون خروجی بی‌نهایت و Crash کلاینت.</p></div><div class="feature-tile">' + icon('app') + '<h3>اپ موبایل PWA</h3><p class="muted">نصب مستقیم، اشتراک‌گذاری و مدیریت ساب از Home Screen.</p></div><div class="feature-tile">' + icon('shield') + '<h3>امنیت Edge</h3><p class="muted">نشست HttpOnly، SameSite، CSP و عدم Cache داده حساس.</p></div></div></div>';
-    $('#app').innerHTML = html;
-    $('#theme-btn').onclick = function () {
-      localStorage.setItem('edge-theme', theme === 'dark' ? 'light' : 'dark');
-      renderLogin();
-    };
-    var install = $('#install-btn');
-    if (install) install.onclick = installApp;
-    bindDomainMenu();
-    $('#login-btn').onclick = function () {
-      api('POST', '/api/login', { username: $('#u').value, password: $('#p').value })
-        .then(function () { toast('ورود موفق', true); boot(); })
-        .catch(function (e) { toast(e.message); });
-    };
-  }
-
-  function shell(inner) {
-    if (TAB !== 'app' && MONITOR_TIMER) { clearInterval(MONITOR_TIMER); MONITOR_TIMER = null; }
-    var me = STATE.me;
-    var theme = localStorage.getItem('edge-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    var tabs = [['dash', 'داشبورد', 'dash'], ['sell', 'مشترک‌ها', 'users'], ['iron', 'آهنین', 'iron'], ['scan', 'شبکه', 'scan'], ['app', 'اپ موبایل', 'app'], ['recovery', 'بکاپ', 'shield'], ['settings', 'تنظیمات', 'settings'], ['caps', 'قابلیت‌ها', 'spark'], ['help', 'راهنما', 'book']];
-    var mobileTabs = tabs.filter(function (t) { return ['dash', 'sell', 'scan', 'app'].indexOf(t[0]) >= 0; });
-    var moreTabs = tabs.filter(function (t) { return ['dash', 'sell', 'scan', 'app'].indexOf(t[0]) < 0; });
-    var moreActive = moreTabs.some(function (t) { return TAB === t[0]; });
-    var html = '<div class="wrap"><div class="topbar">';
-    html += '<span id="network-state" class="status-dot' + (navigator.onLine ? '' : ' offline') + '">' + (navigator.onLine ? 'آنلاین' : 'آفلاین') + '</span>';
-    html += '<button class="btn" id="install-btn">' + icon('install') + (isStandalone() ? 'نصب‌شده' : 'نصب اپ') + '</button>';
-    html += '<button class="btn" id="theme-btn" aria-label="تعویض پوسته">' + icon('theme') + (theme === 'dark' ? 'روشن' : 'تاریک') + '</button>';
-    html += '<span class="badge">' + esc(me.role) + ' · ' + esc(me.username) + '</span>';
-    if (STATE.launch && STATE.launch.release) html += '<span class="badge mono">' + esc(STATE.launch.release) + '</span>';
-    html += '<button class="btn" id="logout-btn">' + icon('logout') + 'خروج</button>';
-    if (can(me, 'settings:manage')) html += '<button class="btn primary" id="hot-btn">' + icon('shield') + 'تعمیر همه کانفیگ‌ها روی دامنه فعلی</button>';
-    html += '</div><div class="hero"><div class="mark">' + icon('cloud') + '</div><div><div class="eyebrow">Liquid Glass Control Center</div><h1>' + esc(APP) + '</h1><div class="sub">Cloudflare Edge · ' + esc(location.host) + '</div></div></div>';
-    html += domainMenuHtml();
-    html += '<div class="tabs">';
-    tabs.forEach(function (t) {
-      html += '<button class="tab' + (TAB === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + t[1] + '</button>';
-    });
-    html += '</div>' + inner;
-    html += '<nav class="mobile-nav" aria-label="ناوبری موبایل">';
-    mobileTabs.forEach(function (t) {
-      html += '<button class="' + (TAB === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + '<span>' + t[1] + '</span></button>';
-    });
-    html += '<button id="mobile-more-btn" class="' + (moreActive ? 'on' : '') + '" aria-expanded="false">' + icon('menu') + '<span>بیشتر</span></button></nav>';
-    html += '<div class="mobile-sheet" id="mobile-sheet" aria-label="بخش‌های بیشتر">';
-    moreTabs.forEach(function (t) {
-      html += '<button class="' + (TAB === t[0] ? 'on' : '') + '" data-tab="' + t[0] + '">' + icon(t[2]) + '<span>' + t[1] + '</span></button>';
-    });
-    html += '</div></div>';
-    $('#app').innerHTML = html;
-    document.querySelectorAll('[data-tab]').forEach(function (el) {
-      el.addEventListener('click', function () { TAB = el.getAttribute('data-tab'); history.replaceState(null, '', '/?tab=' + TAB); paint(); });
-    });
-    var moreButton = $('#mobile-more-btn');
-    if (moreButton) moreButton.onclick = function () {
-      var sheet = $('#mobile-sheet');
-      if (!sheet) return;
-      var open = !sheet.classList.contains('open');
-      sheet.classList.toggle('open', open);
-      moreButton.setAttribute('aria-expanded', open ? 'true' : 'false');
-    };
-    var install = $('#install-btn');
-    if (install) install.onclick = installApp;
-    $('#theme-btn').onclick = function () {
-      localStorage.setItem('edge-theme', theme === 'dark' ? 'light' : 'dark');
-      paint();
-    };
-    $('#logout-btn').onclick = function () {
-      api('POST', '/api/logout').then(function () { STATE.me = null; renderLogin(); }).catch(function (e) { toast(e.message); });
-    };
-    bindDomainMenu();
-    var hot = $('#hot-btn');
-    if (hot) hot.onclick = function () {
-      hot.disabled = true;
-      api('POST', '/api/hot-update', { speedPreset: 'stable', rescue: true }).then(function (d) {
-        toast(d.message || ('تعمیر شد · gen=' + d.configGeneration), true);
-        return Promise.all([loadUsers(), loadScan()]).then(function () { paint(); });
-      }).catch(function (e) { toast(e.message); }).finally(function () { hot.disabled = false; });
-    };
-  }
-
-  function viewDash() {
-    var s = STATE.stats || {};
-    var html = '<div class="grid stats-grid">';
-    html += '<div class="pill"><b>' + (s.users || 0) + '</b><span>مشترک</span></div>';
-    html += '<div class="pill"><b>' + (s.activeUsers || 0) + '</b><span>فعال</span></div>';
-    html += '<div class="pill"><b>' + (STATE.caps.length || '۵۶۰') + '</b><span>قابلیت مستند</span></div>';
-    html += '<div class="pill"><b>∞ Pool</b><span>چرخش پنجره فعال</span></div></div>';
-    html += '<div class="card hero-panel" style="margin-top:16px"><div class="section-title"><div><div class="eyebrow">Smart Subscription Studio</div><h2>ساخت اتومات حرفه‌ای AMINNOVA</h2></div>' + icon('spark') + '</div>';
-    html += '<p class="muted">Probe واقعی Edge، مسیر مستقیم + Anycast، خروجی‌های چندکلاینت و Smart Pool چرخان. هیچ سرویس اینترنتی نمی‌تواند نبود قطعی روی همه ISPها را تضمین کند؛ Failover احتمال قطعی را کم می‌کند.</p>';
-    html += '<div class="alert deployment-doctor">' + icon('shield') + '<b>دامنه فعال:</b> <span class="mono">' + esc(location.hostname) + '</span> · Release <span class="mono">' + esc((STATE.launch && STATE.launch.release) || 'نامشخص') + '</span><br><span class="muted">اگر کانفیگ به دامنه حذف‌شده قبلی اشاره کند، همیشه Timeout می‌شود. حالت نجات فقط دامنه همین پنل را استفاده می‌کند.</span></div>';
-    html += '<div class="row"><button class="btn primary" id="safe-preset" type="button">' + icon('shield') + 'حالت نجات DIRECT SAFE</button><button class="btn" id="heavy-preset" type="button">' + icon('iron') + 'MAX Giant پیشرفته</button></div>';
-    html += '<div class="mode-deck"><label class="mode-card"><input type="radio" name="usage-mode" id="usage-normal" value="normal" checked><b>' + icon('cloud') + 'ساب معمولی پرقدرت</b><span class="muted">سازگاری بیشتر، Direct Safe و انتخاب خودکار مسیر سالم.</span></label>';
-    html += '<label class="mode-card"><input type="radio" name="usage-mode" id="usage-gaming" value="gaming"><b>' + icon('scan') + 'Gaming Route Studio</b><span class="muted">LOW PING انتخاب سریع‌تر Route اندازه‌گیری‌شده؛ Rule دامنه رسمی بدون ادعای Ping تضمینی.</span></label></div>';
-    html += '<div class="card ai-studio"><div class="section-title"><div><div class="eyebrow">Cloudflare AI + Safe Local Fallback</div><h2>دستیار ساخت کانفیگ با متن فارسی</h2></div>' + icon('spark') + '</div><p class="muted">مثال: «برای کالاف ۳۰ کانفیگ کم‌پینگ آهنین بساز، نت ملی مستقیم بماند». AI فقط فیلدهای امن و Game IDهای Catalogue را می‌سازد؛ اگر AI ابری در دسترس نباشد موتور فارسی داخلی ادامه می‌دهد. با Binding فعال، متن همین Prompt به Workers AI حساب شما می‌رود؛ رمز و Token ساب ارسال نمی‌شود.</p><textarea id="ai-prompt" class="ai-prompt" maxlength="1000" placeholder="دقیق بنویس چه ساب، چه بازی، چند کانفیگ و چه اولویتی می‌خواهی…"></textarea><div class="row"><button class="btn" id="ai-design" type="button">' + icon('spark') + 'فقط طراحی</button><button class="btn primary" id="ai-build" type="button">' + icon('cloud') + 'طراحی و ساخت با AI</button></div><div id="ai-result" class="alert ai-result">هنوز درخواستی به دستیار نداده‌اید.</div></div>';
-    html += '<label class="check"><input id="domestic-direct" type="checkbox" checked> ' + icon('shield') + '<b>Domestic Direct / تداوم شبکه داخلی</b> · دامنه‌های .ir و GeoIP ایران در Clash/Xray مستقیم می‌مانند</label><p class="muted">این Split Tunnel می‌تواند سایت‌های قابل‌شناسایی داخلی را از تونل بین‌المللی جدا کند؛ قطع ISP، مقصد یا تشخیص‌ناپذیری دامنه را رفع یا تضمین نمی‌کند. Raw/Base64 Rule جدا ندارد.</p>';
-    html += '<label class="check"><input id="iron-sub" type="checkbox"> ' + icon('iron') + '<b>کل Subscription آهنین باشد</b> · همه Routeها با برچسب IRON و گروه Auto/Fallback</label>';
-    html += '<div class="game-picker" id="game-picker"><div class="section-title"><div><div class="eyebrow">Gaming TCP Content Routing</div><h2>انتخاب بازی‌ها</h2></div><span class="badge" id="game-count">۰ انتخاب</span></div>';
-    html += '<div class="alert warning-honest">Ping زیر ۹۰، IP خارجی ثابت یا UDP بازی قابل تضمین نیست. این بخش فقط Login، Launcher، Store و Content دامنه‌های رسمی را روی بهترین Route موجود می‌فرستد؛ فاصله واقعی تا سرور بازی تغییر نمی‌کند.</div>';
-    html += '<div class="game-toolbar"><input id="game-search" placeholder="جست‌وجوی Call of Duty، Minecraft، Valorant…"><button class="btn" id="games-all" type="button">انتخاب همه</button><button class="btn" id="games-none" type="button">پاک‌کردن</button></div><div class="game-list" id="game-list">';
-    STATE.games.forEach(function (game) { html += '<label class="game-item" data-game-text="' + esc((game.title + ' ' + game.publisher + ' ' + game.category).toLowerCase()) + '"><input type="checkbox" data-game-id="' + esc(game.id) + '"><span><b>' + esc(game.title) + '</b><br>' + esc(game.publisher) + '</span></label>'; });
-    html += '</div></div>';
-    html += '<label>نام ساب</label><input id="n" placeholder="VIP-علی" style="width:100%;margin-bottom:8px">';
-    html += '<label>قالب نام کانفیگ</label><input id="tpl" value="{brand} AMINCK {profile} {index}" style="width:100%;margin-bottom:8px">';
-    html += limRow('حجم بایت', 'lim-b') + limRow('ثانیه اعتبار', 'lim-s') + limRow('سقف اتصال', 'lim-c') + limRow('سقف درخواست ساب', 'lim-r');
-    html += '<div class="card"><label>دامنه‌های متصل به همین Worker</label><p class="muted">فقط workers.dev یا Custom Domain متعلق به خودت و Route‌شده به همین Worker. دامنه شخص ثالث با TLS کار نمی‌کند.</p><div class="endpoint-pick">';
-    if (STATE.endpoints.length === 0) html += '<span class="muted">Endpoint ثبت نشده؛ دامنه فعلی خودکار اضافه می‌شود.</span>';
-    STATE.endpoints.forEach(function (endpoint) {
-      var result = STATE.probe[endpoint.id];
-      html += '<label class="check"><input type="checkbox" data-build-endpoint="' + esc(endpoint.id) + '" checked> ' + esc((endpoint.label || endpoint.host) + ' · ' + endpoint.host + ':' + endpoint.port) + ' <span class="badge">' + (result && result.ok ? ('سالم ' + Math.round(result.latencyMs || 0) + 'ms') : 'نیازمند تست') + '</span></label>';
-    });
-    html += '</div><div class="row"><button class="btn" id="domains-all" type="button">انتخاب همه</button><button class="btn" id="domains-none" type="button">لغو همه</button></div></div>';
-    html += '<div class="card"><label class="check"><input id="clean-auto" type="checkbox"> افزودن کاندیدهای Cloudflare Anycast برای تست واقعی داخل کلاینت</label>';
-    html += '<p class="muted">این IPها تضمین «تمیز» نیستند؛ direct + Anycast با SNI واقعی Worker ساخته می‌شود و url-test/leastPing روی ISP خودت بهترین را انتخاب می‌کند.</p>';
-    html += '<label>IPv4 دستی از بازه رسمی Cloudflare (اختیاری، با فاصله یا ویرگول)</label><textarea id="clean-manual" rows="2" placeholder="مثال: 162.159.36.1"></textarea></div>';
-    html += '<div class="card install-banner"><label class="check"><input id="dynamic-pool" type="checkbox"> ' + icon('infinity') + ' Smart Pool نامحدود زمانی</label>';
-    html += '<div class="grid"><div><label>تعویض پنجره کاندیدها (دقیقه)</label><input id="rotation-minutes" type="number" min="1" max="60" value="5" style="width:100%"></div><div><label>پنجره فعال هم‌زمان</label><div class="muted">تا ۲۰۰۰؛ برای موبایل ۲۰۰ یا کمتر پیشنهاد می‌شود</div></div></div>';
-    html += '<p class="muted">∞ یعنی نسل‌های نامحدود در Refreshهای متوالی، نه بی‌نهایت خط در یک پاسخ. URL و Path معتبر می‌مانند تا چرخش باعث قطع عمدی نشود. کلاینت باید ساب را Refresh کند؛ Clash/sing-box بین مسیرهای حاضر خودکار تست می‌کنند.</p></div>';
-    html += '<div class="card"><label class="check"><input id="cf-ai" type="checkbox"> پالایش دوباره Profile با AI بعد از Probe واقعی Endpointها</label>';
-    html += '<p class="muted">این مرحله فقط از عددهای Probe استفاده می‌کند؛ ساخت به AI وابسته نیست و استفاده ممکن است سهمیه/هزینه Workers AI داشته باشد.</p></div>';
-    html += '<div class="grid"><div><label>حالت اتصال</label><select id="build-speed" style="width:100%"><option value="stable" selected>Stable · دوام</option><option value="balanced">Balanced</option><option value="turbo">Turbo · Throughput</option><option value="god">GOD · قدرت</option><option value="latency">LOW PING · انتخاب سریع‌ترین Route</option></select></div>';
-    html += '<div><label>مدیریت مسیر</label><select id="build-mode" style="width:100%"><option value="auto" selected>Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select></div></div>';
-    html += '<div class="grid"><div><label>تعداد ساب مستقل</label><select id="sub-count" style="width:100%">' + subscriptionOptions(1) + '</select></div>';
-    html += '<div><label>تعداد کانفیگ داخل هر ساب (۱ تا ۲۰۰۰)</label><input id="paths" type="number" min="1" max="2000" value="3" style="width:100%"></div></div>';
-    html += '<div class="alert warning-honest">بالاتر از ۲۰۰ Route حالت Giant است و ممکن است Import، حافظه یا تست سرعت بعضی موبایل‌ها را کند کند. سقف ۲۰۰۰ واقعی است، اما Route بیشتر به‌تنهایی کیفیت یا Ping را بهتر نمی‌کند.</div>';
-    html += '<label>تعداد بسته JSON آهنین برای ساب اول</label><select id="iron-n">' + ironOptions(1) + '</select> ';
-    html += '<button class="btn primary big" id="auto">' + icon('spark') + 'ساخت Smart Subscription</button><div id="mk-out"></div></div>';
-    shell(html);
-    bindInf();
-    var domainsAll = $('#domains-all');
-    if (domainsAll) domainsAll.onclick = function () {
-      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = true; });
-    };
-    var domainsNone = $('#domains-none');
-    if (domainsNone) domainsNone.onclick = function () {
-      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) { input.checked = false; });
-    };
-    function updateGameCount() {
-      var count = document.querySelectorAll('[data-game-id]:checked').length;
-      var badge = $('#game-count'); if (badge) badge.textContent = count + ' انتخاب';
+      const freshGroup=(state.connection?.lastGroupAt||0)>state.watchLastGroup;
+      const freshMessage=(state.connection?.lastReceivedAt||0)>state.watchLastReceived;
+      if(state.connection?.receiving && (state.watchMode==='group'?freshGroup&&state.connection.queue?.pending===0:state.watchMode==='test'?freshMessage:state.connection.groupCount>0)) { state.watchUntil=0;return; }
     }
-    function toggleGamePicker() {
-      var gaming = !!($('#usage-gaming') && $('#usage-gaming').checked);
-      var picker = $('#game-picker'); if (picker) picker.classList.toggle('open', gaming);
-      if (gaming && $('#build-speed') && $('#build-speed').value === 'stable') $('#build-speed').value = 'latency';
+  } catch { /* A visible manual check reports errors; background refresh must not spam toasts. */ }
+  state.watchTimer=setTimeout(pollOnboarding,5000);
+}
+function settingsPage(settings,connection) {
+  state.connection=connection;
+  const demo=state.session.demo, secure=location.protocol==='https:', disabled=demo||!secure;
+  return head('باتت رو وصل کن؛ بقیه‌اش با نُوا.','توکن را اینجا وارد کن، اتصال را بساز و گروهت را از داخل تلگرام انتخاب کن.',`<span class="tag green">راه‌اندازی آسان · ۲.۱</span>`)+
+    `<div id="connection-progress">${connectionProgress(connection)}</div>
+    ${demo?notice('این صفحه پیش‌نمایش است؛ توکن واقعی را اینجا وارد نکن. همین فرم در نسخه‌ای که روی Cloudflare نصب می‌کنی، بعد از ورود با رمز پنل فعال می‌شود.'):''}
+    ${!secure&&!demo?notice('برای واردکردن توکن، این پنل را با آدرس HTTPS خودت باز کن؛ ارسال توکن روی HTTP مجاز نیست.'):''}
+    <div class="connect-layout">
+      <section class="panel content-card connect-primary">
+        <span class="hero-kicker">${icon('shield')} ثبت امن بات، بدون تنظیمات پیچیده</span>
+        <h2>۱. توکن جدید بات را بچسبان</h2>
+        <p>توکن را از گفت‌وگوی رسمی BotFather بگیر. فقط رشتهٔ شامل عدد، علامت «:» و ادامهٔ آن را کپی کن؛ نه شمارهٔ تلفن و نه کد ورود تلگرام.</p>
+        <form id="bot-setup-form" autocomplete="off" novalidate>
+          <div class="setting-input"><label for="setup-bot-token">توکن ربات از BotFather</label><input id="setup-bot-token" type="password" name="botToken" inputmode="text" autocomplete="new-password" spellcheck="false" autocapitalize="none" maxlength="256" data-lpignore="true" data-1p-ignore required ${disabled?'disabled':''} placeholder="${connection.configured?'برای تعویض، توکن جدید همان بات را وارد کن':'توکن را از BotFather کپی و اینجا جای‌گذاری کن'}"><small>توکن پس از تأیید، رمزگذاری و فقط در سرور همین پنل ذخیره می‌شود؛ دوباره نمایش داده نمی‌شود.</small></div>
+          <label class="form-check setup-consent"><input type="checkbox" name="confirmSetup" required ${disabled?'disabled':''}><span>این بات متعلق به من است و می‌خواهم پیام‌هایش به همین پنل برسد؛ اتصال قبلی آن جابه‌جا می‌شود.</span></label>
+          <div id="setup-feedback" class="setup-feedback" role="status" aria-live="polite"></div>
+          <div class="form-actions"><button type="submit" class="button primary full" ${disabled?'disabled':''}>${demo?'ثبت واقعی پس از نصب فعال می‌شود':!secure?'ابتدا آدرس HTTPS پنل را باز کن':'تأیید توکن و اتصال خودکار بات'} ${icon('arrow')}</button></div>
+        </form>
+        <div id="connection-repair" ${connection.tokenValid?'':'hidden'} class="connect-repair"><p>توکن از قبل تأیید شده؟ نیازی به واردکردن دوباره نیست.</p>${btn('اتصال بات به همین پنل / تعمیر اتصال','setup','secondary full','refresh')}</div>
+        ${notice('توکن قبلیِ منتشرشده را در BotFather باطل کن. این فرم را فقط روی آدرس پنلی که خودت نصب کرده‌ای استفاده کن.')}
+      </section>
+      <section class="panel content-card">
+        <h2>۲. اتصال را آزمایش کن</h2><p>ثبت تنظیمات به‌تنهایی کافی نیست؛ اینجا نشان می‌دهیم آیا پیام واقعاً به پنل رسیده است.</p>
+        <div id="connection-status">${connectionStatusMarkup(connection)}</div>
+        <div id="connection-next">${connectionNextMarkup(connection)}</div>
+      </section>
+    </div>
+    <section class="panel content-card spaced"><div class="panel-head connect-head"><div><h2>۳. دسترسی‌های گروه را درست انتخاب کن</h2><p>«Ban Users» برای بازشدن پنل لازم نیست.</p></div>${icon('users')}</div><div class="connect-permissions">
+      <div>${icon('check')}<b>پنل و بازی</b><p>عضویت بات و دریافت پیام کافی است. برای اطمینان /panel@نام‌بات را بفرست.</p></div>
+      <div>${icon('trash')}<b>حذف پیام و لیست سیاه</b><p>بات را ادمین کن و Delete Messages را بده.</p></div>
+      <div>${icon('lock')}<b>بن، سکوت و کپچا</b><p>فقط این قابلیت‌ها و ضدهجوم به Ban / Restrict Users نیاز دارند.</p></div>
+      <div>${icon('message')}<b>سنجاق پیام</b><p>Pin Messages را بده؛ این مجوز مستقل از بن کاربران است.</p></div>
+    </div>${notice('اگر مدیر گروه ناشناس پیام بدهد، بات نمی‌تواند شناسهٔ واقعی او را تأیید کند. برای مدیریت از حالت ناشناس خارج شو. اگر بات ادمین نیست و «پنل» فارسی را نمی‌بیند، دستور با اسلش و نام بات را امتحان کن.',true)}</section>
+    <details class="panel connect-advanced spaced"><summary>${icon('settings')} تنظیمات اقتصاد و بازی (اختیاری)</summary><form id="global-settings" class="content-card"><h2>قواعد سراسری ربات</h2>${switchField('maintenance','حالت نگهداری','توقف دستورهای عمومی؛ حفاظت گروه ادامه دارد.',settings.maintenance)}<div class="field-grid">${field('diamondOdds','شانس یک الماس در هر N برد واجد شرایط',settings.diamondOdds,'number','min="50" max="10000" required')}${field('maxBet','سقف سراسری شرط با سکه',settings.maxBet,'number','min="1" max="1000000" required')}${field('duelSeconds','مهلت هر مرحلهٔ دوئل (ثانیه)',settings.duelSeconds,'number','min="60" max="900" required')}${field('dailyCoins','پاداش سکهٔ روزانه',settings.dailyCoins,'number','min="1" max="10000" required')}</div><p class="small muted spaced">هزینهٔ سلف: هر ساعت شروع‌شده ۵ الماس؛ مالک معاف است.</p><div class="form-actions"><button type="submit" class="button primary">ذخیرهٔ قواعد ${icon('check')}</button></div></form></details>
+    <details class="panel connect-advanced spaced"><summary>${icon('activity')} اطلاعات فنی اتصال و نصب</summary><div class="content-card"><p class="small muted">آدرس مورد انتظار:</p>${codeBox(connection.webhook?.expectedUrl || location.origin+'/telegram')}${connection.webhook?.url?`<p class="small soft">آدرس فعلی: <bdi>${h(connection.webhook.url)}</bdi></p>`:''}${connection.webhook?.last_error_message?notice(h(connection.webhook.last_error_message)):''}<p class="small muted spaced">فقط یک رمز پنل هنگام نصب لازم است. توکن و کلید داخلی اتصال از همین فرم مدیریت می‌شوند؛ نیازی به توکن API کلودفلر نیست.</p>${notice('اگر PANEL_PASSWORD را در کلودفلر عوض کنی، باید توکن همان بات را یک‌بار در این فرم دوباره ثبت کنی تا با رمز جدید ذخیره شود.')}<a class="text-link" href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Famingangmanatgh2-hash%2FAMINCK-Nova-Edge%2Ftree%2Farena%2F01a07081-aminck-nova-edge" target="_blank" rel="noopener noreferrer">نصب نسخهٔ جدید روی Cloudflare ${icon('external')}</a></div></details>`;
+}
+async function finishSetup(body,feedback) {
+  state.setupBusy=true;
+  if(feedback)feedback.textContent='در حال بررسی توکن و ثبت اتصال با تلگرام… لطفاً صبر کن.';
+  try {
+    const result=await api('/api/setup',body);
+    state.connection=result.connection;updateConnectionBanner();
+    if(feedback)feedback.textContent=result.ok?'توکن تأیید و اتصال ثبت شد. حالا آزمایش پیام را انجام بده.':result.warning || result.connection.message;
+    toast(result.warning || result.connection.message,!result.ok || !!result.warning);
+    closeModal();
+    history.replaceState(null,'','#settings');
+    await render('settings');
+    watchConnection();
+  } finally {state.setupBusy=false;}
+}
+function groupDiagnosticMarkup(result) {
+  const caps=result.capabilities;
+  const labels=[['panel','بازشدن پنل و ارسال پیام'],['readAllMessages','دیدن پیام فارسی و محتوای گروه'],['delete','حذف پیام و لیست سیاه'],['restrict','بن، سکوت، کپچا و ضدهجوم'],['pin','سنجاق پیام']];
+  return `<p class="small soft">گروه: <b>${h(result.group.title)}</b> · <code>${result.group.id}</code></p><div class="permission-list">${labels.map(([key,label])=>`<div><span>${label}</span><span class="tag ${caps[key]?'green':'amber'}">${caps[key]?'دسترسی دارد':'نیاز به بررسی'}</span></div>`).join('')}</div>${!state.connection?.canReceive?notice('مجوزهای گروه بررسی شد، اما ابتدا اتصال بات به همین پنل را در بخش ثبت و اتصال بات کامل کن.'):''}${result.warnings.map(w=>notice(h(w))).join('')}<p class="small muted spaced">داخل گروه این دستور را بفرست:</p>${codeBox(result.panelCommand)}<div class="form-actions">${caps.isMember?pageBtn('دیدن گروه‌ها','groups','secondary','users'):''}${result.adminGroupUrl&&!state.session.demo?`<a class="button primary" href="${h(result.adminGroupUrl)}" target="_blank" rel="noopener noreferrer" data-telegram-open>بررسی دسترسی‌ها در تلگرام ${icon('external')}</a>`:''}</div>`;
+}
+async function showGroupDiagnostic(id) {
+  if(state.session.demo){toast('بررسی واقعی دسترسی‌ها بعد از ثبت بات روی پنل خودت فعال می‌شود.',true);return;}
+  await checkConnection(false);
+  const result=await api(`/api/groups/${id}/diagnostics`);
+  modal('بررسی واقعی دسترسی‌های بات','ندادن Ban Users به‌تنهایی مانع پنل نیست.',groupDiagnosticMarkup(result));
+}
+async function addGroup() {
+  const connection=await checkConnection(false);
+  const ready=connection.canReceive && !state.session.demo;
+  modal('بات را با لینک به گروهت اضافه کن','گروه خصوصی هم با انتخاب خودت در تلگرام قابل اضافه‌شدن است.',
+    `${ready&&connection.addGroupUrl?`<a class="button primary full" href="${h(connection.addGroupUrl)}" target="_blank" rel="noopener noreferrer" data-telegram-open>انتخاب گروه و افزودن بات در تلگرام ${icon('external')}</a>`:btn('اول ثبت و اتصال بات را کامل کن','open-settings','primary full','arrow')}
+    <p class="small muted spaced">۱. گروهت را انتخاب کن. ۲. بات را ادمین کن. ۳. این دستور را در همان گروه بفرست:</p>${codeBox(connection.panelCommand || '/panel')}
+    ${notice('لازم نیست برای دیدن پنل، Ban Users را بدهی. برای دیدن تمام پیام‌ها، بات باید ادمین باشد یا Privacy آن خاموش باشد.',true)}
+    ${ready&&connection.adminGroupUrl?`<a class="text-link" href="${h(connection.adminGroupUrl)}" target="_blank" rel="noopener noreferrer" data-telegram-open>لینک اختیاری با درخواست دسترسی‌های مدیریتی ${icon('external')}</a>`:''}
+    <details class="connect-details" id="recover-details"><summary>بات از قبل عضو گروه است، ولی اینجا دیده نمی‌شود</summary><p class="small muted spaced">لینک عمومی، نام کاربری یا شناسهٔ گروه را بده؛ فقط اگر بات واقعاً عضو باشد آن را ثبت می‌کنیم. برای گروه خصوصی، همین دکمهٔ انتخاب گروه هم قابل استفاده است.</p><form id="group-recover-form">${field('reference','لینک یا شناسهٔ گروه','','text','required maxlength="300" placeholder="https://t.me/groupname یا -100…"')}<div class="form-actions"><button class="button secondary" type="submit" ${state.session.demo?'disabled':''}>بررسی عضویت و پیدا کردن گروه ${icon('search')}</button></div></form></details>`);
+}
+
+
+async function render(page=state.page){if(!TITLES[page])page='overview';const version=++state.render;state.page=page;$('#page-title').textContent=TITLES[page];$$('.nav-item').forEach(el=>el.classList.toggle('active',el.dataset.page===page));closeMenu();$('#main').innerHTML='<div class="skeleton"></div><div class="skeleton"></div>';let output;
+  try{
+    if(!state.overview||page==='overview'){state.overview=await api('/api/overview');state.groups=state.overview.groups;$('#nav-groups').textContent=n(state.groups.length);}
+    if(page==='overview')output=overviewPage(state.overview);
+    else if(page==='groups'||page==='security'){state.groups=(await api('/api/groups')).groups;output=page==='groups'?groupsPage():securityPage(state.groups.find(g=>g.active===1)||state.groups[0]);}
+    else if(page==='duels'){state.duels=(await api('/api/duels')).duels;output=duelsPage();}
+    else if(['leaderboard','diamonds','self'].includes(page)){state.users=(await api('/api/users')).users;output=page==='leaderboard'?leaderboardPage():page==='diamonds'?diamondsPage():selfPage();}
+    else if(page==='terminal')output=terminalPage();
+    else if(page==='commands')output=commandsPage();
+    else if(page==='logs'){const [logs,jobs]=await Promise.all([api('/api/logs'),api('/api/jobs')]);state.logs=logs.logs;state.jobs=jobs.jobs;output=logsPage();}
+    else if(page==='settings'){const [global,connection]=await Promise.all([api('/api/global'),api('/api/connection').catch(e=>({configured:false,stage:'unreachable',message:e.message}))]);output=settingsPage(global.settings,connection);}
+    if(version!==state.render)return;$('#main').innerHTML=output;updateConnectionBanner();
+  }catch(error){if(version!==state.render)return;$('#main').innerHTML=empty('ارتباط کامل نشد',error.message,'warning',btn('دوباره تلاش کن','refresh','primary','refresh'));}
+}
+function navigate(page){if(!TITLES[page])return;if(location.hash.slice(1)===page)render(page);else location.hash=page;}
+async function openSend(id,schedule=false){state.groups=(await api('/api/groups')).groups;if(!state.groups.some(g=>g.active===1)){toast('ابتدا یک گروه فعال به بات اضافه کن.',true);return;}modal(schedule?'یک پیام برای بعداً.':'پیام از طرف نُوا',schedule?'یک‌بار در زمان انتخاب‌شده ارسال می‌شود.':'مقصد و متن را قبل از ارسال بررسی کن.',`<form id="message-form" data-schedule="${schedule}">${groupSelect(id)}${schedule?field('minutes','پس از چند دقیقه؟',30,'number','min="1" max="10080" required'):''}${area('text','متن پیام','','required maxlength="3500" placeholder="چی به گروه بگیم؟"')}<div class="form-check"><input type="checkbox" id="pin-message" name="pin"><label for="pin-message">پیام در گروه سنجاق شود.</label></div>${notice('این پیام با نام ربات ارسال می‌شود. سنجاق، دسترسی Pin Messages می‌خواهد.')}${formActions(schedule?'ثبت زمان‌بندی':'ارسال به گروه')}</form>`);}
+async function openPurge(id){state.groups=(await api('/api/groups')).groups;if(!state.groups.some(g=>g.active===1)){toast('گروه فعالی نداریم.',true);return;}modal('پاک‌سازی با تأیید دو مرحله‌ای','حذف پیام‌ها قابل بازگشت نیست.',`<form id="purge-form">${groupSelect(id)}${field('count','قدیمی‌ترین چند پیام ثبت‌شده؟',1000,'number','min="1" max="5000" required')}${notice('فقط پیام‌های ثبت‌شدهٔ قابل‌حذفِ کمتر از ۴۸ ساعت پردازش می‌شوند. بات به کل تاریخچهٔ گروه دسترسی ندارد. سقف هر عملیات ۵۰۰۰ است.')}<div class="form-actions"><button type="button" class="button ghost" data-action="close">انصراف</button><button type="submit" class="button secondary">بررسی پیام‌های قابل حذف ${icon('arrow')}</button></div></form>`);}
+async function openGroup(id){state.groups=(await api('/api/groups')).groups;const g=state.groups.find(g=>g.id===id);if(!g)throw new Error('گروه پیدا نشد.');const s=g.settings;modal(h(g.title),'تنظیمات مستقل این گروه؛ تغییرات از پیام‌های بعدی اعمال می‌شوند.',`<form id="group-form" data-id="${g.id}"><div class="tabs modal-tabs"><button type="button" class="tab active" data-modal-tab="general">مدیریت</button><button type="button" class="tab" data-modal-tab="locks">قفل‌ها</button><button type="button" class="tab" data-modal-tab="welcome">ورود و قوانین</button><button type="button" class="tab" data-modal-tab="games">بازی و لحن</button></div><div data-modal-section="general"><div class="field-grid"><div>${switchField('antiflood','ضداسپم','کنترل سیل پیام',s.antiflood)}${switchField('quiet','سکوت گروه','حذف پیام اعضای عادی',s.quiet)}${switchField('reports','گزارش اعضا','ارسال گزارش برای مدیرها',s.reports)}</div><div>${field('floodLimit','حد پیام در پنجرهٔ ضداسپم',s.floodLimit,'number','min="3" max="30" required')}${field('warnLimit','حد اخطار',s.warnLimit,'number','min="1" max="10" required')}${field('cooldown','حداقل فاصلهٔ پیام (ثانیه)',s.cooldown,'number','min="0" max="300" required')}</div></div>${selectField('warnAction','مجازات حد اخطار',[['mute','سکوت موقت'],['ban','مسدودی']],s.warnAction)}${field('muteMinutes','مدت سکوت خودکار (دقیقه)',s.muteMinutes,'number','min="1" max="43200" required')}</div><div data-modal-section="locks" hidden>${locksMarkup(s)}${notice('قفل تاس، روی پرتاب معتبرِ دوئل فعال اعمال نمی‌شود. کپشن‌ها و ویرایش پیام هم بررسی می‌شوند.',true)}</div><div data-modal-section="welcome" hidden>${switchField('captcha','کپچای ورود','تأیید دکمه‌ای تازه‌وارد',s.captcha)}${switchField('raid','حالت ضدهجوم','اخراج تازه‌واردها تا خاموش‌شدن',s.raid)}${field('captchaSeconds','مهلت کپچا (ثانیه)',s.captchaSeconds,'number','min="30" max="600" required')}${area('welcome','متن خوش‌آمد · {name} و {group}',s.welcome)}${area('goodbye','متن خروج · خالی یعنی خاموش',s.goodbye)}${area('rules','قوانین گروه',s.rules)}</div><div data-modal-section="games" hidden>${switchField('games','دوئل‌های ایموجی','ساخت و پذیرش بازی‌های جدید',s.games)}${switchField('chatbot','سخنگوی بازیگوش','پاسخ آماده هنگام ریپلای به بات',s.chatbot)}${field('maxBet','سقف شرط گروه (سکه)',s.maxBet,'number','min="1" max="1000000" required')}${selectField('style','لحن پاسخ‌های آماده',[['playful','شوخ و بازیگوش'],['friendly','دوستانه'],['formal','رسمی']],s.style)}${notice('سکه و الماس کاملاً مجازی و غیرقابل‌تبدیل به پول هستند.')}</div>${formActions('ذخیرهٔ تنظیمات')}</form>`,true);}
+function gameHelp(emoji){const game=state.catalog.games.find(g=>g.emoji===emoji);if(!game)return;modal(`${game.emoji} دوئل ${h(game.name)}`,'بازی از داخل گروه تلگرام شروع می‌شود.',`<p>این فرمان را در گروهی که بات عضو آن است بفرست. حریف «قبول دوئل» را می‌زند و بعد هر دو روی همان پیام، ${game.emoji} ارسال می‌کنید.</p>${codeBox(`دوئل ${game.emoji} ۵۰`)}${codeBox(`/duel ${game.emoji} 50`)}${notice('شرط هر نفر رزرو می‌شود. فقط اولین پرتاب معتبر حساب می‌شود؛ بعد از پیوستن حریف نمی‌توان دوئل را لغو کرد.')}<div class="form-actions">${btn('کپی فرمان فارسی','copy-game','primary','copy',`data-emoji="${game.emoji}"`)}</div>`);}
+function walletModal(id){const u=state.users.find(x=>x.id===id);if(!u)throw new Error('کاربر پیدا نشد.');modal('ویرایش کیف پول',`${h(u.name)} · ${u.id}`,`<form id="wallet-form" data-id="${u.id}"><div class="owner-ids"><span class="tag amber">${n(u.coins)} سکه</span><span class="tag purple">${u.unlimited?'∞':n(u.diamonds)} الماس</span></div><div class="field-grid">${selectField('currency','نوع اعتبار',[['diamonds','الماس'],['coins','سکه']],'diamonds')}${selectField('action','نوع عملیات',[['add','افزودن'],['subtract','کم‌کردن'],['set','تنظیم موجودی']],'add')}</div>${field('amount','مقدار',5,'number','min="0" max="1000000000" required')}${notice('این تغییر با شناسهٔ مالک در دفتر مالی ثبت می‌شود. الماس مالک‌های سراسری همیشه نامحدود است.')}${formActions('اعمال تغییر اعتبار')}</form>`);}
+async function downloadExport(){if(state.session.demo){toast('خروجی واقعی فقط پس از اتصال و ورود مالک در دسترس است.',true);return;}const response=await fetch('/api/export',{credentials:'same-origin'});if(!response.ok)throw new Error('خروجی دریافت نشد؛ دوباره وارد شوید.');const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='nova-settings.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('خروجی تنظیمات دریافت شد؛ شامل توکن یا نشست نیست.');}
+async function handleAction(action,element){const id=Number(element.dataset.id);
+  if(action==='close'){closeModal();return;}
+  if(action==='refresh'){await render();toast('اطلاعات تازه شد.');}
+  else if(action==='add-group')await addGroup();
+  else if(action==='group-settings')await openGroup(id);
+  else if(action==='send'||action==='schedule')await openSend(id||undefined,action==='schedule');
+  else if(action==='purge')await openPurge(id||undefined);
+  else if(action==='game-help')gameHelp(element.dataset.emoji);
+  else if(action==='copy-game')await copy(`دوئل ${element.dataset.emoji} ۵۰`);
+  else if(action==='wallet')walletModal(id);
+  else if(action==='copy-install')await copy(INSTALL);
+  else if(action==='copy-self')await copy('pip install -r termux/requirements.txt\npython termux/self_client.py');
+  else if(action==='export')await downloadExport();
+  else if(action==='open-settings'){closeModal();navigate('settings');}
+  else if(action==='setup'){modal('اتصال بات به همین پنل','بدون واردکردن دوبارهٔ توکن تأییدشده.',`<p>ارسال پیام‌های این بات به همین پنل تنظیم شود؟ اگر به پنل دیگری وصل بوده، آن اتصال جابه‌جا می‌شود. پیام‌های منتظر پاک نمی‌شوند.</p><div class="form-actions">${btn('انصراف','close','ghost')}${btn('تأیید و اتصال خودکار','setup-confirm','primary','check')}</div>`);}
+  else if(action==='setup-confirm'){await finishSetup({});}
+  else if(action==='check-connection'){await checkConnection(true);watchConnection();}
+  else if(action==='recover-group'){await addGroup();if($('#recover-details'))$('#recover-details').open=true;}
+  else if(action==='group-diagnostics'){await showGroupDiagnostic(id);}
+  else if(action==='revoke-self'){modal('ابطال مجوز سلف','فقط مجوز نُوا باطل می‌شود؛ نشست شخصی تلگرام از دستگاه حذف نمی‌شود.',`<p>مجوز کاربر <code>${id}</code> باطل شود؟ برنامهٔ رسمی حداکثر تا ۶۰ ثانیه دیگر متوقف می‌شود. بازپرداخت ساعتی انجام نمی‌شود.</p><div class="form-actions">${btn('انصراف','close','ghost')}${btn('تأیید ابطال','revoke-self-confirm','danger','close',`data-id="${id}"`)}</div>`);}
+  else if(action==='revoke-self-confirm'){await api(`/api/self/${id}/revoke`,{});closeModal();toast('مجوز ابطال شد.');await render();}
+  else if(action==='cancel-job'){modal('توقف کار صف','عملیات قبلاً انجام‌شده قابل برگشت نیست.',`<p>کار <code>${h(element.dataset.id)}</code> متوقف شود؟</p><div class="form-actions">${btn('انصراف','close','ghost')}${btn('توقف کار','cancel-job-confirm','danger','close',`data-id="${h(element.dataset.id)}"`)}</div>`);}
+  else if(action==='cancel-job-confirm'){const result=await api(`/api/jobs/${encodeURIComponent(element.dataset.id)}/cancel`,{});closeModal();toast(result.ok?'کار لغو شد.':'کار دیگر در حالت انتظار نیست.');await render();}
+  else if(action==='logout'){if(state.session.demo){toast('در حالت پیش‌نمایش، نشست واقعی مالک ایجاد نشده.');closeModal();return;}await api('/api/logout',{});closeModal();state.overview=null;showLogin();}
+}
+function filterCommands(){state.query=$('#command-search')?.value||'';const result=commandCards();$('#command-grid').innerHTML=result.html;$('#command-results').textContent=n(result.count)+' دستور پیدا شد';}
+function filterGroups(){const query=norm($('#group-search')?.value);const groups=state.groups.filter(g=>norm(g.title+' '+g.id).includes(query)&&(state.groupFilter==='all'||(state.groupFilter==='active'?g.active===1:g.active!==1)));$('#group-grid').innerHTML=groupCards(groups);}
+
+document.addEventListener('click',async event=>{const target=event.target.closest('button,a');if(!target)return;
+  if(target.hasAttribute('data-telegram-open')){closeModal();watchConnection(target.href.includes('startgroup=')?'group':'test');return;}
+  if(target.dataset.page){event.preventDefault();if($('#modal').open)closeModal();navigate(target.dataset.page);return;}
+  if(target.dataset.copy!==undefined){event.preventDefault();await copy(target.dataset.copy);return;}
+  if(target.dataset.roleFilter){state.role=target.dataset.roleFilter;$$('[data-role-filter]').forEach(t=>t.classList.toggle('active',t.dataset.roleFilter===state.role));filterCommands();return;}
+  if(target.dataset.groupFilter){state.groupFilter=target.dataset.groupFilter;$$('[data-group-filter]').forEach(t=>t.classList.toggle('active',t.dataset.groupFilter===state.groupFilter));filterGroups();return;}
+  if(target.dataset.modalTab){$$('[data-modal-tab]').forEach(t=>t.classList.toggle('active',t===target));$$('[data-modal-section]').forEach(t=>t.hidden=t.dataset.modalSection!==target.dataset.modalTab);return;}
+  if(target.dataset.action){event.preventDefault();target.disabled=true;try{await handleAction(target.dataset.action,target);}catch(error){toast(error.message,true);}finally{target.disabled=false;}}
+});
+document.addEventListener('input',event=>{if(event.target.id==='command-search')filterCommands();if(event.target.id==='group-search')filterGroups();if(event.target.id==='user-search'){$('#wallet-table').innerHTML=usersTable(state.users.filter(u=>norm(u.name+' '+u.id).includes(norm(event.target.value))),true);}});
+document.addEventListener('change',async event=>{try{if(event.target.id==='security-group'){$('#main').innerHTML=securityPage(state.groups.find(g=>g.id===Number(event.target.value)));}if(event.target.id==='leader-group'){const result=await api('/api/leaderboard'+(event.target.value?'?chatId='+encodeURIComponent(event.target.value):''));$('#leader-content').innerHTML=`<section class="panel"><div class="panel-head"><h2>جدول بازیکن‌های انتخاب‌شده</h2></div>${usersTable(result.users)}</section>`;}}catch(error){toast(error.message,true);}});
+document.addEventListener('submit',async event=>{const form=event.target;event.preventDefault();const submit=$('button[type=submit]',form);if(submit)submit.disabled=true;
+  try{
+    const data=new FormData(form);
+    if(form.id==='login-form'){$('#login-error').textContent='';await api('/api/login',{password:data.get('password')});$('#password').value='';await boot();}
+    else if(form.id==='global-search'){state.query=String(data.get('q')||'');navigate('commands');}
+    else if(form.id==='bot-setup-form'){
+      if(state.session.demo)throw new Error('این فرم در پیش‌نمایش غیرفعال است؛ روی آدرس پنل نصب‌شدهٔ خودت واردش کن.');
+      if(location.protocol!=='https:')throw new Error('توکن فقط روی آدرس HTTPS پنل خودت دریافت می‌شود.');
+      const value=String(data.get('botToken')||'').trim();
+      if(!/^[1-9]\d{4,15}:[A-Za-z0-9_-]{25,200}$/.test(value))throw new Error('توکن کامل را از BotFather کپی کن؛ فقط عدد، علامت : و ادامهٔ آن.');
+      if(!data.has('confirmSetup'))throw new Error('تأیید کن که بات متعلق به خودت است و اتصالش به همین پنل تنظیم شود.');
+      $('#setup-bot-token').value='';
+      await finishSetup({botToken:value},$('#setup-feedback'));
     }
-    if ($('#usage-normal')) $('#usage-normal').onchange = toggleGamePicker;
-    if ($('#usage-gaming')) $('#usage-gaming').onchange = toggleGamePicker;
-    document.querySelectorAll('[data-game-id]').forEach(function (input) { input.onchange = updateGameCount; });
-    var gameSearch = $('#game-search');
-    if (gameSearch) gameSearch.oninput = function () {
-      var query = gameSearch.value.trim().toLowerCase();
-      document.querySelectorAll('[data-game-text]').forEach(function (item) {
-        item.style.display = !query || item.getAttribute('data-game-text').indexOf(query) >= 0 ? 'flex' : 'none';
-      });
-    };
-    if ($('#games-all')) $('#games-all').onclick = function () {
-      document.querySelectorAll('[data-game-id]').forEach(function (input) { input.checked = true; }); updateGameCount();
-    };
-    if ($('#games-none')) $('#games-none').onclick = function () {
-      document.querySelectorAll('[data-game-id]').forEach(function (input) { input.checked = false; }); updateGameCount();
-    };
-    function applyAiPlan(plan) {
-      if (!plan) return;
-      if (!$('#n').value) $('#n').value = plan.name || 'AMINCK-AI';
-      $('#paths').value = String(plan.paths || 10);
-      $('#sub-count').value = String(plan.subscriptionCount || 1);
-      $('#iron-sub').checked = !!plan.ironMode;
-      $('#iron-n').value = String(plan.ironCount || 0);
-      $('#domestic-direct').checked = plan.domesticDirect !== false;
-      $('#build-speed').value = plan.speedPreset || 'balanced';
-      $('#build-mode').value = plan.profileMode || 'auto';
-      $('#dynamic-pool').checked = !!plan.dynamicPool;
-      $('#rotation-minutes').value = String(plan.rotationMinutes || 5);
-      $('#clean-auto').checked = !!plan.useCleanCatalog;
-      $('#cf-ai').checked = false;
-      $('#usage-gaming').checked = plan.usageMode === 'gaming';
-      $('#usage-normal').checked = plan.usageMode !== 'gaming';
-      var selected = plan.gameIds || [];
-      document.querySelectorAll('[data-game-id]').forEach(function (input) { input.checked = selected.indexOf(input.getAttribute('data-game-id')) >= 0; });
-      toggleGamePicker(); updateGameCount();
+    else if(form.id==='group-recover-form'){
+      if(state.session.demo)throw new Error('پیدا کردن واقعی گروه فقط در نسخهٔ نصب‌شده فعال است.');
+      const result=await api('/api/groups/lookup',{reference:String(data.get('reference')||'')});
+      state.overview=null;state.groups=(await api('/api/groups')).groups;
+      toast(result.active===1?'عضویت بات تأیید شد؛ گروه در پنل ثبت شد.':'گروه پیدا شد، ولی با دستور مالک متوقف است.',result.active!==1);
+      modal('گروه پیدا شد','دسترسی‌های فعلی بات در تلگرام بررسی شدند.',groupDiagnosticMarkup(result));
+      watchConnection();
     }
-    function runAiBuilder(buildNow) {
-      var prompt = ($('#ai-prompt').value || '').trim();
-      if (prompt.length < 3) { toast('اول نیازت را برای AI بنویس'); return; }
-      var design = $('#ai-design'); var build = $('#ai-build');
-      design.disabled = true; build.disabled = true;
-      $('#ai-result').textContent = 'در حال تحلیل امن درخواست…';
-      api('POST', '/api/ai-plan', { prompt: prompt }).then(function (d) {
-        var plan = d.plan || {}; applyAiPlan(plan);
-        var gameNames = (plan.gameIds || []).map(function (id) { var game = STATE.games.find(function (item) { return item.id === id; }); return game ? game.title : id; });
-        var warnings = (plan.warnings || []).map(function (warning) { return '• ' + esc(warning); }).join('<br>');
-        $('#ai-result').innerHTML = '<b>' + (d.cloudflareAiUsed ? 'Cloudflare AI' : 'موتور فارسی امن') + '</b> · ' + esc(plan.explanation || d.message || '') + '<br><span class="latency-meter">Profile: ' + esc(plan.speedPreset || '—') + ' / ' + esc(plan.profileMode || '—') + '</span> · Route: ' + esc(plan.paths || 0) + ' · Game: ' + esc(gameNames.join('، ') || '—') + (warnings ? '<br>' + warnings : '');
-        if (buildNow && plan.ready) setTimeout(function () { $('#auto').click(); }, 0);
-        else if (buildNow && !plan.ready) toast('AI برای Gaming به نام حداقل یک بازی نیاز دارد');
-      }).catch(function (e) { $('#ai-result').textContent = e.message; toast(e.message); })
-        .finally(function () { design.disabled = false; build.disabled = false; });
+    else if(form.id==='message-form'){const body={chatId:Number(data.get('chatId')),text:String(data.get('text')||''),pin:data.has('pin')};const scheduled=form.dataset.schedule==='true';if(scheduled)body.minutes=Number(data.get('minutes'));const result=await api(scheduled?'/api/jobs':'/api/messages',body);closeModal();toast(scheduled?`پیام زمان‌بندی شد. شناسه: ${result.id}`:'پیام به گروه ارسال شد.');}
+    else if(form.id==='group-form'||form.id==='security-form'){await api(`/api/groups/${form.dataset.id}/settings`,parseSettings(form));if(form.id==='group-form')closeModal();toast('تنظیمات این گروه ذخیره شد.');await render();}
+    else if(form.id==='wallet-form'){await api('/api/economy',{userId:Number(form.dataset.id),currency:data.get('currency'),action:data.get('action'),amount:Number(data.get('amount'))});closeModal();toast('موجودی و دفتر مالی به‌روزرسانی شد.');await render();}
+    else if(form.id==='global-settings'){const patch={maintenance:data.has('maintenance')};$$('[data-number]',form).forEach(i=>patch[i.name]=Number(i.value));const result=await api('/api/global',patch);if(state.overview)state.overview.global=result.settings;toast('قواعد سراسری ذخیره شد.');}
+    else if(form.id==='purge-form'){const result=await api('/api/purge/prepare',{chatId:Number(data.get('chatId')),count:Number(data.get('count'))});modal('آخرین تأیید؛ حذف برگشت ندارد.','این تأیید فقط ۹۰ ثانیه معتبر است.',`<form id="purge-confirm-form" data-chat="${result.chatId}" data-confirm="${h(result.confirmationId)}"><p><strong>${n(result.count)} پیام ثبت‌شده</strong> در گروه ${h(groupName(result.chatId))} برای حذف پردازش شود؟</p>${notice('ممکن است تلگرام بعضی پیام‌ها را به‌علت محدودیت API حذف نکند. هیچ پیامی از قبل از ثبت در ربات یا خارج از مهلت مجاز هدف قرار نمی‌گیرد.')}<div class="form-actions"><button type="button" class="button ghost" data-action="close">انصراف</button><button type="submit" class="button danger">تأیید نهایی پاک‌سازی ${icon('trash')}</button></div></form>`);}
+    else if(form.id==='purge-confirm-form'){const result=await api('/api/confirm',{chatId:Number(form.dataset.chat),confirmationId:form.dataset.confirm});closeModal();toast(result.message);}
+  }catch(error){if(form.id==='login-form')$('#login-error').textContent=error.message;else{if(form.id==='bot-setup-form'&&$('#setup-feedback'))$('#setup-feedback').textContent=error.message;toast(error.message,true);}}finally{if(submit)submit.disabled=false;}
+});
+$('#theme-toggle').addEventListener('click',()=>{document.documentElement.classList.toggle('light');const light=document.documentElement.classList.contains('light');try{localStorage.setItem('nova-theme',light?'light':'dark');}catch{}$('#theme-toggle').innerHTML=icon(light?'moon':'sun');});
+$('#mobile-toggle').addEventListener('click',()=>{$('#sidebar').classList.add('open');$('#mobile-scrim').hidden=false;});
+$('#mobile-scrim').addEventListener('click',closeMenu);
+$('#account-button').addEventListener('click',()=>modal(state.session.demo?'حساب نمایشی مالک':'حساب مالک سراسری','دسترسی مدیریت ربات؛ بدون دسترسی به نشست‌های شخصی تلگرام.',`<div class="owner-ids">${state.session.owners.map(id=>`<code>${id}</code>`).join('')}</div><p class="spaced small soft">الماس نامحدود · دسترسی به همهٔ گروه‌های ثبت‌شده · دفتر ممیزی عملیات</p><div class="form-actions">${btn('خروج از پنل','logout','secondary','logout')}</div>`));
+$('#modal').addEventListener('click',event=>{if(event.target===$('#modal')){const r=$('#modal').getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
+document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)&&!$('#modal').open){event.preventDefault();$('#global-search input').focus();}if(event.key==='Escape')closeMenu();});
+window.addEventListener('hashchange',()=>{if(state.session?.authenticated)render(location.hash.slice(1)||'overview');});
+async function boot(){try{const [session,catalog]=await Promise.all([api('/api/session'),api('/api/catalog')]);state.session=session;state.catalog=catalog;$('#loading').hidden=true;if(!session.authenticated){showLogin();return;}$('#login-screen').hidden=true;$('#app').hidden=false;$('#demo-banner').hidden=!session.demo;state.overview=null;
+    let page=location.hash.slice(1)||'overview';
+    if(!session.demo){
+      $('#main').innerHTML='<div class="skeleton"></div>';
+      try{const connection=await checkConnection(false);if((page==='overview')&&(!connection.receiving||!connection.groupCount)){page='settings';history.replaceState(null,'','#settings');}}catch{}
     }
-    if ($('#ai-design')) $('#ai-design').onclick = function () { runAiBuilder(false); };
-    if ($('#ai-build')) $('#ai-build').onclick = function () { runAiBuilder(true); };
-    var safe = $('#safe-preset');
-    if (safe) safe.onclick = function () {
-      $('#paths').value = '1'; $('#iron-n').value = '0'; $('#dynamic-pool').checked = false; $('#clean-auto').checked = false; $('#iron-sub').checked = false; $('#domestic-direct').checked = true;
-      $('#usage-normal').checked = true; $('#usage-gaming').checked = false; $('#game-picker').classList.remove('open');
-      $('#cf-ai').checked = false; $('#build-speed').value = 'stable'; $('#build-mode').value = 'auto'; $('#clean-manual').value = '';
-      var matchedCurrent = false;
-      document.querySelectorAll('[data-build-endpoint]').forEach(function (input) {
-        var endpoint = STATE.endpoints.find(function (item) { return item.id === input.getAttribute('data-build-endpoint'); });
-        input.checked = !!endpoint && endpoint.host === location.hostname;
-        if (input.checked) matchedCurrent = true;
-      });
-      if (!matchedCurrent) {
-        var firstEndpoint = $('[data-build-endpoint]');
-        if (firstEndpoint) firstEndpoint.checked = true;
-      }
-      toast('حالت نجات: فقط دامنه فعلی، یک مسیر مستقیم و بدون Anycast', true);
-    };
-    var heavy = $('#heavy-preset');
-    if (heavy) heavy.onclick = function () {
-      $('#paths').value = '2000'; $('#iron-n').value = '5'; $('#dynamic-pool').checked = true; $('#clean-auto').checked = true; $('#iron-sub').checked = true;
-      $('#build-speed').value = 'god'; $('#build-mode').value = 'fallback'; $('#rotation-minutes').value = '5'; toast('پروفایل MAX Giant فعال شد؛ تعداد بالا ممکن است کلاینت را کند کند', true);
-    };
-    $('#auto').onclick = function () {
-      var name = $('#n').value || ('AMINCK-' + Date.now());
-      var button = $('#auto');
-      button.disabled = true; button.textContent = 'در حال تست و ساخت…';
-      var payload = {
-        name: name,
-        subscriptionCount: Number($('#sub-count').value || 1),
-        paths: Number($('#paths').value || 5),
-        ironCount: Number($('#iron-n').value || 0),
-        speedPreset: $('#build-speed').value,
-        profileMode: $('#build-mode').value,
-        usageMode: $('#usage-gaming').checked ? 'gaming' : 'normal',
-        gameIds: Array.prototype.slice.call(document.querySelectorAll('[data-game-id]:checked')).map(function (input) { return input.getAttribute('data-game-id'); }),
-        ironMode: $('#iron-sub').checked,
-        domesticDirect: $('#domestic-direct').checked,
-        configNameTemplate: $('#tpl').value,
-        endpointIds: Array.prototype.slice.call(document.querySelectorAll('[data-build-endpoint]:checked')).map(function (input) { return input.getAttribute('data-build-endpoint'); }),
-        useCleanCatalog: !!($('#clean-auto') && $('#clean-auto').checked),
-        cleanIps: $('#clean-manual') ? $('#clean-manual').value : '',
-        dynamicPool: !!($('#dynamic-pool') && $('#dynamic-pool').checked),
-        rotationMinutes: Number($('#rotation-minutes').value || 1),
-        useCloudflareAi: !!($('#cf-ai') && $('#cf-ai').checked),
-        limitBytes: numOrZero('lim-b'),
-        limitSeconds: numOrZero('lim-s'),
-        maxConnections: numOrZero('lim-c'),
-        limitRequests: numOrZero('lim-r')
-      };
-      if (payload.usageMode === 'gaming' && payload.gameIds.length === 0) {
-        button.disabled = false; button.textContent = 'ساخت Smart Subscription';
-        toast('برای Gaming حداقل یک بازی انتخاب کن'); return;
-      }
-      api('POST', '/api/auto-build', payload).then(function (d) {
-        var subs = d.subscriptions || [{ name: d.user.name, token: d.user.token, subUrl: d.subUrl }];
-        var out = '<div class="alert">' + esc(String(subs.length)) + ' ساب AMINCK آماده شد · ' + esc(String((d.selectedEndpoints || []).length)) + ' دامنه · ' + esc(String((d.cleanIpsUsed || []).length)) + ' کاندید Anycast</div>';
-        if (d.rollingPool && d.rollingPool.enabled) {
-          out += '<div class="alert">' + icon('infinity') + ' Smart Pool فعال: ' + esc(d.rollingPool.activeWindow) + ' مسیر در پنجره فعال، چرخش هر ' + esc(d.rollingPool.rotationMinutes) + ' دقیقه هنگام Refresh ساب.</div>';
-        }
-        if (d.aiAssistance && d.aiAssistance.requested) {
-          out += '<div class="alert">Workers AI: ' + (d.aiAssistance.applied ? ('پیشنهاد اعمال شد (' + esc(d.aiAssistance.recommendation) + ')') : 'در دسترس نبود؛ موتور Probe تعیین‌پذیر استفاده شد') + '</div>';
-        }
-        out += '<div class="alert" id="ws-live-test">در حال تست WebSocket از اینترنت همین مرورگر…</div>';
-        subs.forEach(function (sub, i) {
-          var link = sub.subUrl || subLink(sub.token, '');
-          out += '<div class="sub-result"><b>' + esc(sub.name) + '</b><div class="uri">' + esc(link) + '</div>';
-          var rawLink = sub.rawUrl || subLink(sub.token, 'raw');
-          out += '<div class="row"><button class="btn" data-copy-url="' + esc(link) + '">' + icon('copy') + 'کپی ساب</button>';
-          out += '<button class="btn" data-share-url="' + esc(link) + '">' + icon('share') + 'ارسال به موبایل</button>';
-          out += '<button class="btn" data-copy-url="' + esc(rawLink) + '">کپی VLESS خام</button>';
-          out += '<a class="btn" target="_blank" rel="noopener" href="' + esc(rawLink) + '">تست و نمایش</a>';
-          out += '<button class="btn" data-copy-url="' + esc(sub.clashUrl || subLink(sub.token, 'clash')) + '">Clash</button>';
-          out += '<button class="btn" data-copy-url="' + esc(sub.singboxUrl || subLink(sub.token, 'singbox')) + '">sing-box</button></div></div>';
-        });
-        (d.iron || []).forEach(function (p, ironIndex) {
-          out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span> ';
-          out += '<button class="btn" data-copy-iron="' + ironIndex + '">کپی JSON آهنین</button>';
-          out += '<div class="uri">' + esc(p.json) + '</div></div>';
-        });
-        $('#mk-out').innerHTML = out;
-        document.querySelectorAll('[data-copy-url]').forEach(function (el) {
-          el.onclick = function () { copyText(el.getAttribute('data-copy-url'), 'لینک'); };
-        });
-        document.querySelectorAll('[data-share-url]').forEach(function (el) {
-          el.onclick = function () { shareValue('AMINNOVA Subscription', 'لینک خصوصی ساب را فقط برای صاحب آن ارسال کنید.', el.getAttribute('data-share-url')); };
-        });
-        document.querySelectorAll('[data-copy-iron]').forEach(function (el) {
-          el.onclick = function () {
-            var item = (d.iron || [])[Number(el.getAttribute('data-copy-iron'))];
-            if (item) copyText(item.json, 'JSON آهنین');
-          };
-        });
-        testWsRoute((d.users || [d.user])[0]).then(function (result) {
-          var box = $('#ws-live-test');
-          if (!box) return;
-          box.textContent = result.ok
-            ? ('تست کامل WSS + VLESS + TCP موفق شد: ' + result.latencyMs + 'ms')
-            : result.tcpOpened
-              ? ('مسیر WSS + VLESS + TCP باز شد (' + result.latencyMs + 'ms)، ولی مقصد آزمایشی داده نفرستاد. خود Gateway Timeout نیست.')
-              : ('هشدار واقعی تونل: ' + result.error + '؛ اول حالت نجات DIRECT SAFE و سپس دامنه Worker را بررسی کن.');
-          box.style.borderColor = result.ok ? 'var(--ok)' : (result.tcpOpened ? 'var(--warn)' : 'var(--err)');
-        });
-        toast(String(subs.length) + ' ساب ساخته شد', true);
-        return loadUsers();
-      }).catch(function (e) { toast(e.message); }).finally(function () {
-        button.disabled = false; button.innerHTML = icon('spark') + 'ساخت Smart Subscription';
-      });
-    };
-  }
-
-  function viewSell() {
-    var html = '<div class="card"><h2>مشترک‌ها و ویرایش</h2><table><thead><tr><th>نام</th><th>مسیر</th><th></th></tr></thead><tbody>';
-    STATE.users.forEach(function (u) {
-      html += '<tr><td>' + esc(u.name) + (u.dynamicPool ? ' <span class="badge">∞ ' + esc(u.rotationMinutes || 1) + 'm</span>' : '') + (u.ironMode ? ' <span class="badge">IRON</span>' : '') + (u.usageMode === 'gaming' ? ' <span class="badge">GAMING</span>' : '') + (u.domesticDirect !== false ? ' <span class="badge">IR DIRECT</span>' : '') + '</td><td>' + (u.routes ? u.routes.length : 0) + '</td>';
-      html += '<td><button class="btn" data-copy="' + esc(u.token) + '">کپی ساب</button> ';
-      html += '<button class="btn" data-edit="' + esc(u.id) + '">ویرایش</button></td></tr>';
-    });
-    html += '</tbody></table><div id="edit-box"></div></div>';
-    shell(html);
-    document.querySelectorAll('[data-copy]').forEach(function (el) {
-      el.onclick = function () { copyText(subLink(el.getAttribute('data-copy'), ''), 'ساب'); };
-    });
-    document.querySelectorAll('[data-edit]').forEach(function (el) {
-      el.onclick = function () { showEdit(el.getAttribute('data-edit')); };
-    });
-  }
-
-  function showEdit(id) {
-    var u = STATE.users.filter(function (x) { return x.id === id; })[0];
-    if (!u) return;
-    var box = $('#edit-box');
-    var h = '<h2>ویرایش ' + esc(u.name) + '</h2>';
-    h += '<label>نام</label><input id="en" value="' + esc(u.name) + '" style="width:100%">';
-    h += '<label>قالب نام</label><input id="et" value="' + esc(u.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
-    h += '<label>تعداد مسیر فعال (۱ تا ۲۰۰۰)</label><input id="ep" type="number" min="1" max="2000" value="' + esc(u.routes ? u.routes.length : 3) + '">';
-    h += '<div class="grid"><div><label>نوع مصرف</label><select id="eusage"><option value="normal">معمولی</option><option value="gaming">Gaming Rules</option></select></div><div><label class="check"><input id="eiron" type="checkbox"' + (u.ironMode ? ' checked' : '') + '> کل ساب IRON</label></div></div>';
-    h += '<div class="grid"><div><label>پروفایل سرعت</label><select id="espeed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option><option value="latency">LOW PING</option></select></div><div><label class="check"><input id="edomestic" type="checkbox"' + (u.domesticDirect !== false ? ' checked' : '') + '> .ir / ایران مستقیم</label></div></div>';
-    h += '<div id="edit-games" class="game-picker' + (u.usageMode === 'gaming' ? ' open' : '') + '"><div class="row"><b>بازی‌های این ساب</b><button class="btn" id="edit-games-all" type="button">همه</button><button class="btn" id="edit-games-none" type="button">پاک‌کردن</button></div><div class="game-list">';
-    STATE.games.forEach(function (game) { h += '<label class="game-item"><input type="checkbox" data-edit-game="' + esc(game.id) + '"' + ((u.gameIds || []).indexOf(game.id) >= 0 ? ' checked' : '') + '><span>' + esc(game.title) + '</span></label>'; });
-    h += '</div></div>';
-    h += '<label class="check"><input id="edyn" type="checkbox"' + (u.dynamicPool ? ' checked' : '') + '> Smart Pool چرخان</label>';
-    h += '<label>چرخش (دقیقه)</label><input id="erot" type="number" min="1" max="60" value="' + esc(u.rotationMinutes || 1) + '">';
-    h += limRow('حجم', 'eb') + limRow('ثانیه', 'es') + limRow('اتصال', 'ec') + limRow('سقف درخواست', 'er');
-    h += '<button class="btn primary" id="esave">ذخیره ویرایش</button>';
-    box.innerHTML = h;
-    if ($('#eusage')) {
-      $('#eusage').value = u.usageMode || 'normal';
-      $('#eusage').onchange = function () { $('#edit-games').classList.toggle('open', $('#eusage').value === 'gaming'); };
-    }
-    if ($('#edit-games-all')) $('#edit-games-all').onclick = function () { document.querySelectorAll('[data-edit-game]').forEach(function (input) { input.checked = true; }); };
-    if ($('#edit-games-none')) $('#edit-games-none').onclick = function () { document.querySelectorAll('[data-edit-game]').forEach(function (input) { input.checked = false; }); };
-    if ($('#espeed')) $('#espeed').value = u.speedPreset || 'stable';
-    if ($('#eb')) $('#eb').value = String(u.limitBytes || 0);
-    if ($('#es')) $('#es').value = String(u.limitSeconds || 0);
-    if ($('#ec')) $('#ec').value = String(u.maxConnections || 0);
-    if ($('#er')) $('#er').value = String(u.limitRequests || 0);
-    bindInf();
-    $('#esave').onclick = function () {
-      var editGameIds = Array.prototype.slice.call(document.querySelectorAll('[data-edit-game]:checked')).map(function (input) { return input.getAttribute('data-edit-game'); });
-      if ($('#eusage').value === 'gaming' && editGameIds.length === 0) { toast('برای Gaming حداقل یک بازی انتخاب کن'); return; }
-      api('POST', '/api/user-update', {
-        id: id,
-        name: $('#en').value,
-        configNameTemplate: $('#et').value,
-        paths: Number($('#ep').value || 3),
-        usageMode: $('#eusage').value,
-        gameIds: editGameIds,
-        ironMode: $('#eiron').checked,
-        domesticDirect: $('#edomestic').checked,
-        dynamicPool: $('#edyn').checked,
-        rotationMinutes: Number($('#erot').value || 1),
-        limitBytes: numOrZero('eb'),
-        limitSeconds: numOrZero('es'),
-        maxConnections: numOrZero('ec'),
-        limitRequests: numOrZero('er'),
-        speedPreset: $('#espeed').value
-      }).then(function () { toast('ذخیره شد', true); return loadUsers().then(paint); })
-        .catch(function (e) { toast(e.message); });
-    };
-  }
-
-  function viewIron() {
-    var html = '<div class="card"><h2>کانفیگ آهنین</h2><div class="row"><select id="uid">';
-    STATE.users.forEach(function (u) {
-      html += '<option value="' + esc(u.id) + '">' + esc(u.name) + '</option>';
-    });
-    html += '</select><select id="ic">' + ironOptions(3) + '</select><button class="btn primary" id="ib">ساخت آهنین</button></div><div id="iron-out"></div></div>';
-    shell(html);
-    var ib = $('#ib');
-    if (ib) ib.onclick = function () {
-      api('POST', '/api/iron-build', { id: $('#uid').value, count: Number($('#ic').value) })
-        .then(function (d) {
-          STATE.iron = d.iron;
-          var out = '';
-          (d.iron || []).forEach(function (p) {
-            out += '<div class="card"><b>' + esc(p.name) + '</b> <span class="badge">' + esc(p.client) + '</span><div class="uri">' + esc(p.json) + '</div></div>';
-          });
-          $('#iron-out').innerHTML = out;
-        }).catch(function (e) { toast(e.message); });
-    };
-  }
-
-  function viewScan() {
-    var html = '<div class="card"><h2>پینگ و Multi-Endpoint</h2><p class="muted">برای هر Deploy واقعی خودت یک Host اضافه کن. برچسب مکان فقط اطلاعاتی است که خود اپراتور تأیید می‌کند؛ AMINNOVA از IP Anycast کشور جعلی حدس نمی‌زند.</p><div class="row"><input id="el" placeholder="برچسب واقعی، مثال Frankfurt Primary"><input id="eh" placeholder="host"><input id="ep" value="443" style="width:80px"><button class="btn" id="add-ep">افزودن</button><button class="btn primary" id="pr">پینگ</button></div><table><tbody>';
-    (STATE.endpoints || []).forEach(function (e) {
-      var r = (STATE.probe || {})[e.id] || {};
-      html += '<tr><td><b>' + esc(e.label || e.host) + '</b><br><span class="mono muted">' + esc(e.host) + '</span></td><td>' + esc(String(r.ok ? (r.latencyMs + ' ms') : (r.error || '—'))) + '</td></tr>';
-    });
-    html += '</tbody></table><p class="muted">این عدد HTTPS از Edge کلودفلر است، نه Ping اینترنت کاربر. نتیجه ISP کاربر می‌تواند متفاوت باشد. Auto Build Endpointهای سالم را با کمترین عدد اندازه‌گیری‌شده جلوتر می‌گذارد.</p></div>';
-    html += '<div class="card"><h2>مخزن کاندیدهای Anycast</h2><p class="muted">IP تمیز ثابت وجود ندارد. با فعال بودن گزینه Anycast در ساخت اتومات، این کاندیدها کنار مسیر مستقیم وارد می‌شوند تا خود کلاینت از شبکه واقعی تست کند.</p><div class="row">';
-    (STATE.clean || []).slice(0, 18).forEach(function (c) { html += '<span class="badge mono">' + esc(c.ip) + '</span>'; });
-    html += '</div></div>';
-    shell(html);
-    $('#add-ep').onclick = function () {
-      api('POST', '/api/endpoints', { action: 'add', label: $('#el').value, host: $('#eh').value, port: Number($('#ep').value || 443) })
-        .then(function () { toast('OK', true); loadScan(); }).catch(function (e) { toast(e.message); });
-    };
-    $('#pr').onclick = function () {
-      api('POST', '/api/probe', {}).then(function (d) { STATE.probe = d.results || {}; toast('پینگ شد', true); paint(); }).catch(function (e) { toast(e.message); });
-    };
-  }
-
-  function viewApp() {
-    var html = '<div class="card hero-panel app-stage"><div class="section-title"><div><div class="eyebrow">Installable Mobile Companion</div><h2>اپ موبایل AMINNOVA</h2></div>' + icon('app') + '</div>';
-    html += '<p class="muted">این نسخه PWA روی Android، iOS و دسکتاپ نصب می‌شود و پنل، ساب‌ها، Share، Gaming Preset و مانیتور Refresh را داخل یک اپ نگه می‌دارد.</p>';
-    html += '<div class="performance-strip"><div><b>' + esc((STATE.launch && STATE.launch.version) || '—') + '</b><span class="muted">نسخه پنل</span></div><div><b>' + esc(STATE.games.length) + '</b><span class="muted">Preset بازی</span></div><div><b>۲۰۰۰</b><span class="muted">سقف Route مالک</span></div></div>';
-    html += '<div class="row"><button class="btn primary big" id="app-install">' + icon('install') + (isStandalone() ? 'اپ نصب شده' : 'نصب روی صفحه اصلی') + '</button><button class="btn" id="app-update">' + icon('spark') + 'آپدیت Shell اپ</button><button class="btn" id="source-update">' + icon('cloud') + 'بررسی GitHub / Deploy</button></div><div id="source-update-state" class="alert" style="margin-top:12px">نسخه Source هنوز بررسی نشده است.</div></div>';
-    html += '<div class="grid"><div class="card"><h2>انتخاب مشترک</h2><select id="app-user" style="width:100%">';
-    STATE.users.forEach(function (u) { html += '<option value="' + esc(u.token) + '">' + esc(u.name) + (u.dynamicPool ? ' · ∞ Pool' : '') + '</option>'; });
-    html += '</select><div id="app-links"></div></div>';
-    html += '<div class="card"><h2>مانیتور چرخش یک‌دقیقه‌ای</h2><p class="muted">فقط وقتی اپ باز است، هر دقیقه ساب انتخابی را Refresh و هدر Rotation را نمایش می‌دهد. اپ بسته یا Client خارجی را سیستم‌عامل کنترل می‌کند.</p><button class="btn primary" id="monitor-btn">شروع مانیتور</button><div id="monitor-state" class="uri">خاموش</div></div></div>';
-    html += '<div class="card"><h2>اتصال به کانفیگ</h2><div class="alert">مرورگر/PWA اجازه ساخت VPN سیستمی ندارد. برای اتصال واقعی باید لینک را در V2RayNG، V2Box، MahsaNG، Clash/Mihomo یا sing-box Import کنید. AMINNOVA هیچ‌وقت اتصال جعلی یا VPN مرورگری ادعا نمی‌کند.</div>';
-    html += '<div class="feature-grid"><div class="feature-tile">' + icon('copy') + '<h3>V2Ray / Raw</h3><p class="muted">کپی Base64 یا VLESS خام برای کلاینت‌های V2Ray.</p></div><div class="feature-tile">' + icon('scan') + '<h3>Clash / Mihomo</h3><p class="muted">YAML کامل با url-test و fallback.</p></div><div class="feature-tile">' + icon('iron') + '<h3>sing-box / Iron</h3><p class="muted">JSON استاندارد با Selector و URLTest.</p></div></div></div>';
-    shell(html);
-    var install = $('#app-install'); if (install) install.onclick = installApp;
-    var update = $('#app-update'); if (update) update.onclick = function () {
-      if (!navigator.serviceWorker) { toast('Service Worker پشتیبانی نمی‌شود'); return; }
-      navigator.serviceWorker.getRegistration('/').then(function (reg) { if (reg) return reg.update(); }).then(function () { toast('Shell اپ بررسی شد', true); });
-    };
-    var sourceUpdate = $('#source-update'); if (sourceUpdate) sourceUpdate.onclick = function () {
-      sourceUpdate.disabled = true;
-      api('GET', '/api/update-check').then(function (d) {
-        var box = $('#source-update-state'); if (!box) return;
-        if (!d.ok) { box.textContent = d.message || 'GitHub در دسترس نیست'; box.style.borderColor = 'var(--warn)'; return; }
-        box.innerHTML = 'نسخه نصب‌شده: <b class="mono">' + esc(d.currentVersion) + '</b> · نسخه GitHub: <b class="mono">' + esc(d.latestVersion) + '</b>' + (d.updateAvailable ? '<br><a class="btn primary" target="_blank" rel="noopener" href="' + esc(d.deployUrl) + '">نصب نسخه جدید از Cloudflare</a>' : '<br>پنل به‌روز است.');
-        box.style.borderColor = d.updateAvailable ? 'var(--warn)' : 'var(--ok)';
-      }).catch(function (e) { toast(e.message); }).finally(function () { sourceUpdate.disabled = false; });
-    };
-    function paintLinks() {
-      var token = $('#app-user') ? $('#app-user').value : '';
-      if (!token) { $('#app-links').innerHTML = '<div class="alert">اول از داشبورد یک مشترک بساز.</div>'; return; }
-      var base = subLink(token, '');
-      var links = [
-        ['ساب خودکار', base], ['VLESS خام', subLink(token, 'raw')], ['Clash/Mihomo', subLink(token, 'clash')], ['sing-box', subLink(token, 'singbox')]
-      ];
-      var out = '';
-      links.forEach(function (item) {
-        out += '<div class="sub-result"><b>' + item[0] + '</b><div class="uri">' + esc(item[1]) + '</div><div class="row"><button class="btn" data-app-copy="' + esc(item[1]) + '">' + icon('copy') + 'کپی</button><button class="btn" data-app-share="' + esc(item[1]) + '">' + icon('share') + 'Share</button></div></div>';
-      });
-      $('#app-links').innerHTML = out;
-      document.querySelectorAll('[data-app-copy]').forEach(function (el) { el.onclick = function () { copyText(el.getAttribute('data-app-copy'), 'لینک Import'); }; });
-      document.querySelectorAll('[data-app-share]').forEach(function (el) { el.onclick = function () { shareValue('AMINNOVA', 'Subscription خصوصی', el.getAttribute('data-app-share')); }; });
-    }
-    if ($('#app-user')) { $('#app-user').onchange = paintLinks; paintLinks(); }
-    var monitor = $('#monitor-btn');
-    function runMonitor() {
-      var token = $('#app-user') ? $('#app-user').value : '';
-      if (!token) return;
-      fetch(subLink(token, 'raw'), { cache: 'no-store', credentials: 'omit' }).then(function (res) {
-        if (res.body && res.body.cancel) res.body.cancel().catch(function () {});
-        var box = $('#monitor-state'); if (!box) return;
-        box.textContent = 'HTTP ' + res.status + ' · mode=' + (res.headers.get('x-aminck-pool-mode') || 'fixed') + ' · epoch=' + (res.headers.get('x-aminck-rotation-epoch') || '—') + ' · ' + new Date().toLocaleTimeString('fa-IR');
-      }).catch(function () { var box = $('#monitor-state'); if (box) box.textContent = 'شبکه در دسترس نیست'; });
-    }
-    if (monitor) monitor.onclick = function () {
-      if (MONITOR_TIMER) { clearInterval(MONITOR_TIMER); MONITOR_TIMER = null; monitor.textContent = 'شروع مانیتور'; $('#monitor-state').textContent = 'خاموش'; return; }
-      runMonitor(); MONITOR_TIMER = setInterval(runMonitor, 60000); monitor.textContent = 'توقف مانیتور';
-    };
-  }
-
-  function viewRecovery() {
-    if (!can(STATE.me, 'backup:export')) { shell('<div class="card">دسترسی بکاپ ندارید.</div>'); return; }
-    var html = '<div class="card"><h2>بکاپ و بازیابی ساب‌ها</h2>';
-    html += '<p class="muted">اگر حساب Cloudflare حذف شود، Worker و دامنه workers.dev آن حساب هم از بین می‌رود. برای بازیابی: این فایل را نگه دارید، AMINNOVA را روی حساب جدید Deploy و همین‌جا Restore کنید.</p>';
-    html += '<p class="muted">این فایل شامل Token و UUID مشترک‌هاست؛ آن را محرمانه نگه دارید.</p>';
-    html += '<div class="row"><button class="btn primary" id="backup-download">دانلود بکاپ JSON</button></div>';
-    if (STATE.me.role === 'owner') {
-      html += '<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">';
-      html += '<label>فایل بکاپ AMINNOVA</label><input id="backup-file" type="file" accept="application/json,.json">';
-      html += '<button class="btn" id="backup-restore">بازیابی روی این دامنه</button>';
-      html += '<p class="muted">Token و UUID حفظ می‌شوند و مسیرها به دامنه فعلی متصل می‌شوند. برای ثابت ماندن لینک قدیمی باید از Custom Domain خودتان استفاده و DNS آن را به Deploy جدید منتقل کنید.</p>';
-    }
-    html += '</div>';
-    shell(html);
-    $('#backup-download').onclick = function () {
-      api('POST', '/api/backup', {}).then(function (d) {
-        downloadJson(d, 'AMINNOVA-backup-' + new Date().toISOString().slice(0, 10) + '.json');
-        toast('بکاپ دانلود شد', true);
-      }).catch(function (e) { toast(e.message); });
-    };
-    var restore = $('#backup-restore');
-    if (restore) restore.onclick = function () {
-      var input = $('#backup-file');
-      if (!input.files || !input.files[0]) { toast('اول فایل بکاپ را انتخاب کنید'); return; }
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          var backup = JSON.parse(String(reader.result || ''));
-          api('POST', '/api/restore', { backup: backup }).then(function (d) {
-            toast(d.message || 'بازیابی شد', true);
-            return Promise.all([loadUsers(), loadScan()]).then(function () { TAB = 'sell'; paint(); });
-          }).catch(function (e) { toast(e.message); });
-        } catch (e) { toast('JSON بکاپ نامعتبر است'); }
-      };
-      reader.readAsText(input.files[0]);
-    };
-  }
-
-  function viewSettings() {
-    var s = STATE.settings || {};
-    if (!can(STATE.me, 'settings:manage')) { shell('<div class="card">دسترسی تنظیمات ندارید.</div>'); return; }
-    var anti = s.antiDetect || {};
-    var ports = s.tlsPorts || [443];
-    var html = '<div class="card"><h2>تنظیمات خروجی و فروش</h2>';
-    html += '<label>عنوان پنل</label><input id="st-title" value="' + esc(s.title || 'AMINNOVA') + '" style="width:100%">';
-    html += '<label>برند کانفیگ</label><input id="st-brand" value="' + esc(s.brand || 'AMINCK GOD Edition') + '" style="width:100%">';
-    html += '<label>لینک پشتیبانی</label><input id="st-support" value="' + esc(s.supportUrl || '') + '" style="width:100%">';
-    html += '<label>Health Check مستقل</label><input id="st-health" value="' + esc(s.healthUrl || '') + '" placeholder="خالی = https://www.gstatic.com/generate_204" style="width:100%"><p class="muted">آدرس خود Worker را اینجا نگذار؛ Loop خروجی باعث Timeout کاذب می‌شود.</p>';
-    html += '<label>قالب نام</label><input id="st-template" value="' + esc(s.configNameTemplate || '{brand} AMINCK {profile} {index}') + '" style="width:100%">';
-    html += '<div class="grid"><div><label>تعداد پیش‌فرض</label><input id="st-paths" type="number" min="1" max="2000" value="' + esc(s.defaultPaths || 3) + '"></div>';
-    html += '<div><label>آپدیت ساب (ساعت)</label><input id="st-up" type="number" min="1" max="720" value="' + esc(s.updateIntervalHours || 24) + '"></div></div>';
-    html += '<div class="row" style="margin-top:12px"><select id="st-speed"><option value="stable">Stable</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option><option value="god">GOD</option><option value="latency">LOW PING</option></select>';
-    html += '<select id="st-mode"><option value="auto">Auto</option><option value="fallback">Fallback</option><option value="balance">Balance</option></select>';
-    html += '<select id="st-fp"><option value="chrome">Chrome</option><option value="firefox">Firefox</option><option value="safari">Safari</option><option value="edge">Edge</option><option value="random">Random</option></select></div>';
-    html += '<h2 style="margin-top:18px">پورت‌های دامنه Worker</h2><div class="row">';
-    [443,2053,2083,2087,2096,8443].forEach(function (p) { html += '<label class="check"><input type="checkbox" data-port="' + p + '"' + (ports.indexOf(p) >= 0 ? ' checked' : '') + '> ' + p + '</label>'; });
-    html += '</div><p class="muted">برای workers.dev فقط 443 پیشنهاد می‌شود. مولتی‌پورت فقط با Custom Domain سازگار فعال شود.</p>';
-    html += '<div class="row"><label class="check"><input id="st-pad" type="checkbox"' + (anti.pathPadding ? ' checked' : '') + '> Path padding</label>';
-    html += '<label class="check"><input id="st-jitter" type="checkbox"' + (anti.pathJitter ? ' checked' : '') + '> Path jitter</label>';
-    html += '<label class="check"><input id="st-frag" type="checkbox"' + (anti.fragment ? ' checked' : '') + '> Fragment hint</label>';
-    html += '<label class="check"><input id="st-multi" type="checkbox"' + (anti.multiPort ? ' checked' : '') + '> Multi-port</label></div>';
-    html += '<label>Host aliasهای متعلق به شما (باید در Endpointها باشند؛ با کاما)</label><input id="st-alias" value="' + esc((s.hostAliases || []).join(', ')) + '" style="width:100%">';
-    html += '<p class="muted">دامنه شخص ثالث یا SNI جعلی پشتیبانی نمی‌شود؛ باعث شکست TLS/Route و ریسک سوءاستفاده می‌شود.</p>';
-    html += '<button class="btn primary" id="st-save">ذخیره تنظیمات</button></div>';
-    shell(html);
-    if ($('#st-speed')) $('#st-speed').value = s.speedPreset || 'god';
-    if ($('#st-mode')) $('#st-mode').value = s.profileMode || 'auto';
-    if ($('#st-fp')) $('#st-fp').value = s.fingerprint || 'chrome';
-    $('#st-save').onclick = function () {
-      var selectedPorts = [];
-      document.querySelectorAll('[data-port]:checked').forEach(function (el) { selectedPorts.push(Number(el.getAttribute('data-port'))); });
-      var aliases = $('#st-alias').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-      api('POST', '/api/settings', { settings: {
-        title: $('#st-title').value,
-        brand: $('#st-brand').value,
-        supportUrl: $('#st-support').value,
-        healthUrl: $('#st-health').value,
-        configNameTemplate: $('#st-template').value,
-        defaultPaths: Number($('#st-paths').value || 3),
-        updateIntervalHours: Number($('#st-up').value || 24),
-        speedPreset: $('#st-speed').value,
-        profileMode: $('#st-mode').value,
-        fingerprint: $('#st-fp').value,
-        tlsPorts: selectedPorts,
-        hostAliases: aliases,
-        antiDetect: {
-          pathPadding: $('#st-pad').checked,
-          pathJitter: $('#st-jitter').checked,
-          fragment: $('#st-frag').checked,
-          hostCamouflage: aliases.length > 0,
-          multiPort: $('#st-multi').checked
-        }
-      }}).then(function (d) { STATE.settings = d.settings; toast('تنظیمات ذخیره شد', true); paint(); }).catch(function (e) { toast(e.message); });
-    };
-  }
-
-  function viewCaps() {
-    var categories = [];
-    STATE.caps.forEach(function (c) { if (categories.indexOf(c.category) < 0) categories.push(c.category); });
-    var html = '<div class="card hero-panel"><div class="section-title"><div><div class="eyebrow">Verified Feature Manifest</div><h2>' + STATE.caps.length + '+ قابلیت واقعی</h2></div>' + icon('spark') + '</div><p class="muted">همه موارد به کد، API، UI، امنیت، خروجی یا PWA موجود متصل‌اند؛ شعار و قابلیت خیالی ثبت نمی‌شود.</p></div>';
-    html += '<div class="card"><div class="cap-toolbar"><input id="cap-search" placeholder="جست‌وجوی قابلیت…"><select id="cap-cat"><option value="">همه دسته‌ها</option>';
-    categories.forEach(function (cat) { html += '<option value="' + esc(cat) + '">' + esc(cat) + '</option>'; });
-    html += '</select></div><div id="cap-count" class="muted"></div><div id="cap-list" class="cap-list"></div></div>';
-    shell(html);
-    function filterCaps() {
-      var q = ($('#cap-search').value || '').trim().toLowerCase();
-      var cat = $('#cap-cat').value;
-      var list = STATE.caps.filter(function (c) {
-        return (!cat || c.category === cat) && (!q || (c.title + ' ' + c.description).toLowerCase().indexOf(q) >= 0);
-      });
-      $('#cap-count').textContent = list.length + ' مورد نمایش داده می‌شود';
-      $('#cap-list').innerHTML = list.map(function (c) {
-        return '<article class="cap-item"><span class="badge">' + esc(c.category) + '</span><b>' + esc(c.title) + '</b><div class="muted">' + esc(c.description) + '</div></article>';
-      }).join('');
-    }
-    $('#cap-search').oninput = filterCaps; $('#cap-cat').onchange = filterCaps; filterCaps();
-  }
-
-  function viewHelp() {
-    var html = '<div class="card hero-panel"><div class="section-title"><div><div class="eyebrow">AMINNOVA Academy</div><h2>راهنمای کامل از Deploy تا اتصال</h2></div>' + icon('book') + '</div><p class="muted">قدم‌ها را به ترتیب انجام بده؛ هیچ Cloudflare Token داخل پنل وارد نکن.</p><a class="btn primary big" id="easy" target="_blank" rel="noopener">' + icon('cloud') + 'Deploy رسمی</a></div>';
-    html += '<div class="grid"><div class="card"><h2>راه‌اندازی</h2>';
-    html += '<div class="guide-step"><strong>۱</strong><div><b>Deploy</b><p class="muted">لینک رسمی را باز و فقط ADMIN_PASSWORD قوی تعیین کن.</p></div></div>';
-    html += '<div class="guide-step"><strong>۲</strong><div><b>ورود</b><p class="muted">با نام AMINCK وارد شو؛ دامنه جاری خودکار Endpoint می‌شود.</p></div></div>';
-    html += '<div class="guide-step"><strong>۳</strong><div><b>ساخت</b><p class="muted">Endpoint، تعداد مسیر، Anycast و Smart Pool را انتخاب و ساخت را بزن.</p></div></div></div>';
-    html += '<div class="card"><h2>Import در کلاینت</h2><div class="guide-step"><strong>۱</strong><div><b>لینک مناسب</b><p class="muted">V2Ray Base64 برای V2RayNG/V2Box؛ YAML برای Clash؛ JSON برای sing-box.</p></div></div><div class="guide-step"><strong>۲</strong><div><b>Refresh</b><p class="muted">برای Pool یک‌دقیقه‌ای، Refresh ساب کلاینت را روی کمترین بازه پشتیبانی‌شده تنظیم کن. url-test خودش مسیر حاضر را انتخاب می‌کند.</p></div></div><div class="guide-step"><strong>۳</strong><div><b>تست</b><p class="muted">نتیجه تست کامل WSS + VLESS + TCP پنل و تست داخل همان ISP را بررسی کن؛ Edge Ping معادل وضعیت اینترنت کاربر نیست.</p></div></div></div></div>';
-    html += '<div class="card"><h2>Smart Pool و پایداری</h2><ul class="api"><li>∞ به معنی تولید نامحدود پنجره‌های جدید در طول زمان است؛ پاسخ واقعاً بی‌نهایت باعث مصرف حافظه و Crash کلاینت می‌شود.</li><li>Path و Token در چرخش خودکار ثابت می‌مانند تا اتصال‌های موجود عمداً شکسته نشوند.</li><li>همیشه مسیر DIRECT SAFE بدون Early Data میان Anycastها حفظ می‌شود.</li><li>Health Check پیش‌فرض از gstatic استفاده می‌کند؛ تست‌کردن Worker از داخل تونل خودش باعث TCP Loop و Timeout می‌شود.</li><li>هیچ Worker، IP یا ISP بدون قطعی تضمین نمی‌شود؛ Custom Domain، بکاپ و Deploy دوم راهکار واقعی Failover هستند.</li></ul></div>';
-    html += '<div class="card"><h2>اپ موبایل</h2><p class="muted">در تب «اپ موبایل» PWA را نصب، لینک‌ها را Share و Rotation را مانیتور کن. PWA مرورگر مجوز VpnService سیستم‌عامل ندارد؛ اتصال واقعی با کلاینت استاندارد انجام می‌شود.</p></div>';
-    shell(html);
-    var a = $('#easy');
-    if (a && STATE.launch) a.href = STATE.launch.deployUrl;
-  }
-
-  function paint() {
-    if (!STATE.me) { renderLogin(); return; }
-    if (TAB === 'sell') viewSell();
-    else if (TAB === 'iron') viewIron();
-    else if (TAB === 'scan') viewScan();
-    else if (TAB === 'app') viewApp();
-    else if (TAB === 'recovery') viewRecovery();
-    else if (TAB === 'settings') viewSettings();
-    else if (TAB === 'caps') viewCaps();
-    else if (TAB === 'help') viewHelp();
-    else viewDash();
-  }
-
-  function loadUsers() {
-    return api('POST', '/api/users', {}).then(function (d) { STATE.users = d.users || []; });
-  }
-  function loadScan() {
-    return Promise.all([
-      api('POST', '/api/endpoints', { action: 'view' }).then(function (d) {
-        STATE.endpoints = d.endpoints || [];
-        STATE.probe = d.probeResults || {};
-      }).catch(function () {}),
-      api('POST', '/api/clean-ips', {}).then(function (d) { STATE.clean = d.ips || []; }).catch(function () {})
-    ]).then(function () { if (TAB === 'scan') paint(); });
-  }
-
-  function render(me) {
-    STATE.me = me;
-    if (!me) { renderLogin(); return; }
-    Promise.all([
-      api('POST', '/api/stats', {}).then(function (d) { STATE.stats = d; }).catch(function () {}),
-      loadUsers().catch(function () {}),
-      loadScan(),
-      api('POST', '/api/get-settings', {}).then(function (d) { STATE.settings = d.settings || null; }).catch(function () {}),
-      api('POST', '/api/capabilities', {}).then(function (d) { STATE.caps = d.capabilities || []; }).catch(function () {}),
-      api('POST', '/api/game-catalog', {}).then(function (d) { STATE.games = d.games || []; }).catch(function () { STATE.games = []; })
-    ]).then(function () { paint(); });
-  }
-
-  function boot() {
-    var requestedTab = new URLSearchParams(location.search).get('tab');
-    if (['dash','sell','iron','scan','app','recovery','settings','caps','help'].indexOf(requestedTab) >= 0) TAB = requestedTab;
-    registerPwa();
-    api('GET', '/api/launch').then(function (d) { STATE.launch = d; }).catch(function () {}).finally(function () {
-      api('GET', '/api/me').then(function (d) { render(d && d.me ? d.me : null); }).catch(function () { render(null); });
-    });
-  }
-
-  window.addEventListener('beforeinstallprompt', function (event) { event.preventDefault(); INSTALL_EVENT = event; });
-  window.addEventListener('appinstalled', function () { INSTALL_EVENT = null; toast('AMINNOVA روی دستگاه نصب شد', true); });
-  function updateNetworkState() {
-    var badge = $('#network-state'); if (!badge) return;
-    badge.className = 'status-dot' + (navigator.onLine ? '' : ' offline');
-    badge.textContent = navigator.onLine ? 'آنلاین' : 'آفلاین';
-  }
-  window.addEventListener('online', updateNetworkState);
-  window.addEventListener('offline', updateNetworkState);
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
-})();
-/*NOVA-UI-END*/
+    await render(page);}catch(error){$('#loading').innerHTML=icon('warning')+`<b>اتصال برقرار نشد</b><span class="muted">${h(error.message)}</span><button id="retry-boot" class="button secondary">تلاش دوباره</button>`;$('#retry-boot').addEventListener('click',boot);}}
+let lastReturnCheck=0;
+function refreshOnReturn(){
+  if(document.hidden||!state.session?.authenticated||state.session.demo||state.setupBusy||Date.now()-lastReturnCheck<5000)return;
+  if(!['settings','overview','groups'].includes(state.page))return;
+  lastReturnCheck=Date.now();
+  if(state.watchUntil<Date.now())watchConnection('return');
+  else{if(state.watchTimer)clearTimeout(state.watchTimer);state.watchTimer=setTimeout(pollOnboarding,500);}
+}
+window.addEventListener('focus',refreshOnReturn);
+document.addEventListener('visibilitychange',refreshOnReturn);
+$$('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+try{document.documentElement.classList.toggle('light',localStorage.getItem('nova-theme')==='light');}catch{}
+boot();
