@@ -93,17 +93,20 @@ export async function approveReceipt(env, receipt) {
   await DB.prepare("UPDATE orders SET status='paid', paid_at=? WHERE id=?").bind(Math.floor(Date.now() / 1000), order.id).run();
   const user = await getUser(DB, order.user_id);
 
-  // شارژ کیف پول — بدون ساخت ساب
-  if (order.product_id === 0 && !order.meta) {
+  // شارژ کیف پول — بدون ساخت ساب.
+  // سفارش شارژ صراحتاً با meta.charge=true علامت‌گذاری می‌شود (ستون meta
+  // پیش‌فرض '{}' است، پس تکیه بر خالی‌بودن آن قابل اعتماد نبود).
+  let meta = {};
+  try {
+    meta = JSON.parse(order.meta || '{}') || {};
+  } catch {}
+  if (meta.charge === true || (order.product_id === 0 && !meta.title)) {
     await addBalance(DB, order.user_id, order.amount_toman);
     await DB.prepare('UPDATE users SET total_paid = total_paid + ? WHERE id=?').bind(order.amount_toman, user.id).run();
     return { user, order, charge: true };
   }
 
-  let product = null;
-  try {
-    product = order.meta && JSON.parse(order.meta).title ? JSON.parse(order.meta) : null;
-  } catch {}
+  let product = meta && meta.title ? meta : null;
   if (!product) {
     product = (await DB.prepare('SELECT * FROM products WHERE id=?').bind(order.product_id).first()) || {
       title: order.title,

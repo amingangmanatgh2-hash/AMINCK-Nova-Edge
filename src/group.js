@@ -17,7 +17,7 @@ export async function onBotJoinedGroup(env, chat) {
     .bind(chat.id, chat.title || '', now())
     .run();
   await DB.prepare('UPDATE groups SET title=? WHERE chat_id=?').bind(chat.title || '', chat.id).run();
-  const admins = (await DB.prepare("SELECT id FROM users WHERE role IN ('super','admin')")).results;
+  const admins = (await DB.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
   for (const a of admins) {
     await send(env.TELEGRAM_BOT_TOKEN, a.id, `📢 بات به گروه «${chat.title || chat.id}» اضافه و به‌صورت خودکار ثبت شد.\n🆔 <code>${chat.id}</code>\nبرای مدیریت: پنل → گروه‌ها`);
   }
@@ -116,6 +116,8 @@ export function extractGroupQuestion(msg, botUsername) {
     const m = raw.match(/^\/(ai|ask|bot)(?:@\w+)?\s+([\s\S]+)/i);
     return m ? m[2].trim() : null;
   }
+  // پیام‌های خیلی کوتاه (استیکر/ایموجی تنها) را نادیده بگیر
+  if (raw.replace(/\s/g, '').length < 2) return null;
   const uname = (botUsername || '').replace(/^@/, '');
   if (uname && new RegExp(`@${uname}\\b`, 'i').test(raw)) {
     return raw.replace(new RegExp(`@${uname}`, 'ig'), '').trim() || null;

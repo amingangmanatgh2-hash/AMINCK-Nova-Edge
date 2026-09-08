@@ -57,7 +57,7 @@ export function defaultTemplate(protocol, ip) {
     case 'openvpn':
       return `# OpenVPN {name}\nremote ${host} 1194 udp\nauth-user-pass {uuid}`;
     default:
-      return `vless://{uuid}@${host}:443?type=ws&security=tls&path=%2Fvless&host=cdn.aminck.ir#${name}`;
+      return `vless://{uuid}@${host}:443?type=ws&security=tls&path=%2Fvless&host=cdn.aminck.ir#{name}`;
   }
 }
 

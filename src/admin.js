@@ -633,6 +633,13 @@ export async function handleAdminText(ctx, text) {
   const st = ctx.user.state || '';
   const sd = stateData(ctx);
 
+  // ⛔ لغو سراسری هر ورودی ادمین — باید قبل از همه بررسی شود تا مقدار «/cancel» ذخیره نشود
+  if (typeof text === 'string' && text.trim() === '/cancel') {
+    await setState(ctx, '');
+    await send(ctx.token, ctx.user.id, '❌ عملیات لغو شد.', { reply_markup: menuKb([[btn('📊 پنل مدیریت', 'panel')]]) });
+    return true;
+  }
+
   if (st.startsWith('admin:reply:')) {
     const uid = Number(st.split(':')[2]);
     await send(ctx.token, uid, `📬 پاسخ پشتیبانی:\n\n${text}`);
@@ -762,12 +769,18 @@ export async function handleAdminText(ctx, text) {
       await setState(ctx, 'admin:newsrv', { step: 4, f });
       return send(ctx.token, ctx.user.id, '۴) قالب کانفیگ را بفرستید:\n(از <code>{uuid}</code> برای شناسه یکتا و <code>{name}</code> برای نام استفاده می‌شود)\nیا «پیش‌فرض» بفرستید:');
     }
+    if (step === 4) {
+      const t = text.trim();
+      f.template = !t || t === 'پیش‌فرض' || t === '-' ? defaultTemplate(f.protocol, f.ip) : t;
+      await setState(ctx, 'admin:newsrv', { step: 5, f });
+      return send(ctx.token, ctx.user.id, '۵) آدرس تست سلامت (اختیاری — برای رد کردن «-» بفرستید):');
+    }
     if (step === 5) {
       f.health_url = text.trim() === '-' ? '' : text.trim();
       await setState(ctx, 'admin:newsrv', { step: 6, f });
       return send(ctx.token, ctx.user.id, '۶) رتبه سرعت (۱=پرسرعت‌ترین تا ۵):');
     }
-    if (step === 7) {
+    if (step === 6 || step === 7) {
       f.speed_rank = Math.min(5, Math.max(1, Number(text) || 3));
       await ctx.db
         .prepare('INSERT INTO servers (name, protocol, ip, template, health_url, speed_rank) VALUES (?,?,?,?,?,?)')

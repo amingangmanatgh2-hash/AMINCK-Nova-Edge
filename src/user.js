@@ -202,7 +202,7 @@ export async function handleReceiptPhoto(ctx, photo) {
 }
 
 async function notifyAdmins(ctx, text, kb) {
-  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')")).results;
+  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
   for (const a of admins) {
     await send(ctx.token, a.id, text, kb ? { reply_markup: kb } : {});
   }
@@ -414,7 +414,7 @@ export async function showHelp(ctx) {
 }
 
 export async function handleSupportMsg(ctx, msg) {
-  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')")).results;
+  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
   const preview = msg.text ? msg.text.slice(0, 900) : msg.caption || '(فایل/عکس)';
   const kb = ikb([[btn('✍️ پاسخ به کاربر', `adm:reply:${ctx.user.id}`)]]);
   for (const a of admins) {
@@ -573,6 +573,8 @@ export async function handleUserText(ctx, text) {
     if (amount < 10000 || amount > 500000000) return send(ctx.token, ctx.user.id, '⚠️ مبلغ معتبر نیست. حداقل ۱۰,۰۰۰ تومان، حداکثر ۵۰۰ میلیون تومان.');
     const p = { id: 0, title: '💳 شارژ کیف پول', protocol: 'none', days: 0 };
     const order = await createOrder(ctx.env, ctx.user.id, p, amount, 'card');
+    // علامت‌گذاری صریح سفارش شارژ تا هنگام تایید فیش، کیف پول شارژ شود (نه ساخت کانفیگ)
+    await ctx.db.prepare('UPDATE orders SET meta=? WHERE id=?').bind(JSON.stringify({ charge: true }), order.id).run();
     const card = await getSettingValue(ctx.db, 'card_number');
     const holder = await getSettingValue(ctx.db, 'card_holder');
     await setState(ctx, `receipt:${order.id}`);

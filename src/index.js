@@ -41,7 +41,7 @@ export default {
         return new Response(Uint8Array.from(atob(LOGO_JPG_B64), (c) => c.charCodeAt(0)), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
       }
       if (path === '/health') return json({ ok: true, ts: now() });
-      if (path === '/' ) return html(landingHtml());
+      if (path === '/' ) return html(landingHtml(!!env.TELEGRAM_BOT_TOKEN));
       return text('Not found', 404);
     } catch (e) {
       console.error('worker error', e);
@@ -108,6 +108,17 @@ async function dispatch(update, env, token) {
       for (const nm of newMembers) await welcomeNewMember(env, msg.chat, nm);
       return;
     }
+    // /start و /help در گروه → هدایت به پیوی به‌جای سکوت
+    const gtext = (msg.text || '').trim();
+    if (/^\/(start|help)(@\w+)?$/i.test(gtext)) {
+      const bu = await getBotUsername(env, token);
+      await tg(token, 'sendMessage', {
+        chat_id: msg.chat.id,
+        text: '⚡ سلام! برای خرید کانفیگ، تست رایگان و پنل کاربری به پیوی من بیایید 👇',
+        reply_markup: { inline_keyboard: [[{ text: '🛍 شروع در پیوی', url: `https://t.me/${bu}?start=shop_home` }]] },
+      });
+      return;
+    }
     // چت هوش مصنوعی داخل گروه (ریپلای/منشن/«ربات ...»)
     await groupAiReply(env, msg, await getBotUsername(env, token));
     return; // خرید همچنان فقط در پیوی انجام می‌شود
@@ -156,6 +167,10 @@ async function dispatch(update, env, token) {
 
     // ادمین در حالت وارد کردن داده؟
     if ((ctx.user.state || '').startsWith('admin:')) {
+      if ((msg.text || '').trim() === '/cancel') {
+        const handledCancel = await handleAdminText(ctx, '/cancel');
+        if (handledCancel !== null) return;
+      }
       if (ctx.user.state === 'admin:newprod') {
         let step = 1;
         try {
@@ -227,15 +242,31 @@ async function subPage(env, token) {
 }
 
 // ─────────────────────────── لندینگ ───────────────────────────
-function landingHtml() {
+function landingHtml(hasToken = true) {
+  const setupBox = hasToken
+    ? ''
+    : `<div class="warn"><b>⚠️ ربات هنوز پیکربندی نشده است</b>
+<p style="margin:8px 0 0">توکن ربات تنظیم نشده. یکی از این دو راه را انجام دهید:</p>
+<ol style="text-align:right;margin:8px 0 0;padding-right:18px;line-height:2;color:#ffd9a8">
+<li>در داشبورد کلادفلر: <b>Workers &amp; Pages → این ورکر → Settings → Variables</b> و مقدار <code>TELEGRAM_BOT_TOKEN</code> را بگذارید.</li>
+<li>یا در ترمینال: <code>npx wrangler secret put TELEGRAM_BOT_TOKEN</code></li>
+</ol>
+<p style="margin:8px 0 0">توکن را از <b>@BotFather</b> بگیرید. بعد از تنظیم، اولین پیام <code>/start</code> ربات را خودکار راه‌اندازی می‌کند.</p></div>`;
+  return landingShell(setupBox);
+}
+
+function landingShell(setupBox) {
   return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AMINCK Nova Bot</title>
 <style>body{font-family:Vazirmatn,Segoe UI,sans-serif;background:#0d1526;color:#eaf1ff;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
 .c{text-align:center;max-width:520px;padding:24px}h1{font-size:26px}.g{color:#f5b31e;font-size:44px;margin-bottom:8px}
 a{display:inline-block;background:linear-gradient(135deg,#f5b31e,#ff8a00);color:#171305;font-weight:800;border-radius:14px;padding:14px 28px;text-decoration:none;margin-top:18px}
-p{color:#8fa3c8;font-size:14px;line-height:2}</style></head><body><div class="c">
+p{color:#8fa3c8;font-size:14px;line-height:2}
+.warn{background:#3a2a10;border:1px solid #7a5a1a;color:#ffd9a8;border-radius:14px;padding:16px;margin-top:18px;text-align:right;font-size:13px}
+.warn code{background:#0d1526;padding:2px 6px;border-radius:6px;color:#f5b31e;direction:ltr;display:inline-block}</style></head><body><div class="c">
 <div class="g">⚡</div><h1>ربات فروش کانفیگ AMINCK</h1>
 <p>فروشگاه خودکار کانفیگ روی Cloudflare Workers — تحویل آنی، تست رایگان، رفرال، مینی‌اپ سکه‌ای و هوش مصنوعی بومی کلادفلر</p>
 <a href="/panel">🖥 ورود به پنل مدیریت</a>
+${setupBox}
 </div></body></html>`;
 }
