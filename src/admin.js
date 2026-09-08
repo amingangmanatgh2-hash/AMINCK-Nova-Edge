@@ -8,7 +8,10 @@ import { send, editText, answerCb, ikb, btn, ubtn, menuKb, forceReply, tg, sendD
 import { getText, getSettingValue, getNum, DEFAULT_TEXTS } from './texts.js';
 import { getUsdRate, productPriceToman } from './pricing.js';
 import { approveReceipt, sendDelivery } from './pay.js';
-import { createSubscription, defaultTemplate } from './subs.js';
+import { createSubscription, defaultTemplate, defaultPort } from './subs.js';
+import { serverIssues, isServerDeliverable, isValidMtprotoSecret, isValidHost, buildMtprotoLinks, buildSocks5Links, NoRealServerError } from './proxy.js';
+import { realActiveServerCount } from './db.js';
+import { aiDiagnostics, TEXT_MODELS } from './ai.js';
 import { parseMoney, getBase, isValidPanelPassword } from './util.js';
 import { CATS, userTag } from './user.js';
 
@@ -51,7 +54,11 @@ export async function openAdminPanel(ctx, editMsg) {
     rows.push(row);
   }
   const rate = await getUsdRate(ctx.env);
-  const text = `📊 <b>پنل مدیریت</b>\n\n👤 ${u.role === 'super' ? '👑 سوپرادمین' : '🛡 ادمین'}: ${u.first_name || u.id}\n💵 نرخ دلار: ${faDigits(rate.toLocaleString('en-US'))} تومان`;
+  const realServers = await realActiveServerCount(ctx.db);
+  const warn = realServers === 0
+    ? '\n\n⚠️ <b>هیچ سرور واقعی فعالی ثبت نشده است!</b>\nتا زمانی که از «🖥 سرورها» یک سرور با host/IP، port و secret واقعی ثبت نکنید، خرید و تحویل کانفیگ متوقف است.'
+    : '';
+  const text = `📊 <b>پنل مدیریت</b>\n\n👤 ${u.role === 'super' ? '👑 سوپرادمین' : '🛡 ادمین'}: ${u.first_name || u.id}\n💵 نرخ دلار: ${faDigits(rate.toLocaleString('en-US'))} تومان\n🖥 سرور واقعی فعال: ${faDigits(realServers)}${warn}`;
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
 }
@@ -127,16 +134,29 @@ export async function handleReceiptAction(ctx, action, id) {
   const r = await ctx.db.prepare('SELECT * FROM receipts WHERE id=?').bind(id).first();
   if (!r || r.status !== 'pending') return answerCb(ctx.token, ctx.cbId, 'این فیش قبلاً رسیدگی شده است');
   if (action === 'a') {
-    const res = await approveReceipt(ctx.env, r);
-    if (res) {
-      if (res.charge) {
-        await send(ctx.token, r.user_id, `✅ کیف پول شما با ${fmtToman(res.order.amount_toman)} شارژ شد.\n🛡 تایید توسط ادمین`);
-        await send(ctx.token, ctx.user.id, '✅ فیش تایید و کیف پول شارژ شد.');
-      } else {
-        await send(ctx.token, ctx.user.id, '✅ فیش تایید و سفارش تحویل شد.');
-        await send(ctx.token, r.user_id, (await getText(ctx.db, 'order_paid')) + '\n🛡 تایید توسط ادمین');
-        await sendDelivery(ctx.env, res.user, res.order.title || 'اشتراک', res.sub);
-      }
+    let res;
+    try {
+      res = await approveReceipt(ctx.env, r);
+    } catch (e) {
+      await send(ctx.token, ctx.user.id, `⛔ تایید فیش ناموفق بود: <code>${String(e?.message || e).slice(0, 200)}</code>`);
+      return answerCb(ctx.token, ctx.cbId, '⛔ خطا');
+    }
+    if (!res) {
+      await send(ctx.token, ctx.user.id, '⚠️ این سفارش قبلاً پرداخت‌شده علامت خورده است.');
+      return answerCb(ctx.token, ctx.cbId, 'قبلاً رسیدگی شده');
+    }
+    if (res.error === 'no_real_server') {
+      await send(ctx.token, ctx.user.id, `⛔ ${res.message}\n\n👈 از «🖥 سرورها» یک سرور واقعی با host/port/secret ثبت کنید، سپس دوباره تایید بزنید.\nفیش هنوز در صف باقی مانده است.`);
+      return answerCb(ctx.token, ctx.cbId, '⛔ سرور واقعی نیست');
+    }
+    if (res.charge) {
+      await send(ctx.token, r.user_id, `✅ <b>پرداخت تایید شد</b>\n\n👛 کیف پول شما با ${fmtToman(res.order.amount_toman)} شارژ شد.\n🛡 تایید توسط ادمین`);
+      await send(ctx.token, ctx.user.id, '✅ فیش تایید و کیف پول شارژ شد.');
+    } else {
+      // ۱) یک پیام تایید پرداخت  ۲) یک پیام تحویل نهایی (ضدتکرار)
+      await send(ctx.token, r.user_id, (await getText(ctx.db, 'order_paid')) + '\n🛡 تایید توسط ادمین');
+      const d = await sendDelivery(ctx.env, res.user, res.order.title || 'اشتراک', res.sub, { protocol: res.product?.protocol });
+      await send(ctx.token, ctx.user.id, d?.sent ? '✅ فیش تایید و سفارش تحویل شد.' : `⚠️ فیش تایید شد اما تحویل خودکار انجام نشد (${d?.reason || 'نامشخص'}).`);
     }
     return answerCb(ctx.token, ctx.cbId, '✅ تایید شد');
   }
@@ -197,9 +217,17 @@ async function newServerWizard(ctx, editMsg) {
 
 async function serversList(ctx, editMsg) {
   const ss = (await ctx.db.prepare('SELECT * FROM servers ORDER BY id').all()).results;
-  const rows = ss.map((s) => [btn(`${s.active ? (s.healthy ? '🟢' : '🟡') : '🔴'} ${s.name} (${s.protocol})`, `adm:srv:${s.id}`)]);
+  const rows = ss.map((s) => {
+    const broken = serverIssues(s).length > 0;
+    const icon = broken ? '⚠️' : s.active ? (s.healthy ? '🟢' : '🟡') : '🔴';
+    return [btn(`${icon} ${s.name} (${s.protocol})`, `adm:srv:${s.id}`)];
+  });
   rows.push([btn('➕ سرور جدید', 'adm:srv:new')]);
-  const text = '🖥 <b>مدیریت سرورها</b>\n🟢 سالم | 🟡 ناسالم (جایگزینی خودکار فعال) | 🔴 غیرفعال';
+  const ready = ss.filter(isServerDeliverable).length;
+  const text =
+    '🖥 <b>مدیریت سرورها</b>\n🟢 سالم | 🟡 ناسالم (جایگزینی خودکار) | 🔴 غیرفعال | ⚠️ پیکربندی ناقص\n\n' +
+    `✅ آمادهٔ تحویل: <b>${faDigits(ready)}</b> از ${faDigits(ss.length)}` +
+    (ready === 0 ? '\n\n⛔ <b>هیچ سرور واقعی آماده نیست؛ تحویل کانفیگ متوقف است.</b>' : '');
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows.slice(0, 30), 'panel') });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows.slice(0, 30), 'panel') });
 }
@@ -207,20 +235,35 @@ async function serversList(ctx, editMsg) {
 async function serverView(ctx, id, editMsg) {
   const s = await ctx.db.prepare('SELECT * FROM servers WHERE id=?').bind(id).first();
   if (!s) return answerCb(ctx.token, ctx.cbId, 'یافت نشد');
+  const issues = serverIssues(s);
+  const proto = String(s.protocol || '').toLowerCase();
+  let preview = '—';
+  try {
+    if (proto === 'mtproto') preview = buildMtprotoLinks({ host: s.ip, port: s.port, secret: s.secret }).tg;
+    else if (proto === 'socks5') preview = buildSocks5Links({ host: s.ip, port: s.port, pass: s.secret }).tg;
+    else preview = (s.template || defaultTemplate(proto, s.ip, s.port)).slice(0, 200);
+  } catch {
+    preview = '⛔ لینک ساخته نشد (اطلاعات ناقص)';
+  }
+  const secretState = s.secret ? (proto === 'mtproto' ? (isValidMtprotoSecret(s.secret) ? '✅ معتبر' : '⛔ نامعتبر') : '✅ ثبت شده') : '⛔ ثبت نشده';
   const text = [
     `🖥 <b>${s.name}</b>\n`,
-    `🌍 ${s.country || '—'} | پروتکل: ${s.protocol}`,
-    `🌐 IP/هاست: <code>${s.ip}</code>`,
-    `📋 قالب کانفیگ:\n<code>${(s.template || defaultTemplate(s.protocol, s.ip)).slice(0, 200)}</code>`,
+    `🌍 ${s.country || '—'} | پروتکل: <code>${s.protocol}</code>`,
+    `🌐 هاست/IP: <code>${s.ip || '—'}</code>`,
+    `🔌 پورت: <code>${s.port || '—'}</code>`,
+    `🔑 سکرت/پسورد: ${secretState}`,
+    `📋 لینک/قالب:\n<code>${String(preview).replace(/</g, '&lt;')}</code>`,
     `🩺 آدرس سلامت: ${s.health_url || 'تنظیم نشده'}`,
     `🚀 رتبه سرعت: ${faDigits(s.speed_rank)} | وضعیت: ${s.active ? (s.healthy ? '🟢 فعال و سالم' : '🟡 فعال/ناسالم') : '🔴 غیرفعال'}`,
+    issues.length ? `\n⚠️ <b>مشکلات پیکربندی:</b>\n${issues.map((i) => '• ' + i).join('\n')}\n\n⛔ تا رفع این موارد، این سرور به هیچ کاربری تحویل داده نمی‌شود.` : '\n✅ این سرور برای تحویل واقعی آماده است.',
   ].join('\n');
   const rows = [
-    [btn('✏️ نام', `adm:sf:${id}:name`), btn('🌐 IP', `adm:sf:${id}:ip`)],
-    [btn('📋 قالب', `adm:sf:${id}:template`), btn('🩺 آدرس سلامت', `adm:sf:${id}:health_url`)],
-    [btn('🚀 رتبه سرعت', `adm:sf:${id}:speed_rank`)],
+    [btn('✏️ نام', `adm:sf:${id}:name`), btn('🌍 کشور', `adm:sf:${id}:country`)],
+    [btn('🌐 هاست/IP', `adm:sf:${id}:ip`), btn('🔌 پورت', `adm:sf:${id}:port`)],
+    [btn('🔑 سکرت/پسورد', `adm:sf:${id}:secret`), btn('📋 قالب', `adm:sf:${id}:template`)],
+    [btn('🩺 آدرس سلامت', `adm:sf:${id}:health_url`), btn('🚀 رتبه سرعت', `adm:sf:${id}:speed_rank`)],
     [btn(s.healthy ? '🟡 علامت ناسالم' : '🟢 علامت سالم', `adm:sh:${id}`), btn(s.active ? '🔴 غیرفعال' : '🟢 فعال', `adm:sa:${id}`)],
-    [btn('🗑 حذف سرور', `adm:sd:${id}`), btn('📋 لیست', 'adm:servers')],
+    [btn('🗑 حذف سرور', `adm:sdc:${id}`), btn('📋 لیست', 'adm:servers')],
   ];
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: ikb(rows) });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: ikb(rows) });
@@ -485,8 +528,26 @@ export async function handleAdminCallback(ctx, data) {
   if (data.startsWith('adm:sa:')) {
     if (!need('products')) return;
     const id = Number(data.slice(7));
+    const srv = await ctx.db.prepare('SELECT * FROM servers WHERE id=?').bind(id).first();
+    if (srv && !srv.active) {
+      // ⛔ قبل از فعال‌کردن، اعتبار تنظیمات بررسی می‌شود
+      const issues = serverIssues(srv);
+      if (issues.length) {
+        await answerCb(ctx.token, ctx.cbId, '⛔ پیکربندی ناقص');
+        await send(ctx.token, ctx.user.id, `⛔ این سرور قابل فعال‌سازی نیست:\n${issues.map((i) => '• ' + i).join('\n')}`);
+        return serverView(ctx, id, edit);
+      }
+    }
     await ctx.db.prepare('UPDATE servers SET active = 1 - active WHERE id=?').bind(id).run();
     return serverView(ctx, id, edit);
+  }
+  if (data.startsWith('adm:sdc:')) {
+    if (!need('products')) return;
+    const id = Number(data.slice(8));
+    const srv = await ctx.db.prepare('SELECT name FROM servers WHERE id=?').bind(id).first();
+    return send(ctx.token, ctx.user.id, `⚠️ آیا از حذف سرور «${srv?.name || id}» مطمئن هستید؟ این کار برگشت‌پذیر نیست.`, {
+      reply_markup: ikb([[btn('🗑 بله، حذف کن', `adm:sd:${id}`), btn('↩️ انصراف', `adm:srv:${id}`)]]),
+    });
   }
   if (data.startsWith('adm:sd:')) {
     if (!need('products')) return;
@@ -524,8 +585,17 @@ export async function handleAdminCallback(ctx, data) {
     const u = await getUser(ctx.db, Number(uid));
     const p = await ctx.db.prepare('SELECT * FROM products WHERE id=?').bind(Number(pid)).first();
     if (u && p) {
-      await createSubscription(ctx.env, u, p, {});
-      await send(ctx.token, u.id, `🎁 یک اشتراک «${p.title}» به عنوان هدیه به حساب شما اضافه شد!`);
+      try {
+        const gift = await createSubscription(ctx.env, u, p, {});
+        await send(ctx.token, u.id, `🎁 یک اشتراک «${p.title}» به عنوان هدیه به حساب شما اضافه شد!`);
+        await sendDelivery(ctx.env, u, p.title, gift, { protocol: p.protocol });
+      } catch (e) {
+        if (e instanceof NoRealServerError) {
+          await send(ctx.token, ctx.user.id, `⛔ ${e.message}`);
+          return answerCb(ctx.token, ctx.cbId, '⛔ سرور واقعی نیست');
+        }
+        throw e;
+      }
     }
     return answerCb(ctx.token, ctx.cbId, '🎁 اهدا شد');
   }
@@ -733,9 +803,34 @@ export async function handleAdminText(ctx, text) {
   }
   if (st.startsWith('admin:sf:')) {
     const [, , id, field] = st.split(':');
+    const map = { name: 'name', country: 'country', ip: 'ip', port: 'port', secret: 'secret', template: 'template', health_url: 'health_url', speed_rank: 'speed_rank' };
+    if (!map[field]) {
+      await setState(ctx, '');
+      return serverView(ctx, Number(id));
+    }
+    const raw = text.trim();
+    let value = raw;
+    if (field === 'port') {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1 || n > 65535) {
+        return send(ctx.token, ctx.user.id, '⛔ پورت باید عددی بین ۱ تا ۶۵۵۳۵ باشد. دوباره بفرستید یا /cancel کنید.');
+      }
+      value = n;
+    }
+    if (field === 'speed_rank') value = Math.min(5, Math.max(1, Number(raw) || 3));
+    if (field === 'secret') {
+      const srv = await ctx.db.prepare('SELECT protocol FROM servers WHERE id=?').bind(Number(id)).first();
+      if (String(srv?.protocol).toLowerCase() === 'mtproto' && raw !== '-' && !isValidMtprotoSecret(raw)) {
+        return send(
+          ctx.token,
+          ctx.user.id,
+          '⛔ سکرت MTProto معتبر نیست.\nفرمت‌های مجاز:\n• ۳۲ کاراکتر هگز\n• <code>dd</code> + ۳۲ هگز\n• <code>ee</code> + ۳۲ هگز + هگزِ دامنه (FakeTLS)\n\nدوباره بفرستید یا /cancel کنید.'
+        );
+      }
+      if (raw === '-') value = '';
+    }
     await setState(ctx, '');
-    const map = { name: 'name', ip: 'ip', template: 'template', health_url: 'health_url', speed_rank: 'speed_rank' };
-    if (map[field]) await ctx.db.prepare(`UPDATE servers SET ${map[field]}=? WHERE id=?`).bind(text, Number(id)).run();
+    await ctx.db.prepare(`UPDATE servers SET ${map[field]}=? WHERE id=?`).bind(value, Number(id)).run();
     return serverView(ctx, Number(id));
   }
   if (st === 'admin:newprod') {
@@ -757,37 +852,77 @@ export async function handleAdminText(ctx, text) {
   if (st === 'admin:newsrv') {
     const f = { ...sd.f };
     const step = sd.step || 1;
+    const val = text.trim();
     if (step === 1) {
-      f.name = text.trim();
+      f.name = val;
       await setState(ctx, 'admin:newsrv', { step: 2, f });
       const rows = [['vless', 'vmess', 'trojan', 'ss'].map((p) => btn(p.toUpperCase(), `nsw:proto:${p}`))];
       rows.push([btn('MTProto', 'nsw:proto:mtproto'), btn('SOCKS5', 'nsw:proto:socks5'), btn('OpenVPN', 'nsw:proto:openvpn')]);
       return send(ctx.token, ctx.user.id, '۲) پروتکل سرور:', { reply_markup: menuKb(rows) });
     }
     if (step === 3) {
-      f.ip = text.trim();
+      if (!isValidHost(val)) {
+        return send(ctx.token, ctx.user.id, '⛔ هاست معتبر نیست (دامنهٔ نمونهٔ example.com پذیرفته نمی‌شود).\\nیک hostname یا IP واقعی بفرستید یا /cancel کنید.');
+      }
+      f.ip = val;
+      await setState(ctx, 'admin:newsrv', { step: 35, f });
+      return send(ctx.token, ctx.user.id, `۴) پورت سرور را بفرستید (عدد ۱ تا ۶۵۵۳۵)\\nپیش‌فرض ${defaultPort(f.protocol)} → «-» بفرستید:`);
+    }
+    if (step === 35) {
+      let port = val === '-' || val === '' ? defaultPort(f.protocol) : Number(val);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return send(ctx.token, ctx.user.id, '⛔ پورت باید عددی بین ۱ تا ۶۵۵۳۵ باشد. دوباره بفرستید یا /cancel کنید.');
+      }
+      f.port = port;
+      const needsSecret = f.protocol === 'mtproto';
+      await setState(ctx, 'admin:newsrv', { step: 36, f });
+      return send(
+        ctx.token,
+        ctx.user.id,
+        needsSecret
+          ? '۵) سکرت واقعی MTProto را بفرستید:\\n• ۳۲ کاراکتر هگز\\n• یا <code>dd</code>+۳۲ هگز\\n• یا <code>ee</code>+۳۲ هگز+هگزِ دامنه (FakeTLS)'
+          : '۵) پسورد/سکرت سرور (اختیاری) — برای رد کردن «-» بفرستید:'
+      );
+    }
+    if (step === 36) {
+      const secret = val === '-' ? '' : val;
+      if (f.protocol === 'mtproto' && !isValidMtprotoSecret(secret)) {
+        return send(ctx.token, ctx.user.id, '⛔ سکرت MTProto معتبر نیست. بدون سکرت واقعی، لینک پروکسی ساخته نمی‌شود.\\nدوباره بفرستید یا /cancel کنید.');
+      }
+      f.secret = secret;
       await setState(ctx, 'admin:newsrv', { step: 4, f });
-      return send(ctx.token, ctx.user.id, '۴) قالب کانفیگ را بفرستید:\n(از <code>{uuid}</code> برای شناسه یکتا و <code>{name}</code> برای نام استفاده می‌شود)\nیا «پیش‌فرض» بفرستید:');
+      if (f.protocol === 'mtproto' || f.protocol === 'socks5') {
+        // برای پروتکل‌های مستقیم قالب لازم نیست
+        await setState(ctx, 'admin:newsrv', { step: 5, f: { ...f, template: '' } });
+        return send(ctx.token, ctx.user.id, '۶) آدرس تست سلامت (اختیاری — برای رد کردن «-» بفرستید):');
+      }
+      return send(ctx.token, ctx.user.id, '۶) قالب کانفیگ را بفرستید:\\n(از <code>{uuid}</code> برای شناسه یکتا و <code>{name}</code> برای نام استفاده می‌شود)\\nیا «پیش‌فرض» بفرستید:');
     }
     if (step === 4) {
-      const t = text.trim();
-      f.template = !t || t === 'پیش‌فرض' || t === '-' ? defaultTemplate(f.protocol, f.ip) : t;
+      f.template = !val || val === 'پیش‌فرض' || val === '-' ? defaultTemplate(f.protocol, f.ip, f.port) : val;
       await setState(ctx, 'admin:newsrv', { step: 5, f });
-      return send(ctx.token, ctx.user.id, '۵) آدرس تست سلامت (اختیاری — برای رد کردن «-» بفرستید):');
+      return send(ctx.token, ctx.user.id, '۷) آدرس تست سلامت (اختیاری — برای رد کردن «-» بفرستید):');
     }
     if (step === 5) {
-      f.health_url = text.trim() === '-' ? '' : text.trim();
+      f.health_url = val === '-' ? '' : val;
       await setState(ctx, 'admin:newsrv', { step: 6, f });
-      return send(ctx.token, ctx.user.id, '۶) رتبه سرعت (۱=پرسرعت‌ترین تا ۵):');
+      return send(ctx.token, ctx.user.id, '۸) رتبه سرعت (۱=پرسرعت‌ترین تا ۵):');
     }
     if (step === 6 || step === 7) {
-      f.speed_rank = Math.min(5, Math.max(1, Number(text) || 3));
+      f.speed_rank = Math.min(5, Math.max(1, Number(val) || 3));
+      const candidate = { name: f.name, protocol: f.protocol, ip: f.ip, port: f.port, secret: f.secret, template: f.template };
+      const issues = serverIssues(candidate);
+      // ⛔ سرور ناقص هرگز فعال ذخیره نمی‌شود
+      const active = issues.length ? 0 : 1;
       await ctx.db
-        .prepare('INSERT INTO servers (name, protocol, ip, template, health_url, speed_rank) VALUES (?,?,?,?,?,?)')
-        .bind(f.name, f.protocol, f.ip, f.template, f.health_url || '', f.speed_rank)
+        .prepare('INSERT INTO servers (name, country, protocol, ip, port, secret, template, health_url, speed_rank, active, healthy) VALUES (?,?,?,?,?,?,?,?,?,?,1)')
+        .bind(f.name, f.country || '', f.protocol, f.ip, f.port || 0, f.secret || '', f.template || '', f.health_url || '', f.speed_rank, active)
         .run();
       await setState(ctx, '');
-      return send(ctx.token, ctx.user.id, `✅ سرور «${f.name}» اضافه شد.`, { reply_markup: menuKb([[btn('🖥 سرورها', 'adm:servers')]]) });
+      const msg = issues.length
+        ? `⚠️ سرور «${f.name}» ذخیره شد اما <b>غیرفعال</b> است:\n${issues.map((i) => '• ' + i).join('\n')}`
+        : `✅ سرور «${f.name}» اضافه و فعال شد.`;
+      return send(ctx.token, ctx.user.id, msg, { reply_markup: menuKb([[btn('🖥 سرورها', 'adm:servers')]]) });
     }
   }
   return null; // ادامه رسیدگی در لایه کاربر

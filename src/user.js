@@ -5,14 +5,15 @@ import { fmtToman, faDigits, fmtDate, getUser, addBalance, hasPerm } from './db.
 import { send, editText, answerCb, ikb, btn, ubtn, menuKb, userMainKb, forceReply, tg } from './tg.js';
 import { getText, getSettingValue, getNum, isEnabled } from './texts.js';
 import { productPriceToman, priceLine } from './pricing.js';
-import { createOrder, payWithWallet, payWithCoins, approveReceipt, sendDelivery } from './pay.js';
+import { createOrder, payWithWallet, payWithCoins, approveReceipt, sendDelivery, assertDeliverable } from './pay.js';
 import { analyzeReceipt } from './verify.js';
-import { grantTrial, buildConfigs } from './subs.js';
+import { grantTrial, buildConfigs, buildDirectLinks } from './subs.js';
+import { buildMtprotoLinks, buildSocks5Links, serverIssues, NO_REAL_SERVER_MESSAGE, NoRealServerError } from './proxy.js';
 import { makeBrandQR } from './qr.js';
 import { tmpl, deepLink, getBase, parseMoney } from './util.js';
 import { deliverOrder } from './pay.js';
 import { openAdminPanel, handleAdminCallback, handleAdminText } from './admin.js';
-import { aiChatComplete, SHOP_SYSTEM_PROMPT } from './ai.js';
+import { aiChatComplete, SHOP_SYSTEM_PROMPT, aiErrorMessage, AI_ERRORS } from './ai.js';
 
 export const CATS = [
   { id: 'vless', label: '⚡ VLESS' },
@@ -112,6 +113,9 @@ async function startBuy(ctx, productId, method) {
     if (!(await isEnabled(ctx.db, 'wallet_enabled'))) return send(ctx.token, ctx.user.id, '🚫 پرداخت کیف پولی موقتاً غیرفعال است.');
     const res = await payWithWallet(ctx.env, ctx.user, p, price);
     if (!res.ok) {
+      if (res.reason === 'no_real_server') {
+        return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+      }
       return send(
         ctx.token,
         ctx.user.id,
@@ -119,12 +123,14 @@ async function startBuy(ctx, productId, method) {
         { reply_markup: ikb([[btn('💳 شارژ کیف پول', 'acc:charge')]]) }
       );
     }
-    await send(ctx.token, ctx.user.id, (await getText(ctx.db, 'order_paid')) + `\n💰 پرداخت از کیف پول: ${fmtToman(price)}`);
-    await sendDelivery(ctx.env, ctx.user, p.title, res.sub);
+    // ✅ فقط یک پیام تحویل — بدون پیام تکراری «پرداخت تایید شد»
+    await sendDelivery(ctx.env, ctx.user, p.title, res.sub, { protocol: p.protocol });
     return;
   }
 
   if (!(await isEnabled(ctx.db, 'card_pay_enabled'))) return send(ctx.token, ctx.user.id, '🚫 پرداخت کارتی موقتاً غیرفعال است.');
+  const canCard = await assertDeliverable(ctx.env, p);
+  if (!canCard.ok) return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   const order = await createOrder(ctx.env, ctx.user.id, p, price, 'card');
   const card = await getSettingValue(ctx.db, 'card_number');
   const holder = await getSettingValue(ctx.db, 'card_holder');
@@ -177,13 +183,19 @@ export async function handleReceiptPhoto(ctx, photo) {
     const receipt = await ctx.db.prepare('SELECT * FROM receipts WHERE order_id=? ORDER BY id DESC LIMIT 1').bind(orderId).first();
     const res = await approveReceipt(ctx.env, receipt);
     await setState(ctx, '');
-    await send(
-      ctx.token,
-      ctx.user.id,
-      res?.charge
-        ? `✅ کیف پول شما با ${fmtToman(order.amount_toman)} شارژ شد.\n🤖 تایید خودکار هوش مصنوعی`
-        : (await getText(ctx.db, 'order_paid')) + `\n🤖 تایید خودکار هوش مصنوعی`
-    );
+    if (res?.error === 'no_real_server') {
+      await send(ctx.token, ctx.user.id, `🧾 فیش شما تایید شد اما ${NO_REAL_SERVER_MESSAGE}\nپشتیبانی پیگیری می‌کند. 🙏`);
+      await notifyAdmins(ctx, `⛔ فیش سفارش #${faDigits(orderId)} تایید شد ولی سرور واقعی برای تحویل وجود ندارد.`);
+      return;
+    }
+    if (res?.charge) {
+      // پیام واحد: تایید پرداخت + نتیجه
+      await send(ctx.token, ctx.user.id, `✅ <b>پرداخت تایید شد</b>\n\n👛 کیف پول شما با ${fmtToman(order.amount_toman)} شارژ شد.\n🤖 تایید خودکار هوش مصنوعی`);
+    } else if (res?.sub) {
+      // ۱) یک پیام تایید پرداخت  ۲) یک پیام تحویل نهایی
+      await send(ctx.token, ctx.user.id, `✅ <b>پرداخت تایید شد</b>\n\n🧾 سفارش #${faDigits(orderId)} — ${fmtToman(order.amount_toman)}\n🤖 تایید خودکار هوش مصنوعی\n⏳ در حال آماده‌سازی تحویل…`);
+      await sendDelivery(ctx.env, res.user, res.order.title || order.title, res.sub, { protocol: res.product?.protocol });
+    }
     await notifyAdmins(ctx, `🤖✅ فیش سفارش #${faDigits(orderId)} از ${userTag(ctx.user)} به‌صورت خودکار تایید و تحویل شد.\n${report}`);
     return;
   }
@@ -325,22 +337,36 @@ export async function openTrial(ctx, editMsg) {
 export async function giveTrial(ctx) {
   if (!(await isEnabled(ctx.db, 'trial_enabled'))) return send(ctx.token, ctx.user.id, '🚫 تست رایگان موقتاً غیرفعال است.');
   if (ctx.user.trial_used) return send(ctx.token, ctx.user.id, '⚠️ شما قبلاً از تست رایگان استفاده کرده‌اید.\nبرای خرید اشتراک به فروشگاه مراجعه کنید. 🛍');
+  let sub;
+  try {
+    sub = await grantTrial(ctx.env, ctx.user);
+  } catch (e) {
+    if (e instanceof NoRealServerError) {
+      return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+    }
+    throw e;
+  }
+  // تست رایگان فقط بعد از ساخت موفق مصرف می‌شود
   await ctx.db.prepare('UPDATE users SET trial_used=1 WHERE id=?').bind(ctx.user.id).run();
-  const sub = await grantTrial(ctx.env, ctx.user);
   await send(ctx.token, ctx.user.id, await getText(ctx.db, 'trial_ok'));
-  await sendDelivery(ctx.env, ctx.user, '🎁 تست رایگان', sub);
+  await sendDelivery(ctx.env, ctx.user, '🎁 تست رایگان', sub, { protocol: 'vless' });
 }
 
 export async function freeProxies(ctx) {
-  const servers = (await ctx.db.prepare("SELECT * FROM servers WHERE active=1 AND healthy=1 AND protocol IN ('mtproto','socks5') LIMIT 10").all()).results;
-  if (!servers.length) return send(ctx.token, ctx.user.id, '😕 فعلاً پروکسی رایگانی ثبت نشده است.', { reply_markup: menuKb([], 'trial') });
-  const lines = ['📡 <b>پروکسی‌های رایگان تلگرام</b>\n', ...servers.map((s) => `▪️ <b>${s.name}</b>\n<code>${tmplLine(s)}</code>`)];
-  await send(ctx.token, ctx.user.id, lines.join('\n'), { reply_markup: menuKb([], 'trial') });
-}
-
-function tmplLine(s) {
-  if (s.protocol === 'mtproto') return `tg://proxy?server=${s.ip}&port=443&secret=${s.template || 'ee'}`;
-  return `socks5://${s.ip}:${s.template || '1080'}`;
+  const rows = (await ctx.db.prepare("SELECT * FROM servers WHERE active=1 AND healthy=1 AND protocol IN ('mtproto','socks5') ORDER BY speed_rank ASC LIMIT 10").all()).results;
+  // ⛔ فقط سرورهایی که واقعاً host/port/secret دارند
+  const links = buildDirectLinks(rows, ctx.user.username || '');
+  if (!links.length) {
+    return send(ctx.token, ctx.user.id, '😕 فعلاً پروکسی رایگانی ثبت نشده است.', { reply_markup: menuKb([], 'trial') });
+  }
+  const lines = [
+    '📡 <b>پروکسی‌های رایگان تلگرام</b>',
+    'روی دکمهٔ هر پروکسی بزنید تا مستقیم در تلگرام اضافه شود 👇',
+    '',
+    ...links.map((l) => `▪️ <b>${l.server.name}</b>${l.server.country ? ' — ' + l.server.country : ''}\n<code>${l.tg}</code>`),
+  ];
+  const rows2 = links.slice(0, 8).map((l) => [ubtn(`🔗 ${l.kind === 'mtproto' ? 'اتصال مستقیم' : 'SOCKS5'} — ${l.server.name}`, l.https)]);
+  await send(ctx.token, ctx.user.id, lines.join('\n'), { reply_markup: menuKb(rows2, 'trial') });
 }
 
 // ─────────────────────────── پشتیبانی ───────────────────────────
@@ -428,6 +454,22 @@ export async function handleSupportMsg(ctx, msg) {
 }
 
 // ─────────────────────────── چت هوش مصنوعی ───────────────────────────
+
+/** هشدار خطای پیکربندی AI به ادمین‌ها — حداکثر یک‌بار در ساعت، بدون داده حساس */
+async function warnAdminsAi(ctx, code, detail) {
+  try {
+    const key = `aiwarn:${code}`;
+    if (await ctx.env.KV.get(key)) return;
+    await ctx.env.KV.put(key, '1', { expirationTtl: 3600 });
+    const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results || [];
+    for (const a of admins) {
+      await send(ctx.token, a.id, `🛠 <b>هشدار هوش مصنوعی</b>\n\nکد خطا: <code>${code}</code>\n${detail}`);
+    }
+  } catch {
+    /* هشدار نباید جریان کاربر را خراب کند */
+  }
+}
+
 export async function aiChat(ctx, text) {
   if (!(await isEnabled(ctx.db, 'ai_enabled'))) return send(ctx.token, ctx.user.id, '🚫 چت هوش مصنوعی موقتاً غیرفعال است.');
   const price = await getNum(ctx.db, 'ai_price_coins', 5);
@@ -446,13 +488,19 @@ export async function aiChat(ctx, text) {
 
   const res = await aiChatComplete(ctx.env, messages);
   if (!res.ok) {
-    // در خطا سکه‌ای کسر نمی‌شود
+    // ⚠️ در هیچ خطایی سکه کسر نمی‌شود
     try {
       await ctx.db.prepare('DELETE FROM ai_history WHERE id = (SELECT MAX(id) FROM ai_history WHERE user_id=? AND role=?)').bind(ctx.user.id, 'user').run();
     } catch {}
-    return send(ctx.token, ctx.user.id, '🤖 دستیار هوشمند فعلاً در دسترس نیست (سکه‌ای کسر نشد).\nمی‌توانید مستقیم با اپراتور انسانی صحبت کنید 👇', {
-      reply_markup: ikb([[btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]]),
-    });
+    // هر نوع خطا پیام مخصوص خودش را دارد (binding / سهمیه / مدل / پاسخ نامعتبر)
+    const detail = aiErrorMessage(res.error);
+    const rows = [[btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]];
+    if (res.error !== AI_ERRORS.BINDING_MISSING) rows.unshift([btn('🔁 تلاش دوباره', 'sup:ai')]);
+    // اطلاع به ادمین‌ها فقط برای خطاهای پیکربندی (یک‌بار در ساعت)
+    if (res.error === AI_ERRORS.BINDING_MISSING || res.error === AI_ERRORS.QUOTA) {
+      await warnAdminsAi(ctx, res.error, detail);
+    }
+    return send(ctx.token, ctx.user.id, `${detail}\n\n🪙 سکه‌ای از شما کسر نشد.`, { reply_markup: ikb(rows) });
   }
 
   const reply = res.text;
@@ -524,14 +572,16 @@ export function customProductOf(step) {
 async function buyCustom(ctx, spec, method) {
   const p = customProductOf(spec);
   const price = Math.round((await productPriceToman(ctx.env, p)) / 1000) * 1000;
+  const canBuy = await assertDeliverable(ctx.env, p);
+  if (!canBuy.ok) return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   if (method === 'buywc') {
     const fresh = await getUser(ctx.db, ctx.user.id);
     if (fresh.balance < price) return send(ctx.token, ctx.user.id, '😕 موجودی کیف پول کافی نیست.');
     await addBalance(ctx.db, ctx.user.id, -price);
     const order = await createOrder(ctx.env, ctx.user.id, p, price, 'wallet', 'paid');
     const sub = await deliverOrder(ctx.env, ctx.user, p, order);
-    await send(ctx.token, ctx.user.id, await getText(ctx.db, 'order_paid'));
-    await sendDelivery(ctx.env, ctx.user, p.title, sub);
+    // ✅ یک پیام تحویل، بدون تکرار
+    await sendDelivery(ctx.env, ctx.user, p.title, sub, { protocol: p.protocol });
     return;
   }
   const order = await createOrder(ctx.env, ctx.user.id, p, price, 'card');

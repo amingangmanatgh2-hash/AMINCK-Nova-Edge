@@ -107,11 +107,48 @@ async function makeEnv({ ai = true } = {}) {
       : undefined,
   };
   await initDb(DB);
+  // origin واقعی ورکر (در محیط واقعی هنگام اولین درخواست ذخیره می‌شود)
+  await env.KV.put('worker_origin', 'https://bot.test');
   return env;
 }
 
 const lastText = () => [...sent].reverse().find((s) => s.method === 'sendMessage')?.payload?.text || '';
 const textsSent = () => sent.filter((s) => s.method === 'sendMessage').map((s) => s.payload.text);
+const allText = () => JSON.stringify(sent);
+
+/**
+ * سرور واقعی و آماده‌تحویل می‌سازد.
+ * از آنجا که سرورهای نمونه دیگر غیرفعال‌اند، هر تستی که به تحویل نیاز دارد
+ * باید صراحتاً یک سرور واقعی ثبت کند — دقیقاً مثل دنیای واقعی.
+ */
+async function addRealServer(env, o = {}) {
+  const { defaultTemplate, defaultPort } = await import('../src/subs.js');
+  const protocol = o.protocol || 'vless';
+  const ip = o.ip || 'edge1.aminck-real.net';
+  const port = o.port || defaultPort(protocol);
+  const secret = o.secret ?? (protocol === 'mtproto' ? 'dd0123456789abcdef0123456789abcdef' : '');
+  const template = o.template ?? (protocol === 'mtproto' || protocol === 'socks5' ? '' : defaultTemplate(protocol, ip, port));
+  await env.DB.prepare(
+    'INSERT INTO servers (name, country, protocol, ip, port, secret, template, health_url, speed_rank, active, healthy) VALUES (?,?,?,?,?,?,?,?,?,1,1)'
+  )
+    .bind(o.name || 'سرور واقعی', o.country || '🇩🇪', protocol, ip, port, secret, template, '', o.speed_rank || 1)
+    .run();
+  return await env.DB.prepare('SELECT * FROM servers ORDER BY id DESC LIMIT 1').first();
+}
+
+/** initData معتبر تلگرام برای تست‌های مینی‌اپ (همان الگوریتم رسمی HMAC) */
+async function makeInitData(userId, token = 'TESTTOKEN', firstName = 'T') {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode('WebAppData'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const secret = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(token)));
+  const authDate = Math.floor(Date.now() / 1000);
+  const userJson = JSON.stringify({ id: userId, first_name: firstName });
+  const dcs = `auth_date=${authDate}\nuser=${userJson}`;
+  const k2 = await crypto.subtle.importKey('raw', secret, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', k2, enc.encode(dcs)));
+  const hash = Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join('');
+  return new URLSearchParams({ auth_date: String(authDate), user: userJson, hash }).toString();
+}
 
 // ═══════════════════ اجرای تست‌ها ═══════════════════
 console.log('\n⚡ AMINCK Nova Bot — تست‌های یکپارچه\n' + '─'.repeat(50));
@@ -124,6 +161,11 @@ section('۱) دیتابیس، اسکیما و داده اولیه');
   const s = (await env.DB.prepare('SELECT COUNT(*) c FROM servers').first()).c;
   check('محصولات نمونه ساخته شد', p > 0, `count=${p}`);
   check('سرورهای نمونه ساخته شد', s > 0, `count=${s}`);
+  // 🛡 هیچ سرور نمونه‌ای نباید فعال باشد — کانفیگ قلابی هرگز تحویل نمی‌شود
+  const activeSeed = (await env.DB.prepare('SELECT COUNT(*) c FROM servers WHERE active=1').first()).c;
+  check('هیچ سرور نمونه‌ای فعال نیست', activeSeed === 0, `active=${activeSeed}`);
+  const { realActiveServerCount } = await import('../src/db.js');
+  check('شمارش سرور واقعی روی دیتابیس تازه صفر است', (await realActiveServerCount(env.DB)) === 0);
   const { initDb } = await import('../src/db.js');
   await initDb(env.DB); // اجرای دوباره نباید داده تکراری بسازد
   const p2 = (await env.DB.prepare('SELECT COUNT(*) c FROM products').first()).c;
@@ -364,6 +406,16 @@ section('۹) ساخت کانفیگ و اشتراک');
   const env = await makeEnv();
   const { ensureUser } = await import('../src/db.js');
   const { user } = await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  // بدون سرور واقعی، ساخت اشتراک باید صراحتاً شکست بخورد (نه کانفیگ قلابی)
+  let noSrv = null;
+  try {
+    await createSubscription(env, user, { id: 1, title: 'محصول', protocol: 'vless', days: 30, server_count: 5 }, {});
+  } catch (e) {
+    noSrv = e;
+  }
+  check('بدون سرور واقعی، اشتراک ساخته نمی‌شود', noSrv?.code === 'no_real_server', String(noSrv && noSrv.message));
+
+  await addRealServer(env);
   const sub = await createSubscription(env, user, { id: 1, title: 'محصول', protocol: 'vless', days: 30, server_count: 5 }, {});
   check('اشتراک با توکن ساخته شد', !!sub.token && sub.token.length > 10);
   check('اشتراک سرور دارد', sub.servers.length > 0);
@@ -379,6 +431,7 @@ section('۱۰) پرداخت، تایید فیش و شارژ کیف پول');
   const { ensureUser, getUser } = await import('../src/db.js');
   const { createOrder, approveReceipt, payWithWallet } = await import('../src/pay.js');
   const { user } = await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  await addRealServer(env);
 
   // رگرسیون مهم: سفارش شارژ کیف پول باید موجودی را زیاد کند، نه کانفیگ بسازد
   const chargeOrder = await createOrder(env, 111, { id: 0, title: '💳 شارژ کیف پول' }, 250000, 'card');
@@ -414,6 +467,7 @@ section('۱۱) پاداش زیرمجموعه');
   const env = await makeEnv();
   const { ensureUser, getUser } = await import('../src/db.js');
   const { payWithWallet } = await import('../src/pay.js');
+  await addRealServer(env);
   await ensureUser(env.DB, { id: 111, first_name: 'Ref' });
   const { user: buyer } = await ensureUser(env.DB, { id: 222, first_name: 'Buyer' }, 'ref_111');
   await env.DB.prepare('UPDATE users SET balance=1000000 WHERE id=222').run();
@@ -516,7 +570,7 @@ section('۱۶) لغو ورودی ادمین با /cancel');
 }
 
 // ── ۱۷) ویزارد سرور تا انتها ──
-section('۱۷) ویزارد افزودن سرور (رگرسیون بن‌بست)');
+section('۱۷) ویزارد افزودن سرور (رگرسیون بن‌بست + پورت/سکرت)');
 {
   const env = await makeEnv();
   const { ensureUser, getUser } = await import('../src/db.js');
@@ -525,9 +579,11 @@ section('۱۷) ویزارد افزودن سرور (رگرسیون بن‌بست)
   const mk = async () => ({ env, db: env.DB, token: 'T', user: await getUser(env.DB, 111), update: { callback_query: { message: {} } }, cbId: '1', botUsername: 'b' });
 
   await env.DB.prepare(`UPDATE users SET state='admin:newsrv', state_data=? WHERE id=111`).bind(JSON.stringify({ step: 1, f: {} })).run();
-  await handleAdminText(await mk(), 'سرور تست');            // → step 2
-  await handleWizardCallback(await mk(), 'nsw:proto:vless'); // → step 3
-  await handleAdminText(await mk(), 'srv.test.com');         // → step 4
+  await handleAdminText(await mk(), 'سرور تست');            // → step 2 (انتخاب پروتکل)
+  await handleWizardCallback(await mk(), 'nsw:proto:vless'); // → step 3 (هاست)
+  await handleAdminText(await mk(), 'srv.test.com');         // → step 35 (پورت)
+  await handleAdminText(await mk(), '443');                  // → step 36 (سکرت)
+  await handleAdminText(await mk(), '-');                    // → step 4 (قالب)
   await handleAdminText(await mk(), 'پیش‌فرض');              // → step 5  (قبلاً اینجا بن‌بست بود)
   const midState = (await getUser(env.DB, 111)).state_data;
   check('ویزارد بعد از قالب کانفیگ پیش می‌رود (رگرسیون)', JSON.parse(midState).step === 5, midState);
@@ -536,8 +592,409 @@ section('۱۷) ویزارد افزودن سرور (رگرسیون بن‌بست)
   const srv = await env.DB.prepare("SELECT * FROM servers WHERE name='سرور تست'").first();
   check('سرور جدید ذخیره شد', !!srv);
   check('قالب پیش‌فرض اعمال شد', !!srv && srv.template.includes('srv.test.com'), srv && srv.template);
+  check('پورت ذخیره شد', !!srv && Number(srv.port) === 443, String(srv && srv.port));
   check('رتبه سرعت ذخیره شد', !!srv && srv.speed_rank === 2, String(srv && srv.speed_rank));
+  check('سرور کامل فعال ذخیره می‌شود', !!srv && srv.active === 1, String(srv && srv.active));
   check('حالت ویزارد پاک شد', !(await getUser(env.DB, 111)).state);
+
+  // ── ویزارد MTProto: سکرت واقعی الزامی است ──
+  await env.DB.prepare(`UPDATE users SET state='admin:newsrv', state_data=? WHERE id=111`).bind(JSON.stringify({ step: 1, f: {} })).run();
+  await handleAdminText(await mk(), 'ام‌تی تست');
+  await handleWizardCallback(await mk(), 'nsw:proto:mtproto');
+  await handleAdminText(await mk(), 'mtp.test.com');
+  await handleAdminText(await mk(), '443');
+  sent.length = 0;
+  await handleAdminText(await mk(), 'not-a-secret');          // سکرت نامعتبر → باید رد شود
+  const stillSecret = JSON.parse((await getUser(env.DB, 111)).state_data).step;
+  check('سکرت نامعتبر MTProto رد می‌شود', stillSecret === 36, String(stillSecret));
+  await handleAdminText(await mk(), 'dd0123456789abcdef0123456789abcdef');
+  const afterSecret = JSON.parse((await getUser(env.DB, 111)).state_data).step;
+  check('برای MTProto مرحلهٔ قالب رد می‌شود', afterSecret === 5, String(afterSecret));
+  await handleAdminText(await mk(), '-');
+  await handleAdminText(await mk(), '1');
+  const mtp = await env.DB.prepare("SELECT * FROM servers WHERE name='ام‌تی تست'").first();
+  check('سرور MTProto با سکرت ذخیره شد', !!mtp && mtp.secret === 'dd0123456789abcdef0123456789abcdef', String(mtp && mtp.secret));
+  check('سرور MTProto کامل فعال است', !!mtp && mtp.active === 1, String(mtp && mtp.active));
+}
+
+// ── ۲۱) لینک مستقیم MTProto ──
+section('۲۱) تحویل MTProto با لینک مستقیم تلگرام');
+{
+  const { buildMtprotoLinks, isValidMtprotoSecret, serverIssues, isServerDeliverable } = await import('../src/proxy.js');
+
+  check('سکرت ۳۲ هگزی معتبر است', isValidMtprotoSecret('0123456789abcdef0123456789abcdef'));
+  check('سکرت dd+هگز معتبر است', isValidMtprotoSecret('dd0123456789abcdef0123456789abcdef'));
+  check('سکرت خالی نامعتبر است', !isValidMtprotoSecret(''));
+  check('uuid تصادفی به‌عنوان سکرت رد می‌شود (رگرسیون)', !isValidMtprotoSecret('9f1c-4a2b-11ee-be56'));
+
+  const links = buildMtprotoLinks({ host: 'mtp.realhost.net', port: 443, secret: 'dd0123456789abcdef0123456789abcdef' });
+  check('لینک tg://proxy ساخته می‌شود', links.tg.startsWith('tg://proxy?'), links.tg);
+  check('لینک t.me/proxy ساخته می‌شود', links.https.startsWith('https://t.me/proxy?'), links.https);
+  check('لینک شامل هاست واقعی است', links.tg.includes('mtp.realhost.net'));
+  check('لینک شامل پورت است', links.tg.includes('port=443'));
+  check('لینک شامل سکرت ذخیره‌شده است', links.tg.includes('dd0123456789abcdef0123456789abcdef'), links.tg);
+
+  let bad = null;
+  try {
+    buildMtprotoLinks({ host: 'mtp.example.com', port: 443, secret: 'dd0123456789abcdef0123456789abcdef' });
+  } catch (e) {
+    bad = e;
+  }
+  check('هاست نمونه (example.com) لینک نمی‌سازد', bad?.code === 'mtproto_host_invalid', String(bad && bad.code));
+
+  let noSec = null;
+  try {
+    buildMtprotoLinks({ host: 'mtp.realhost.net', port: 443, secret: '' });
+  } catch (e) {
+    noSec = e;
+  }
+  check('بدون سکرت هیچ لینک قلابی ساخته نمی‌شود', noSec?.code === 'mtproto_secret_invalid', String(noSec && noSec.code));
+
+  check('سرور MTProto بدون سکرت مشکل‌دار گزارش می‌شود', serverIssues({ protocol: 'mtproto', ip: 'a.realhost.net', port: 443, secret: '' }).length > 0);
+  check('سرور MTProto کامل بدون مشکل است', serverIssues({ protocol: 'mtproto', ip: 'a.realhost.net', port: 443, secret: 'dd0123456789abcdef0123456789abcdef' }).length === 0);
+  check('سرور غیرفعال آمادهٔ تحویل نیست', !isServerDeliverable({ protocol: 'mtproto', ip: 'a.realhost.net', port: 443, secret: 'dd0123456789abcdef0123456789abcdef', active: 0 }));
+
+  // تحویل واقعی سرتاسری
+  const env = await makeEnv();
+  const { ensureUser, getUser } = await import('../src/db.js');
+  const { createSubscription } = await import('../src/subs.js');
+  const { sendDelivery } = await import('../src/pay.js');
+  await addRealServer(env, { protocol: 'mtproto', ip: 'mtp.realhost.net', port: 443, secret: 'dd0123456789abcdef0123456789abcdef', name: 'MTP-DE' });
+  const { user } = await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  const prod = { id: 9, title: 'پروکسی MTProto', protocol: 'mtproto', days: 30, server_count: 3 };
+  const sub = await createSubscription(env, user, prod, {});
+  sent.length = 0;
+  const d1 = await sendDelivery(env, await getUser(env.DB, 111), prod.title, sub, { protocol: 'mtproto' });
+  const body = allText();
+  check('پیام تحویل MTProto ارسال شد', d1.sent === true, JSON.stringify(d1));
+  check('پیام تحویل شامل tg://proxy است', body.includes('tg://proxy'), lastText().slice(0, 200));
+  check('پیام تحویل شامل سکرت واقعی است', body.includes('dd0123456789abcdef0123456789abcdef'));
+  check('دکمهٔ «اتصال مستقیم در تلگرام» وجود دارد', body.includes('اتصال مستقیم در تلگرام'));
+  check('برای MTProto لینک /sub فرستاده نمی‌شود', !body.includes('/sub/'), body.slice(0, 300));
+
+  // ضدتکرار
+  sent.length = 0;
+  const d2 = await sendDelivery(env, await getUser(env.DB, 111), prod.title, sub, { protocol: 'mtproto' });
+  check('تحویل تکراری انجام نمی‌شود', d2.sent === false && d2.reason === 'already_delivered', JSON.stringify(d2));
+  check('در تحویل تکراری هیچ پیامی ارسال نمی‌شود', sent.filter((x) => x.method === 'sendMessage').length === 0);
+
+  // پروتکل اشتراکی همچنان لینک /sub می‌گیرد
+  const env2 = await makeEnv();
+  await addRealServer(env2, { protocol: 'vless', ip: 'edge.realhost.net' });
+  const { user: u2 } = await ensureUser(env2.DB, { id: 222, first_name: 'B' });
+  const p2 = { id: 1, title: 'وی‌لس', protocol: 'vless', days: 30, server_count: 3 };
+  const s2 = await createSubscription(env2, u2, p2, {});
+  sent.length = 0;
+  const d3 = await sendDelivery(env2, await getUser(env2.DB, 222), p2.title, s2, { protocol: 'vless' });
+  check('تحویل VLESS انجام شد (رگرسیون)', d3.sent === true);
+  check('VLESS لینک اشتراک /sub می‌گیرد (رگرسیون)', allText().includes('/sub/' + s2.token), lastText().slice(0, 200));
+}
+
+// ── ۲۲) هیچ خروجی‌ای نباید example.com داشته باشد ──
+section('۲۲) حذف کامل سرورهای نمونه');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser, realActiveServerCount } = await import('../src/db.js');
+  const { createSubscription, subLandingHtml } = await import('../src/subs.js');
+  const { user } = await ensureUser(env.DB, { id: 111, first_name: 'A' });
+
+  const seeded = (await env.DB.prepare("SELECT COUNT(*) c FROM servers WHERE ip LIKE '%example.com'").first()).c;
+  check('سرورهای نمونه در سید وجود دارند اما غیرفعال‌اند', (await env.DB.prepare("SELECT COUNT(*) c FROM servers WHERE ip LIKE '%example.com' AND active=1").first()).c === 0, `seeded=${seeded}`);
+
+  await addRealServer(env, { ip: 'edge.realhost.net' });
+  const prod = { id: 1, title: 'تست', protocol: 'vless', days: 30, server_count: 10 };
+  const sub = await createSubscription(env, user, prod, {});
+  const { buildConfigs } = await import('../src/subs.js');
+  const joined = buildConfigs(sub.servers, sub.uuid, prod, 'A').join('\n');
+  check('خروجی اشتراک شامل example.com نیست', !joined.includes('example.com'), joined.slice(0, 200));
+  check('خروجی اشتراک شامل server.example.com نیست', !joined.includes('server.example.com'));
+
+  const row = await env.DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind(sub.token).first();
+  const pageText = await subLandingHtml(env, row);
+  check('صفحهٔ /sub شامل example.com نیست', !pageText.includes('example.com'));
+
+  check('شمارش سرور واقعی درست است', (await realActiveServerCount(env.DB)) === 1);
+
+  // مهاجرت: دیتابیس قدیمی که سرورهای نمونه در آن فعال بوده‌اند
+  const old = await makeEnv();
+  await old.DB.prepare("UPDATE servers SET active=1 WHERE ip LIKE '%example.com'").run();
+  await old.DB.prepare("DELETE FROM kv WHERE key='migration:placeholder_servers_v1'").run();
+  const { migrate } = await import('../src/db.js');
+  await migrate(old.DB);
+  const stillActive = (await old.DB.prepare("SELECT COUNT(*) c FROM servers WHERE ip LIKE '%example.com' AND active=1").first()).c;
+  check('مهاجرت سرورهای نمونهٔ فعال را غیرفعال می‌کند', stillActive === 0, `active=${stillActive}`);
+}
+
+// ── ۲۳) گیت تحویل وقتی سرور واقعی نیست ──
+section('۲۳) توقف خرید بدون سرور واقعی');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser } = await import('../src/db.js');
+  const { payWithWallet, assertDeliverable } = await import('../src/pay.js');
+  await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  await env.DB.prepare('UPDATE users SET balance=1000000 WHERE id=111').run();
+  const prod = await env.DB.prepare("SELECT * FROM products WHERE category='vless' LIMIT 1").first();
+
+  const gate = await assertDeliverable(env, prod);
+  check('بدون سرور واقعی، تحویل مجاز نیست', gate.ok === false && gate.reason === 'no_real_server', JSON.stringify(gate));
+  check('پیام فارسی صحیح برگردانده می‌شود', String(gate.message).includes('هنوز سرور واقعی تنظیم نشده است'), gate.message);
+
+  const pay = await payWithWallet(env, await getUser(env.DB, 111), prod, 100000);
+  check('پرداخت بدون سرور واقعی رد می‌شود', pay.ok === false, JSON.stringify(pay));
+  const bal = (await getUser(env.DB, 111)).balance;
+  check('پول کاربر کسر نمی‌شود', bal === 1000000, String(bal));
+
+  await addRealServer(env);
+  const gate2 = await assertDeliverable(env, prod);
+  check('پس از ثبت سرور واقعی تحویل مجاز می‌شود', gate2.ok === true);
+  const pay2 = await payWithWallet(env, await getUser(env.DB, 111), prod, 100000);
+  check('پس از ثبت سرور واقعی پرداخت موفق است', pay2.ok === true, JSON.stringify(pay2));
+}
+
+// ── ۲۴) گردونه شانس ──
+section('۲۴) گردونه شانس مینی‌اپ');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser, todayStr } = await import('../src/db.js');
+  const { handleGameApi, SPIN_PRIZES } = await import('../src/game.js');
+  await ensureUser(env.DB, { id: 111, first_name: 'A' });
+
+  check('جوایز گردونه تعریف شده‌اند', Array.isArray(SPIN_PRIZES) && SPIN_PRIZES.length > 1, String(SPIN_PRIZES?.length));
+
+  const initData = await makeInitData(111);
+  const call = async (p, body = {}) => {
+    const req = new Request('https://x.test' + p, { method: 'POST', body: JSON.stringify({ initData, ...body }) });
+    return await (await handleGameApi(env, req, p)).json();
+  };
+
+  // دسترسی بدون initData معتبر باید رد شود
+  const anon = await handleGameApi(env, new Request('https://x.test/api/game/spin', { method: 'POST', body: '{}' }), '/api/game/spin');
+  check('چرخش بدون initData معتبر رد می‌شود', anon.status === 403, String(anon.status));
+
+  const initState = await call('/api/game/init');
+  check('init جوایز گردونه را به فرانت می‌دهد', Array.isArray(initState.spinPrizes) && initState.spinPrizes.length === SPIN_PRIZES.length, JSON.stringify(initState.spinPrizes));
+
+  const before = (await getUser(env.DB, 111)).coins;
+  const r1 = await call('/api/game/spin');
+  check('اولین چرخش موفق است', r1.ok === true, JSON.stringify(r1));
+  check('جایزه عدد مثبت است', Number(r1.prize) > 0, String(r1.prize));
+  check('ایندکس برش معتبر است', Number.isInteger(r1.index) && r1.index >= 0 && r1.index < SPIN_PRIZES.length, String(r1.index));
+  check('تعداد برش‌ها برگردانده می‌شود', r1.segments === SPIN_PRIZES.length, String(r1.segments));
+  check('جایزه با ایندکس برش می‌خواند', r1.prize === SPIN_PRIZES[r1.index][0], `${r1.prize} vs ${SPIN_PRIZES[r1.index]?.[0]}`);
+  const after = (await getUser(env.DB, 111)).coins;
+  check('سکه به کاربر اضافه شد', after === before + r1.prize, `${before} → ${after}`);
+  check('coins برگشتی با دیتابیس یکی است', r1.coins === after, `${r1.coins} vs ${after}`);
+  check('spinDone برگردانده می‌شود', r1.spinDone === true);
+
+  const r2 = await call('/api/game/spin');
+  check('چرخش دوم در همان روز رد می‌شود', r2.ok === false && r2.reason === 'already', JSON.stringify(r2));
+  const after2 = (await getUser(env.DB, 111)).coins;
+  check('چرخش تکراری سکه اضافه نمی‌کند (ضد دابل‌کلیک)', after2 === after, `${after} → ${after2}`);
+  check('پاسخ تکراری هم spinDone را برمی‌گرداند', r2.spinDone === true);
+
+  // چرخش‌های موازی (دابل‌کلیک واقعی)
+  const env2 = await makeEnv();
+  await ensureUser(env2.DB, { id: 222, first_name: 'B' });
+  const u2 = await getUser(env2.DB, 222);
+  const init2 = await makeInitData(222);
+  const par = await Promise.all([0, 1, 2, 3].map(async () => {
+    const req = new Request('https://x.test/api/game/spin', { method: 'POST', body: JSON.stringify({ initData: init2 }) });
+    return await (await handleGameApi(env2, req, '/api/game/spin')).json();
+  }));
+  const wins = par.filter((x) => x.ok === true);
+  check('در چهار درخواست هم‌زمان فقط یکی برنده می‌شود', wins.length === 1, JSON.stringify(par.map((x) => x.ok)));
+  const coinsPar = (await getUser(env2.DB, 222)).coins;
+  check('سکهٔ اضافه دقیقاً یک جایزه است', coinsPar === (u2.coins || 0) + wins[0].prize, String(coinsPar));
+
+  // روز بعد دوباره مجاز است
+  await env.DB.prepare("UPDATE users SET last_spin_date='2000-01-01', spin_claim='' WHERE id=111").run();
+  const r3 = await call('/api/game/spin');
+  check('روز بعد دوباره می‌توان چرخاند', r3.ok === true, JSON.stringify(r3));
+
+  // فرانت‌اند: گردونه واقعاً چرخانده می‌شود
+  const { gameHtml } = await import('../src/game.js');
+  const gh = gameHtml(env);
+  const ghText = typeof gh === 'string' ? gh : await gh.text();
+  check('فرانت‌اند گردونه دارای اشاره‌گر ثابت است', ghText.includes('pointer') || ghText.includes('اشاره'), '');
+  check('فرانت‌اند چرخش را با transform انجام می‌دهد', ghText.includes('rotate('));
+  check('فرانت‌اند از transitionend برای پایان انیمیشن استفاده می‌کند', ghText.includes('transitionend'));
+  check('فرانت‌اند گارد ضد ارسال دوباره دارد', ghText.includes('spinning'));
+}
+
+// ── ۲۵) هوش مصنوعی: مدل، خطا و کسر سکه ──
+section('۲۵) لایه هوش مصنوعی — مدل معتبر و مدیریت خطا');
+{
+  const { TEXT_MODELS, DEPRECATED_MODELS, aiChatComplete, aiDiagnostics, AI_ERRORS, aiErrorMessage } = await import('../src/ai.js');
+
+  check('مدل پیش‌فرض منسوخ نیست (ریشهٔ باگ)', !DEPRECATED_MODELS.has(TEXT_MODELS[0]), TEXT_MODELS[0]);
+  check('مدل منسوخ llama-3.1-8b-instruct دیگر استفاده نمی‌شود', !TEXT_MODELS.includes('@cf/meta/llama-3.1-8b-instruct'));
+  check('زنجیرهٔ چند مدلی تعریف شده', TEXT_MODELS.length >= 2, String(TEXT_MODELS.length));
+
+  // موفقیت
+  const okEnv = await makeEnv();
+  const r1 = await aiChatComplete(okEnv, [{ role: 'user', content: 'سلام' }]);
+  check('پاسخ موفق AI برگردانده می‌شود', r1.ok === true && r1.text.includes('آزمایشی'), JSON.stringify(r1).slice(0, 120));
+  check('مدل پاسخ‌گو گزارش می‌شود', !!r1.model, r1.model);
+
+  // نبود بایندینگ
+  const noEnv = await makeEnv({ ai: false });
+  const r2 = await aiChatComplete(noEnv, [{ role: 'user', content: 'x' }]);
+  check('نبود بایندینگ AI تشخیص داده می‌شود', r2.ok === false && r2.error === AI_ERRORS.BINDING_MISSING, JSON.stringify(r2));
+  check('پیام خطای نبود بایندینگ فارسی و قابل فهم است', aiErrorMessage(r2.error).length > 10);
+
+  // خطای مدل
+  const errEnv = await makeEnv();
+  errEnv.AI = { run: async () => { throw new Error('No such model'); } };
+  const r3 = await aiChatComplete(errEnv, [{ role: 'user', content: 'x' }]);
+  check('خطای مدل تشخیص داده می‌شود', r3.ok === false && r3.error === AI_ERRORS.MODEL_ERROR, JSON.stringify(r3));
+  check('همهٔ مدل‌های زنجیره امتحان می‌شوند', Array.isArray(r3.tried) && r3.tried.length === TEXT_MODELS.length, JSON.stringify(r3.tried));
+
+  // خطای سهمیه
+  const qEnv = await makeEnv();
+  qEnv.AI = { run: async () => { throw new Error('Rate limit exceeded (quota)'); } };
+  const r4 = await aiChatComplete(qEnv, [{ role: 'user', content: 'x' }]);
+  check('خطای سهمیه از خطای مدل تفکیک می‌شود', r4.error === AI_ERRORS.QUOTA, JSON.stringify(r4));
+
+  // پاسخ نامعتبر
+  const bEnv = await makeEnv();
+  bEnv.AI = { run: async () => ({ nothing: true }) };
+  const r5 = await aiChatComplete(bEnv, [{ role: 'user', content: 'x' }]);
+  check('پاسخ نامعتبر تشخیص داده می‌شود', r5.ok === false && r5.error === AI_ERRORS.INVALID_RESPONSE, JSON.stringify(r5));
+
+  // شکل‌های مختلف پاسخ
+  for (const [name, payload] of [
+    ['response', { response: 'A' }],
+    ['result.response', { result: { response: 'A' } }],
+    ['choices', { choices: [{ message: { content: 'A' } }] }],
+    ['رشتهٔ خام', 'A'],
+  ]) {
+    const e = await makeEnv();
+    e.AI = { run: async () => payload };
+    const r = await aiChatComplete(e, [{ role: 'user', content: 'x' }]);
+    check(`شکل پاسخ «${name}» پارس می‌شود`, r.ok === true && r.text === 'A', JSON.stringify(r));
+  }
+
+  // تشخیص
+  const diag = await aiDiagnostics(okEnv);
+  check('تشخیص AI موفق گزارش می‌دهد', diag.ok === true && diag.bound === true, JSON.stringify(diag).slice(0, 160));
+  const diagNo = await aiDiagnostics(noEnv);
+  check('تشخیص AI نبود بایندینگ را گزارش می‌دهد', diagNo.ok === false && diagNo.bound === false);
+  check('خروجی تشخیص هیچ توکنی افشا نمی‌کند', !JSON.stringify(diag).includes('TESTTOKEN'));
+
+  // انتخاب مدل توسط ادمین
+  const { resolveTextModels } = await import('../src/ai.js');
+  const cEnv = await makeEnv();
+  const { setSetting } = await import('../src/db.js');
+  await setSetting(cEnv.DB, 'ai_model', '@cf/meta/llama-3.2-3b-instruct');
+  const chain = await resolveTextModels(cEnv);
+  check('مدل انتخابی ادمین اولویت دارد', chain[0] === '@cf/meta/llama-3.2-3b-instruct', chain[0]);
+  await setSetting(cEnv.DB, 'ai_model', '@cf/meta/llama-3.1-8b-instruct');
+  const chain2 = await resolveTextModels(cEnv);
+  check('مدل منسوخِ انتخاب‌شده نادیده گرفته می‌شود', chain2[0] !== '@cf/meta/llama-3.1-8b-instruct', chain2[0]);
+}
+
+// ── ۲۶) پیام‌های خرید تکراری نباشند ──
+section('۲۶) پیام‌های تحویل بدون تکرار');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser } = await import('../src/db.js');
+  const { payWithWallet } = await import('../src/pay.js');
+  await addRealServer(env);
+  await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  await env.DB.prepare('UPDATE users SET balance=5000000 WHERE id=111').run();
+  const prod = await env.DB.prepare("SELECT * FROM products WHERE category='vless' LIMIT 1").first();
+
+  sent.length = 0;
+  const pay = await payWithWallet(env, await getUser(env.DB, 111), prod, 100000);
+  check('پرداخت با کیف پول موفق است', pay.ok === true);
+  const { sendDelivery } = await import('../src/pay.js');
+  await sendDelivery(env, await getUser(env.DB, 111), prod.title, pay.sub, { protocol: prod.protocol });
+  const msgs = textsSent();
+  const subLinks = msgs.filter((t) => t.includes('/sub/'));
+  check('لینک اشتراک فقط یک‌بار ارسال می‌شود', subLinks.length === 1, `count=${subLinks.length}`);
+  check('پیام «تحویل شد» جدا از پیام پرداخت تکرار نمی‌شود', msgs.filter((t) => t.includes('تحویل شد')).length <= 1, JSON.stringify(msgs).slice(0, 300));
+
+  // فراخوانی دوباره (retry تلگرام) نباید پیام دوم بفرستد
+  sent.length = 0;
+  const again = await sendDelivery(env, await getUser(env.DB, 111), prod.title, pay.sub, { protocol: prod.protocol });
+  check('تحویل دوباره پیام تکراری نمی‌فرستد', again.sent === false && textsSent().length === 0, JSON.stringify(again));
+}
+
+// ── ۲۷) کنترل دسترسی و نشت اطلاعات در پنل وب ──
+section('۲۷) امنیت پنل وب');
+{
+  const env = await makeEnv();
+  const { handlePanelApi, ensurePanelPassword, panelHtml } = await import('../src/panel.js');
+  const pw = await ensurePanelPassword(env.DB);
+  const post = (p, body = {}, headers = {}) =>
+    handlePanelApi(env, new Request('https://x.test' + p, { method: 'POST', body: JSON.stringify(body), headers }), p);
+
+  for (const p of ['/api/panel/state', '/api/panel/products/list', '/api/panel/servers/list', '/api/panel/users/list', '/api/panel/orders/list', '/api/panel/receipts/list', '/api/panel/settings']) {
+    check(`دسترسی بدون ورود به ${p} رد می‌شود`, (await post(p)).status === 401);
+  }
+
+  const login = await post('/api/panel/login', { password: pw });
+  const tok = (login.headers.get('Set-Cookie') || '').match(/nova_panel=([a-f0-9]{32})/)?.[1];
+  const auth = { Cookie: `nova_panel=${tok}` };
+  check('ورود موفق و توکن سشن صادر شد', !!tok);
+
+  const state = await (await post('/api/panel/state', {}, auth)).json();
+  check('داشبورد آمار برمی‌گرداند', state.ok && typeof state.stats.users === 'number', JSON.stringify(state.stats || {}).slice(0, 120));
+  check('داشبورد هشدار نبود سرور واقعی می‌دهد', (state.warnings || []).some((w) => w.includes('سرور واقعی')), JSON.stringify(state.warnings));
+  check('توکن ربات در پاسخ داشبورد نیست', !JSON.stringify(state).includes('TESTTOKEN'));
+  check('رمز پنل در پاسخ داشبورد نیست', !JSON.stringify(state).includes(pw));
+
+  const htmlRes = await panelHtml(env);
+  const htmlTxt = await htmlRes.text();
+  check('توکن ربات در HTML پنل نیست', !htmlTxt.includes('TESTTOKEN'));
+  check('رمز پنل در HTML پنل نیست', !htmlTxt.includes(pw));
+  check('پنل RTL فارسی است', htmlTxt.includes('dir="rtl"') && htmlTxt.includes('lang="fa"'));
+  check('پنل موبایل‌فرندلی است (viewport)', htmlTxt.includes('name="viewport"'));
+  for (const tab of ['داشبورد', 'محصولات', 'سرورها', 'کاربران', 'سفارش‌ها', 'فیش‌ها', 'گروه‌ها', 'تنظیمات']) {
+    check(`تب «${tab}» در پنل هست`, htmlTxt.includes(tab));
+  }
+
+  // تلاش برای نوشتن کلید حساس از طریق تنظیمات
+  await post('/api/panel/settings', { telegram_bot_token: 'HACKED', panel_password: '9999999999' }, auth);
+  const { getSetting } = await import('../src/db.js');
+  check('توکن ربات از API تنظیمات قابل تغییر نیست', (await getSetting(env.DB, 'telegram_bot_token', '')) !== 'HACKED');
+  check('رمز پنل از API تنظیمات قابل تغییر نیست', (await getSetting(env.DB, 'panel_password', '')) !== '9999999999');
+
+  // مدیریت محصول
+  const save = await (await post('/api/panel/products/save', { title: 'محصول پنلی', category: 'vless', days: 30, price_usd: 3 }, auth)).json();
+  check('افزودن محصول از پنل کار می‌کند', save.ok === true, JSON.stringify(save));
+  const plist = await (await post('/api/panel/products/list', { q: 'محصول پنلی' }, auth)).json();
+  check('محصول جدید در لیست دیده می‌شود', plist.items.some((x) => x.title === 'محصول پنلی'));
+  check('لیست محصولات صفحه‌بندی دارد', typeof plist.total === 'number' && typeof plist.pageSize === 'number');
+  const delNoConfirm = await (await post('/api/panel/products/delete', { id: plist.items[0].id }, auth)).json();
+  check('حذف بدون تایید رد می‌شود', delNoConfirm.ok === false);
+
+  // مدیریت سرور
+  const bad = await (await post('/api/panel/servers/save', { name: 'X', protocol: 'mtproto', ip: 'x.example.com', port: 443, secret: 'dd0123456789abcdef0123456789abcdef', active: true }, auth)).json();
+  check('ثبت سرور با هاست نمونه رد می‌شود', bad.ok === false, JSON.stringify(bad));
+  const noSecret = await (await post('/api/panel/servers/save', { name: 'MT', protocol: 'mtproto', ip: 'mtp.realhost.net', port: 443, secret: '', active: true }, auth)).json();
+  check('فعال‌سازی سرور MTProto بدون سکرت رد می‌شود', noSecret.ok === false && Array.isArray(noSecret.issues), JSON.stringify(noSecret));
+  const good = await (await post('/api/panel/servers/save', { name: 'MT', country: '🇩🇪', protocol: 'mtproto', ip: 'mtp.realhost.net', port: 443, secret: 'dd0123456789abcdef0123456789abcdef', active: true }, auth)).json();
+  check('ثبت سرور MTProto کامل موفق است', good.ok === true, JSON.stringify(good));
+  const slist = await (await post('/api/panel/servers/list', {}, auth)).json();
+  const mt = slist.items.find((x) => x.name === 'MT');
+  check('سرور جدید آمادهٔ تحویل علامت می‌خورد', mt?.ready === true, JSON.stringify(mt));
+  check('سکرت کامل در API پنل برنمی‌گردد', !JSON.stringify(slist).includes('dd0123456789abcdef0123456789abcdef'), JSON.stringify(mt));
+
+  // کاربران و سفارش‌ها
+  const ulist = await (await post('/api/panel/users/list', {}, auth)).json();
+  check('لیست کاربران کار می‌کند', ulist.ok === true && Array.isArray(ulist.items));
+  const olist = await (await post('/api/panel/orders/list', {}, auth)).json();
+  check('لیست سفارش‌ها کار می‌کند', olist.ok === true && Array.isArray(olist.items));
+  const rlist = await (await post('/api/panel/receipts/list', {}, auth)).json();
+  check('لیست فیش‌ها کار می‌کند', rlist.ok === true && Array.isArray(rlist.items));
+  const missing = await (await post('/api/panel/receipts/approve', { id: 99999 }, auth)).json();
+  check('تایید فیش ناموجود خطای روشن می‌دهد', missing.ok === false && missing.error.includes('یافت نشد'), JSON.stringify(missing));
+
+  // خروج
+  const out = await post('/api/panel/logout', {}, auth);
+  check('خروج از پنل کار می‌کند', out.status === 200);
+  check('پس از خروج سشن نامعتبر است', (await post('/api/panel/state', {}, auth)).status === 401);
 }
 
 // ── ۱۸) امنیت WebApp ──
