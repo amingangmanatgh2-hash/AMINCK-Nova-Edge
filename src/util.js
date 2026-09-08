@@ -45,21 +45,16 @@ export function deepLink(botUsername, payload) {
   return payload ? `https://t.me/${botUsername}?start=${payload}` : `https://t.me/${botUsername}`;
 }
 
-export function workerBase(request, env) {
-  if (env.WORKER_URL) return env.WORKER_URL.replace(/\/$/, '');
-  try {
-    return new URL(request.url).origin;
-  } catch {
-    return '';
-  }
-}
-
-/** آدرس عمومی ورکر برای لینک ساب/QR/وب‌اپ — از vars یا کش خودکار */
-export async function getBase(env) {
-  if (env.WORKER_URL) return String(env.WORKER_URL).replace(/\/$/, '');
+/** آدرس عمومی Worker از اولین درخواست در Durable Object کش می‌شود. */
+export async function getBase(env, request = null) {
   try {
     const cached = await env.KV.get('worker_origin');
-    if (cached) return cached;
+    if (cached) return String(cached).replace(/\/$/, '');
+    if (request) {
+      const origin = new URL(request.url).origin;
+      await env.KV.put('worker_origin', origin);
+      return origin;
+    }
   } catch {}
   return '';
 }

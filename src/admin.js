@@ -9,7 +9,7 @@ import { getText, getSettingValue, getNum, DEFAULT_TEXTS } from './texts.js';
 import { getUsdRate, productPriceToman } from './pricing.js';
 import { approveReceipt, sendDelivery } from './pay.js';
 import { createSubscription, defaultTemplate } from './subs.js';
-import { parseMoney, workerBase, getBase, isValidPanelPassword } from './util.js';
+import { parseMoney, getBase, isValidPanelPassword } from './util.js';
 import { CATS, userTag } from './user.js';
 
 const now = () => Math.floor(Date.now() / 1000);
