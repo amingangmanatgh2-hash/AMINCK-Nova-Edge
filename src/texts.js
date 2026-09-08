@@ -143,6 +143,14 @@ export const DEFAULT_SETTINGS = {
   discount_tiers: '[{"days":90,"percent":5},{"days":180,"percent":10},{"days":365,"percent":15},{"gb":100,"percent":5}]',
   loyalty_discount_percent: '0',
   loyalty_min_paid: '500000',
+  // ─── بخش ۶: AI Agent مدیر ───
+  ai_agent_enabled: '0',          // پیش‌فرض خاموش — فعال‌سازی آگاهانه توسط ادمین
+  ai_agent_model: '',             // خالی = از زنجیرهٔ پیش‌فرض
+  ai_agent_max_ops: '6',          // سقف تعداد عملیات در هر درخواست
+  // ─── بخش ۲: تانل VLESS-over-WS داخل ورکر ───
+  tunnel_enabled: '0',            // پیش‌فرض خاموش — فعال‌سازی آگاهانه توسط ادمین
+  tunnel_ws_path: '',             // رندوم ساخته می‌شود؛ برای دیباگ خالی نگذارید
+  tunnel_max_bytes: '0',          // سقف مصرف هر اشتراک (بایت)؛ ۰ = نامحدود (پر از ربات)
 };
 
 export async function getText(db, key) {

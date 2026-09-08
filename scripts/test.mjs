@@ -1355,6 +1355,257 @@ section('۳۱) ساب داینامیک، multi-IP و kill-switch');
   check('بازخورد تکراری در ساعت rate-limit می‌شود', fbDup.ok === false && fbDup.reason === 'rate_limited', JSON.stringify(fbDup));
 }
 
+// ── ۳۲) تانل VLESS-over-WS (بخش ۲) — منطق خالص ──
+section('۳۲) تانل VLESS-over-WS داخل ورکر');
+{
+  const env = await makeEnv();
+  const { setSetting, ensureUser, getUser } = await import('../src/db.js');
+  const {
+    parseVlessHeader, isBlockedLiteral, targetAllowed, tunnelGate, tunnelWsPath,
+    findSubscriptionByUuid, subQuotaOk, recordTunnelTraffic, tunnelUsage,
+    ensureTunnelUuid, randomUuidV4, buildTunnelConfig, logTunnelError,
+  } = await import('../src/tunnel.js');
+
+  // سازندهٔ بایت‌های سربرگ VLESS
+  const hex = (uuid) => String(uuid).replace(/-/g, '');
+  const u8 = (hexStr) => {
+    const out = [];
+    for (let i = 0; i < hexStr.length; i += 2) out.push(parseInt(hexStr.substr(i, 2), 16));
+    return out;
+  };
+  const tcp = (host, port, atyp) => {
+    let addr;
+    if (atyp === 1) addr = host.split('.').map(Number);
+    else if (atyp === 3) addr = hex(host).match(/.{2}/g).map((x) => parseInt(x, 16));
+    else addr = [host.length, ...[...host].map((c) => c.charCodeAt(0))];
+    return [0x00, ...u8(hex(uuid)), 0x00, 0x01, (port >> 8) & 0xff, port & 0xff, atyp, ...addr];
+  };
+
+  const uuid = randomUuidV4();
+  const p1 = parseVlessHeader(tcp('104.16.0.1', 443, 1));
+  check('پارس TCP IPv4 موفق است', p1.ok === true, JSON.stringify(p1));
+  check('UUID از هدر خوانده می‌شود', p1.uuid === uuid, `${p1.uuid} vs ${uuid}`);
+  check('هاست IPv4 خوانده می‌شود', p1.host === '104.16.0.1', p1.host);
+  check('پورت ۴۴۳ خوانده می‌شود', p1.port === 443, String(p1.port));
+  check('UDP نیست', p1.udp === false);
+
+  const p2 = parseVlessHeader(tcp('www.google.com', 8443, 2));
+  check('پارس دامنه موفق است', p2.ok === true && p2.host === 'www.google.com', p2.host);
+  check('پورت دامنه ۸۴۴۳ است', p2.port === 8443, String(p2.port));
+
+  // UDP صریحاً رد می‌شود
+  const udpHdr = tcp('8.8.8.8', 53, 1);
+  udpHdr[18] = 0x02; // تغییر کماند به UDP
+  const pUdp = parseVlessHeader(udpHdr);
+  check('UDP پشتیبانی نمی‌شود (مشخص می‌شود)', pUdp.udp === true, JSON.stringify(pUdp));
+
+  // دادهٔ ناقص
+  const short = parseVlessHeader([0x00, 0x01]);
+  check('هدر ناقص needMore برمی‌گرداند', short.ok === false && short.needMore === true);
+  const badVer = parseVlessHeader([0x99, 0, 0]);
+  check('نسخهٔ نامعتبر رد می‌شود', badVer.ok === false && (badVer.error || '').startsWith('unsupported_version'));
+
+  // آدرس‌های ممنوع
+  check('loopback IPv4 بلاک است', isBlockedLiteral('127.0.0.1'));
+  check('10/8 بلاک است', isBlockedLiteral('10.1.2.3'));
+  check('172.16/12 بلاک است', isBlockedLiteral('172.31.0.1'));
+  check('192.168/16 بلاک است', isBlockedLiteral('192.168.1.1'));
+  check('multicast بلاک است', isBlockedLiteral('239.1.1.1'));
+  check('IPv6 loopback بلاک است', isBlockedLiteral('::1'));
+  check('IP عمومی Cloudflare بلاک نیست', !isBlockedLiteral('104.16.0.1'));
+  check('IPv6 عمومی بلاک نیست', !isBlockedLiteral('2606:4700:4700::1111'));
+  check('targetAllowed پورت بد را رد می‌کند', targetAllowed('8.8.8.8', 0).ok === false);
+  check('targetAllowed مقصد بلاک را رد می‌کند', targetAllowed('10.0.0.1', 443).ok === false);
+  check('targetAllowed مقصد عمومی را می‌پذیرد', targetAllowed('8.8.8.8', 443).ok === true);
+
+  // گیت: پیش‌فرض خاموش
+  const url = new URL('https://novabot-sample.workers.dev/wss-x');
+  let g = await tunnelGate(env, new Request(url, { headers: { upgrade: 'websocket' } }), url);
+  check('تانل پیش‌فرض خاموش است', g.ok === false && g.reason === 'not_enabled', JSON.stringify(g));
+  await setSetting(env.DB, 'tunnel_enabled', '1');
+  const path = await tunnelWsPath(env);
+  check('مسیر WS رندوم ساخته و ذخیره می‌شود', path.startsWith('/wss-') && path.length > 6, path);
+  const url2 = new URL('https://novabot-sample.workers.dev' + path);
+  g = await tunnelGate(env, new Request(url2, { headers: { upgrade: 'websocket' } }), url2);
+  check('در مسیر درست و با upgrade گیت باز می‌شود', g.ok === true, JSON.stringify(g));
+  const urlBad = new URL('https://novabot-sample.workers.dev/other');
+  g = await tunnelGate(env, new Request(urlBad, { headers: { upgrade: 'websocket' } }), urlBad);
+  check('مسیر دیگر ۴۰۴ می‌گیرد', g.ok === false && g.reason === 'not_found');
+  const urlNoWs = new URL('https://novabot-sample.workers.dev' + path);
+  g = await tunnelGate(env, new Request(urlNoWs), urlNoWs);
+  check('بدون upgrade رد می‌شود', g.ok === false && g.reason === 'not_ws');
+
+  // اشتراک + UUID
+  const { user } = await ensureUser(env.DB, { id: 7001, first_name: 'T' });
+  await env.DB.prepare('INSERT INTO subscriptions (user_id, product_id, title, token, uuid, days, expire_at, active, created_at) VALUES (?,0,?,?,?,?,?,1,?)')
+    .bind(user.id, 'تانل', 'tun1', uuid, 30, Math.floor(Date.now() / 1000) + 86400, Math.floor(Date.now() / 1000))
+    .run();
+  const found = await findSubscriptionByUuid(env, uuid);
+  check('اشتراک با UUID تانل پیدا می‌شود', !!found && found.token === 'tun1');
+  const none = await findSubscriptionByUuid(env, randomUuidV4());
+  check('UUID نامعتبر پیدا نمی‌شود', none === null);
+
+  // سقف/انقضا
+  const okQ = await subQuotaOk(env, found);
+  check('اشتراک سالم سقف را رد نمی‌کند', okQ.ok === true);
+  await env.DB.prepare('UPDATE subscriptions SET expire_at=? WHERE token=?').bind(Math.floor(Date.now() / 1000) - 5, 'tun1').run();
+  const exp = await subQuotaOk(env, await env.DB.prepare("SELECT * FROM subscriptions WHERE token='tun1'").first());
+  check('اشتراک منقضی رد می‌شود', exp.ok === false && exp.reason === 'expired', JSON.stringify(exp));
+  await setSetting(env.DB, 'tunnel_max_bytes', '10');
+  const quota = await subQuotaOk(env, await env.DB.prepare("SELECT * FROM subscriptions WHERE token='tun1'").first());
+  check('اشتراک منقضی همچنان رد است (سقف هم چک نمی‌شود)', quota.ok === false);
+  await env.DB.prepare('UPDATE subscriptions SET expire_at=?, traffic_used=? WHERE token=?').bind(Math.floor(Date.now() / 1000) + 86400, 500, 'tun1').run();
+  const rowNow = await env.DB.prepare("SELECT * FROM subscriptions WHERE token='tun1'").first();
+  const q2 = await subQuotaOk(env, rowNow);
+  check('اشتراک بالای سقف مصرف رد می‌شود', q2.ok === false && q2.reason === 'quota_exceeded', JSON.stringify(q2));
+  await setSetting(env.DB, 'tunnel_max_bytes', '0');
+
+  // شمارش مصرف
+  await recordTunnelTraffic(env, found.id, 1000, 500);
+  await recordTunnelTraffic(env, found.id, 2000, 400);
+  const tu = await tunnelUsage(env, found.id);
+  check('مصرف تانل شمارش می‌شود', tu.bytes_in === 3000 && tu.bytes_out === 900, JSON.stringify(tu));
+
+  // ensureTunnelUuid
+  const validKept = await ensureTunnelUuid(env, found);
+  check('UUID معتبر تغییر نمی‌کند', validKept === uuid, validKept);
+
+  // ساخت کانفیگ تانل — میزبان از origin واقعی Worker
+  await env.KV.put('worker_origin', 'https://novabot-sample.workers.dev');
+  const cfg = await buildTunnelConfig(env, found);
+  check('کانفیگ تانل ساخته می‌شود', cfg.ok === true, JSON.stringify(cfg).slice(0, 160));
+  check('کانفیگ شامل میزبان واقعی Worker است', cfg.uri.includes('novabot-sample.workers.dev'), cfg.uri);
+  check('کانفیگ شامل UUID اشتراک است', cfg.uri.includes(uuid), cfg.uri);
+  check('مسیر WS در کانفیگ هست', cfg.path === path && cfg.uri.includes(encodeURIComponent(path)), cfg.uri);
+
+  // لاگ خطای امن uuid را ماسک می‌کند (بدنهٔ کامل هرگز لاگ نمی‌شود)
+  const warns = [];
+  const origWarn = console.warn;
+  console.warn = (...a) => warns.push(a.join(' '));
+  logTunnelError('conn', new Error('boom ' + uuid));
+  console.warn = origWarn;
+  check('لاگ خطا uuid/توکن لو نمی‌دهد', warns.length === 1 && !warns[0].includes(uuid) && warns[0].includes('[uuid]'), warns[0]);
+}
+
+// ── ۳۳) AI Agent مدیر (بخش ۶) ──
+section('۳۳) AI Agent مدیر با Function Calling');
+{
+  const { setSetting, ensureUser, getUser } = await import('../src/db.js');
+  const { runAgent, listAiActions, undoAction } = await import('../src/agent.js');
+
+  // موک AI: فراخوانی اول ابزار، فراخوانی بعدی متن نهایی
+  const mkScripted = (tool, args) => {
+    let n = 0;
+    return {
+      async run(model, input) {
+        n++;
+        if (n === 1) {
+          return { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'c' + n, type: 'function', function: { name: tool, arguments: JSON.stringify(args) } }] } }] };
+        }
+        return { choices: [{ message: { role: 'assistant', content: 'کار انجام شد.' } }] };
+      },
+    };
+  };
+
+  // ۱) پیش‌فرض خاموش
+  const off = await makeEnv();
+  const { user: adminOff } = await ensureUser(off.DB, { id: 111, first_name: 'A' });
+  const r0 = await runAgent(off, { user: adminOff, input: 'آمار بده' });
+  check('AI Agent پیش‌فرض خاموش است', r0.ok === false && r0.disabled === true);
+
+  // ۲) فقط ادمین
+  const envAdmin = await makeEnv();
+  await setSetting(envAdmin.DB, 'ai_agent_enabled', '1');
+  await ensureUser(envAdmin.DB, { id: 111, first_name: 'Super' }); // super
+  await ensureUser(envAdmin.DB, { id: 222, first_name: 'User' }); // user
+  const normalUser = await getUser(envAdmin.DB, 222);
+  const rd = await runAgent(envAdmin, { user: normalUser, input: 'آمار بده' });
+  check('کاربر عادی دسترسی ندارد', rd.ok === false && rd.denied === true);
+
+  // ۳) ابزار خواندنی get_stats با ادمین
+  const envStats = await makeEnv();
+  await setSetting(envStats.DB, 'ai_agent_enabled', '1');
+  await setSetting(envStats.DB, 'ai_agent_model', '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  envStats.AI = mkScripted('get_stats', {});
+  const superUser = (await ensureUser(envStats.DB, { id: 111, first_name: 'Super' })).user;
+  const rStats = await runAgent(envStats, { user: superUser, input: 'آمار بده', autoconfirm: true });
+  check('get_stats اجرا می‌شود', rStats.ok === true && rStats.executed.some((x) => x.tool === 'get_stats'), JSON.stringify(rStats));
+  const logStats = await listAiActions(envStats.DB, 10);
+  check('اقدام خواندنی در ai_actions لاگ می‌شود', logStats.some((a) => a.tool === 'get_stats' && a.status === 'done'));
+
+  // ۴) بدون مجوز (ادمینِ بدون perms) → toggle_server بلاک
+  const envPerm = await makeEnv();
+  await setSetting(envPerm.DB, 'ai_agent_enabled', '1');
+  await setSetting(envPerm.DB, 'ai_agent_model', '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  envPerm.AI = mkScripted('toggle_server', { server_id: 1, active: false });
+  const srvSeed = (await envPerm.DB.prepare('SELECT * FROM servers LIMIT 1').first());
+  const { user: superP } = await ensureUser(envPerm.DB, { id: 111, first_name: 'S' });
+  // ادمین بدون مجوز products
+  await envPerm.DB.prepare("UPDATE users SET role='admin', perms='[]' WHERE id=? ").bind(111).run();
+  const lowAdmin = await getUser(envPerm.DB, 111);
+  const rPerm = await runAgent(envPerm, { user: lowAdmin, input: 'سرور را خاموش کن', autoconfirm: true });
+  check('عملیات بدون مجوز رد می‌شود', rPerm.denied.some((d) => d.tool === 'toggle_server' && d.reason === 'no_permission'), JSON.stringify(rPerm));
+  const logPerm = await listAiActions(envPerm.DB, 10);
+  check('رد بدون مجوز لاگ blocked می‌شود', logPerm.some((a) => a.tool === 'toggle_server' && a.status === 'blocked'));
+
+  // ۵) عملیات مالی بدون تأیید صریح → اجرا نمی‌شود
+  const envFin = await makeEnv();
+  await setSetting(envFin.DB, 'ai_agent_enabled', '1');
+  await setSetting(envFin.DB, 'ai_agent_model', '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  await ensureUser(envFin.DB, { id: 111, first_name: 'Super' });
+  await ensureUser(envFin.DB, { id: 333, first_name: 'Target' });
+  await envFin.DB.prepare('UPDATE users SET balance=5000 WHERE id=333').run();
+  const superFin = await getUser(envFin.DB, 111);
+  envFin.AI = mkScripted('adjust_balance', { user_id: 333, delta: 3000 });
+  const rNoConf = await runAgent(envFin, { user: superFin, input: 'به کاربر ۳۳۳ شارژ بده' });
+  check('بدون تأیید، عملیات مالی اجرا نمی‌شود', rNoConf.ok === true && rNoConf.pendingConfirm.length === 1, JSON.stringify(rNoConf));
+  check('موجودی تغییر نمی‌کند', (await getUser(envFin.DB, 333)).balance === 5000);
+  const logPend = await listAiActions(envFin.DB, 10);
+  check('نیاز به تأیید pending_confirm لاگ می‌شود', logPend.some((a) => a.tool === 'adjust_balance' && a.status === 'pending_confirm'));
+
+  // ۶) با تأیید صریح + undo
+  const envDo = await makeEnv();
+  await setSetting(envDo.DB, 'ai_agent_enabled', '1');
+  await setSetting(envDo.DB, 'ai_agent_model', '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  await ensureUser(envDo.DB, { id: 111, first_name: 'Super' });
+  await ensureUser(envDo.DB, { id: 333, first_name: 'Target' });
+  await envDo.DB.prepare('UPDATE users SET balance=5000 WHERE id=333').run();
+  const superDo = await getUser(envDo.DB, 111);
+  envDo.AI = mkScripted('adjust_balance', { user_id: 333, delta: 3000 });
+  const rDo = await runAgent(envDo, { user: superDo, input: 'شارژ بده', autoconfirm: true });
+  const did = rDo.executed.find((x) => x.tool === 'adjust_balance');
+  check('با تأیید، موجودی شارژ می‌شود', did && (await getUser(envDo.DB, 333)).balance === 8000, JSON.stringify(did));
+  const actions = await listAiActions(envDo.DB, 10);
+  const action = actions.find((a) => a.tool === 'adjust_balance' && a.status === 'done');
+  check('اقدام undoable ثبت می‌شود', action && action.undoable === true);
+
+  // undo فقط سوپر
+  const undoNo = await undoAction(envDo, { role: 'user', id: 333 }, action.id);
+  check('undo توسط غیرسوپر رد می‌شود', undoNo.ok === false && undoNo.reason === 'super_only');
+  const undoRes = await undoAction(envDo, superDo, action.id);
+  check('undo موجودی را برمی‌گرداند', undoRes.ok === true && (await getUser(envDo.DB, 333)).balance === 5000, JSON.stringify(undoRes));
+  const redo = await undoAction(envDo, superDo, action.id);
+  check('undo دوباره رد می‌شود', redo.ok === false && redo.reason === 'already_undone');
+
+  // ۷) تنظیم حساس هرگز قابل تغییر نیست
+  const envSec = await makeEnv();
+  await setSetting(envSec.DB, 'ai_agent_enabled', '1');
+  await setSetting(envSec.DB, 'ai_agent_model', '@cf/meta/llama-3.3-70b-instruct-fp8-fast');
+  const { user: superSec } = await ensureUser(envSec.DB, { id: 111, first_name: 'S' });
+  envSec.AI = mkScripted('update_setting', { key: 'telegram_bot_token', value: 'HACKED' });
+  const rSec = await runAgent(envSec, { user: superSec, input: 'توکن را عوض کن', autoconfirm: true });
+  check('تغییر توکن توسط AI رد می‌شود', rSec.denied.some((d) => d.tool === 'update_setting'), JSON.stringify(rSec));
+  const { getSetting } = await import('../src/db.js');
+  check('توکن ربات دست‌نخورده می‌ماند', (await getSetting(envSec.DB, 'telegram_bot_token', '')) !== 'HACKED');
+
+  // ۸) بدون بایندینگ AI → خطای تمیز
+  const envNoAi = await makeEnv({ ai: false });
+  await setSetting(envNoAi.DB, 'ai_agent_enabled', '1');
+  const { user: s2 } = await ensureUser(envNoAi.DB, { id: 111, first_name: 'S' });
+  const rNoAi = await runAgent(envNoAi, { user: s2, input: 'آمار' });
+  check('بدون بایندینگ AI خطای تمیز برمی‌گردد', rNoAi.ok === false && /بایندینگ/.test(rNoAi.text));
+}
+
 // ═══════════════════ نتیجه ═══════════════════
 globalThis.fetch = origFetch;
 console.log('\n' + '─'.repeat(50));
