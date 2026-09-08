@@ -46,7 +46,8 @@ export const SCHEMA = [
      streak          INTEGER DEFAULT 0,
      last_active_day TEXT DEFAULT '',
      missions_date   TEXT DEFAULT '',
-     missions_done   TEXT DEFAULT '[]'
+     missions_done   TEXT DEFAULT '[]',
+     spin_claim      TEXT DEFAULT ''              -- قفل اتمیک چرخ شانس روزانه
    )`,
 
   `CREATE TABLE IF NOT EXISTS servers (
@@ -54,7 +55,9 @@ export const SCHEMA = [
      name            TEXT NOT NULL,
      country         TEXT DEFAULT '',
      protocol        TEXT DEFAULT 'vless',         -- vless|vmess|trojan|ss|openvpn|mtproto|socks5
-     ip              TEXT DEFAULT '',
+     ip              TEXT DEFAULT '',              -- hostname یا IP واقعی
+     port            INTEGER DEFAULT 0,            -- پورت واقعی (برای MTProto/SOCKS5 الزامی)
+     secret          TEXT DEFAULT '',              -- سکرت MTProto / پسورد SOCKS5
      template        TEXT DEFAULT '',              -- قالب کانفیگ با {uuid} {days}
      health_url      TEXT DEFAULT '',              -- آدرس تست سلامت (اختیاری)
      speed_rank      INTEGER DEFAULT 5,            -- ۱ = پرسرعت‌ترین (برای تست رایگان)
@@ -118,6 +121,8 @@ export const SCHEMA = [
      active          INTEGER DEFAULT 1,
      is_trial        INTEGER DEFAULT 0,
      reminder_sent   INTEGER DEFAULT 0,
+     delivered_at    INTEGER DEFAULT 0,            -- زمان ارسال پیام تحویل (ضدتکرار)
+     delivery_claim  TEXT DEFAULT '',              -- شناسهٔ قفل تحویل (ضدتکرار اتمیک)
      created_at      INTEGER DEFAULT 0
    )`,
 
@@ -146,8 +151,71 @@ export const SCHEMA = [
 
 export async function initDb(db) {
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  await migrate(db);
   await seedIfEmpty(db);
 }
+
+/**
+ * ستون‌هایی که ممکن است در نصب‌های قدیمی وجود نداشته باشند.
+ * `CREATE TABLE IF NOT EXISTS` جدول موجود را تغییر نمی‌دهد، پس اینجا
+ * به‌صورت افزایشی اضافه می‌شوند.
+ */
+const COLUMN_MIGRATIONS = [
+  ['servers', 'port', 'INTEGER DEFAULT 0'],
+  ['servers', 'secret', "TEXT DEFAULT ''"],
+  ['subscriptions', 'delivered_at', 'INTEGER DEFAULT 0'],
+  ['subscriptions', 'delivery_claim', "TEXT DEFAULT ''"],
+  ['users', 'spin_claim', "TEXT DEFAULT ''"],
+];
+
+/** الگوهای SQL هاست‌های نمونه که هرگز نباید تحویل داده شوند */
+export const PLACEHOLDER_HOST_SQL =
+  "(ip IS NULL OR TRIM(ip)='' OR LOWER(ip) LIKE '%example.com' OR LOWER(ip) LIKE '%example.net'" +
+  " OR LOWER(ip) LIKE '%example.org' OR LOWER(ip) LIKE '%.test' OR LOWER(ip) LIKE '%.invalid'" +
+  " OR LOWER(ip)='localhost')";
+
+async function tableColumns(db, table) {
+  try {
+    const r = await db.prepare(`PRAGMA table_info(${table})`).all();
+    return new Set((r.results || []).map((c) => c.name));
+  } catch {
+    return null;
+  }
+}
+
+/** مهاجرت‌های افزایشی — روی دیتابیس‌های موجود هم اجرا می‌شوند */
+export async function migrate(db) {
+  const cache = {};
+  for (const [table, column, type] of COLUMN_MIGRATIONS) {
+    if (!(table in cache)) cache[table] = await tableColumns(db, table);
+    const cols = cache[table];
+    if (cols && cols.has(column)) continue;
+    try {
+      await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
+      if (cols) cols.add(column);
+    } catch {
+      /* ستون از قبل وجود دارد */
+    }
+  }
+
+  // مهاجرت داده‌ای: سرورهای نمونه (example.com و …) هرگز نباید فعال بمانند.
+  // فقط تغییر seed کافی نیست چون flag «seeded» در نصب‌های قبلی ثبت شده است.
+  const done = await db.prepare('SELECT value FROM kv WHERE key=?').bind('migration:placeholder_servers_v1').first();
+  if (!done) {
+    await db.prepare(`UPDATE servers SET active=0, healthy=0 WHERE ${PLACEHOLDER_HOST_SQL}`).run();
+    await db
+      .prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+      .bind('migration:placeholder_servers_v1', '1')
+      .run();
+  }
+}
+
+/** تعداد سرورهای واقعیِ فعال (بدون هاست نمونه) */
+export async function realActiveServerCount(db) {
+  const row = await db.prepare(`SELECT COUNT(*) c FROM servers WHERE active=1 AND NOT ${PLACEHOLDER_HOST_SQL}`).first();
+  return Number(row?.c || 0);
+}
+
 
 /** داده‌های اولیه — فقط یک‌بار، قابل ویرایش از پنل مدیریت */
 async function seedIfEmpty(db) {
@@ -175,30 +243,36 @@ async function seedIfEmpty(db) {
     run('INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, sort) VALUES (?,?,?,?,?,?,?,?)',
       title, cat, proto, days, gb, usd, coinPrices[sort] || 0, sort);
   }
-  const servers = [
-    ['آلمان ۱', '🇩🇪 آلمان', 'vless', 'de1.example.com', 1],
-    ['هلند ۱', '🇳🇱 هلند', 'vless', 'nl1.example.com', 2],
-    ['فنلاند ۱', '🇮 فنلاند', 'vless', 'fi1.example.com', 3],
-    ['انگلیس ۱', '🇬🇧 انگلیس', 'vmess', 'uk1.example.com', 4],
-    ['آمریکا ۱', '🇺🇸 آمریکا', 'trojan', 'us1.example.com', 4],
-    ['کانادا ۱', '🇨🇦 کانادا', 'ss', 'ca1.example.com', 5],
-    ['آلمان ۲ (بکاپ)', '🇩 آلمان', 'vless', 'de2.example.com', 2],
-    ['هلند ۲ (بکاپ)', '🇳 هلند', 'vmess', 'nl2.example.com', 3],
-    ['فرانسه ۱ (بکاپ)', '🇫 فرانسه', 'trojan', 'fr1.example.com', 4],
-    ['سوئد ۱ (بکاپ)', '🇸🇪 سوئد', 'vless', 'se1.example.com', 5],
+  // ⚠️ سرورهای زیر فقط «نمونهٔ قالب» هستند: با active=0 و healthy=0 ثبت می‌شوند
+  //    تا هرگز به کاربر تحویل داده نشوند. ادمین باید سرور واقعی خودش را
+  //    از پنل مدیریت ثبت کند (نام، کشور، پروتکل، host/IP، port، secret، قالب، health).
+  const sampleServers = [
+    ['نمونه آلمان (غیرفعال)', '🇩🇪 آلمان', 'vless', 'de1.example.com', 1],
+    ['نمونه هلند (غیرفعال)', '🇳🇱 هلند', 'vmess', 'nl1.example.com', 2],
+    ['نمونه انگلیس (غیرفعال)', '🇬🇧 انگلیس', 'trojan', 'uk1.example.com', 3],
+    ['نمونه MTProto (غیرفعال)', '🇩🇪 آلمان', 'mtproto', 'mtp1.example.com', 3],
   ];
-  for (const [name, country, proto, ip, rank] of servers) {
-    run('INSERT INTO servers (name, country, protocol, ip, template, speed_rank) VALUES (?,?,?,?,?,?)',
-      name, country, proto, ip,
-      proto === 'trojan' ? `trojan://{uuid}@${ip}:443?type=tcp&security=tls#{name}` :
-      proto === 'ss' ? `ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTp7dXVpZH0@${ip}:8388#{name}` :
-      proto === 'vmess' ? '' :
-      `vless://{uuid}@${ip}:443?type=ws&security=tls&path=%2Fvless#{name}`,
-      rank);
+  for (const [name, country, proto, ip, rank] of sampleServers) {
+    run(
+      'INSERT INTO servers (name, country, protocol, ip, port, secret, template, speed_rank, active, healthy) VALUES (?,?,?,?,?,?,?,?,0,0)',
+      name,
+      country,
+      proto,
+      ip,
+      0,
+      '',
+      '',
+      rank
+    );
   }
   await db.batch(stmts);
   await db.prepare('INSERT INTO kv (key,value) VALUES (?,?)').bind('seeded', '1').run();
+  await db
+    .prepare('INSERT INTO kv (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+    .bind('migration:placeholder_servers_v1', '1')
+    .run();
 }
+
 
 // ─── تنظیمات ───
 export async function getSetting(db, key, fallback = '') {

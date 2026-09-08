@@ -4,7 +4,7 @@
 import { verifyInitData, json, html, clamp } from './util.js';
 import { getUser, weekKey, todayStr, faDigits } from './db.js';
 import { getNum, getSettingValue } from './texts.js';
-import { payWithCoins } from './pay.js';
+import { payWithCoins, sendDelivery } from './pay.js';
 import { getChatMember } from './tg.js';
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -20,6 +20,11 @@ export const tierOf = (totalTaps) => {
   for (const x of TIERS) if (totalTaps >= x.min) t = x;
   return t.name;
 };
+
+/** جوایز چرخ شانس — [سکه, وزن] — ترتیب همان ترتیب بخش‌های گرافیکی چرخ است */
+export const SPIN_PRIZES = [
+  [5, 30], [10, 25], [25, 20], [50, 12], [100, 8], [250, 4], [1000, 1],
+];
 
 const energyCap = (u) => 400 + (u.energy_level || 1) * 100;
 const regenRate = (u) => 1 + (u.speed_level || 1);
@@ -65,6 +70,7 @@ async function statePayload(env, u) {
     energyCost: energyCost(u),
     speedCost: speedCost(u),
     spinDone: u.last_spin_date === todayStr(),
+    spinPrizes: SPIN_PRIZES.map((p) => p[0]),
     streak: u.streak,
     missions: {
       done: missionsDone,
@@ -135,22 +141,32 @@ export async function handleGameApi(env, request, path) {
   }
 
   if (path === '/api/game/spin') {
-    if (u.last_spin_date === todayStr()) return json({ ok: false, reason: 'already' });
-    const prizes = [
-      [5, 30], [10, 25], [25, 20], [50, 12], [100, 8], [250, 4], [1000, 1],
-    ];
-    const total = prizes.reduce((s, p) => s + p[1], 0);
+    const today = todayStr();
+    if (u.last_spin_date === today) return json({ ok: false, reason: 'already', spinDone: true, coins: u.coins });
+    // ── قفل اتمیک: حتی با دابل‌کلیک یا رفرش، فقط یک چرخش در روز ──
+    const claim = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    await db
+      .prepare("UPDATE users SET last_spin_date=?, spin_claim=? WHERE id=? AND COALESCE(last_spin_date,'') <> ?")
+      .bind(today, claim, u.id, today)
+      .run();
+    const row = await db.prepare('SELECT last_spin_date, spin_claim, coins FROM users WHERE id=?').bind(u.id).first();
+    if (!row || row.last_spin_date !== today || row.spin_claim !== claim) {
+      return json({ ok: false, reason: 'already', spinDone: true, coins: row?.coins ?? u.coins });
+    }
+    const total = SPIN_PRIZES.reduce((sum, p) => sum + p[1], 0);
     let r = Math.random() * total;
-    let prize = prizes[0][0];
-    for (const [c, w] of prizes) {
-      r -= w;
+    let index = 0;
+    for (let i = 0; i < SPIN_PRIZES.length; i++) {
+      r -= SPIN_PRIZES[i][1];
       if (r <= 0) {
-        prize = c;
+        index = i;
         break;
       }
     }
-    await db.prepare('UPDATE users SET coins=coins+?, last_spin_date=? WHERE id=?').bind(prize, todayStr(), u.id).run();
-    return json({ ok: true, prize, coins: u.coins + prize });
+    const prize = SPIN_PRIZES[index][0];
+    await db.prepare('UPDATE users SET coins=coins+? WHERE id=?').bind(prize, u.id).run();
+    const fresh = await getUser(db, u.id);
+    return json({ ok: true, prize, index, segments: SPIN_PRIZES.length, coins: fresh?.coins ?? u.coins + prize, spinDone: true });
   }
 
   if (path === '/api/game/mission') {
@@ -182,8 +198,15 @@ export async function handleGameApi(env, request, path) {
   if (path === '/api/game/buy') {
     const p = await db.prepare("SELECT * FROM products WHERE id=? AND category='coin' AND enabled=1").bind(Number(body.productId)).first();
     if (!p) return json({ error: 'notfound' }, 404);
-    const res = await payWithCoins(env, u, p);
-    if (!res.ok) return json({ ok: false, reason: res.reason });
+    let res;
+    try {
+      res = await payWithCoins(env, u, p);
+    } catch (e) {
+      return json({ ok: false, reason: 'error', message: 'خرید انجام نشد؛ بعداً تلاش کنید.' });
+    }
+    if (!res.ok) return json({ ok: false, reason: res.reason, message: res.message || res.reason });
+    // ✅ یک پیام تحویل در پیوی بات (ضدتکرار)
+    await sendDelivery(env, u, p.title, res.sub, { protocol: p.protocol });
     return json({ ok: true, token: res.sub.token });
   }
 
@@ -228,8 +251,15 @@ body{background:var(--bg);color:var(--txt);min-height:100vh;padding-bottom:84px}
 .row{display:flex;gap:10px}.row .card{flex:1}
 h3{font-size:15px;margin-bottom:8px}
 .mut{color:var(--mut);font-size:12px}
-#wheel{width:230px;height:230px;border-radius:50%;margin:10px auto;border:8px solid #22314f;background:conic-gradient(#f5b31e 0 51.4deg,#22314f 51.4deg 102.8deg,#38d39f 102.8deg 154.3deg,#22314f 154.3deg 205.7deg,#7c5cff 205.7deg 257.1deg,#22314f 257.1deg 308.6deg,#ff5470 308.6deg 360deg);transition:transform 3.4s cubic-bezier(.15,.9,.1,1);position:relative}
-#wheel:after{content:'🎁';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px}
+.wheelbox{position:relative;width:250px;height:250px;margin:12px auto}
+.pointer{position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:26px solid var(--gold);z-index:3;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
+#wheel{width:250px;height:250px;border-radius:50%;border:8px solid #22314f;box-sizing:border-box;background:conic-gradient(#f5b31e 0 51.43deg,#2b3b5e 51.43deg 102.86deg,#38d39f 102.86deg 154.29deg,#2b3b5e 154.29deg 205.71deg,#7c5cff 205.71deg 257.14deg,#2b3b5e 257.14deg 308.57deg,#ff5470 308.57deg 360deg);position:relative;will-change:transform;transform:rotate(0deg)}
+#wheel.spinning{transition:transform 4s cubic-bezier(.17,.85,.2,1)}
+.slice{position:absolute;top:50%;left:50%;width:0;height:0;font-size:13px;font-weight:800;color:#0d1526;pointer-events:none}
+.slice span{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;text-shadow:0 1px 2px rgba(255,255,255,.35)}
+.hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;background:#101b33;border:4px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:24px;z-index:2}
+#spinResult{margin-top:10px;font-size:15px;font-weight:800;color:var(--gold);min-height:22px}
+#spinErr{color:#ff8a9c;font-size:13px;min-height:18px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 td{padding:8px 4px;border-bottom:1px solid #22314f}
 .float{position:fixed;color:var(--gold);font-weight:800;font-size:20px;pointer-events:none;animation:up .9s ease-out forwards;z-index:99}
@@ -260,8 +290,10 @@ td{padding:8px 4px;border-bottom:1px solid #22314f}
 
 <div class="page" id="pg-spin">
  <div class="card" style="text-align:center">
-  <h3>🎡 چرخ شانس روزانه</h3><div class="mut">هر روز یک چرخش رایگان — تا ۱۰۰۰ سکه!</div>
-  <div id="wheel"></div>
+  <h3>🎡 چرخ شانس روزانه</h3><div class="mut">هر روز فقط یک چرخش رایگان — تا ۱۰۰۰ سکه!</div>
+  <div class="wheelbox"><div class="pointer"></div><div id="wheel"></div><div class="hub">🎁</div></div>
+  <div id="spinResult"></div>
+  <div id="spinErr"></div>
   <button class="btn" id="spinBtn">بچرخون! 🎰</button>
  </div>
 </div>
@@ -301,7 +333,7 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTi
 function paint(){if(!S)return;$('coins').textContent=S.coins.toLocaleString('fa-IR');$('tier').textContent=S.tier;$('tier2').textContent=S.tier;
  $('ecap').textContent=S.energyCap;$('elvl').textContent=S.energyLevel;$('slvl').textContent=S.speedLevel;
  $('streak').textContent=S.streak;$('buyE').textContent='ارتقا — '+S.energyCost.toLocaleString('fa-IR')+' 🪙';$('buyS').textContent='ارتقا — '+S.speedCost.toLocaleString('fa-IR')+' 🪙';
- $('spinBtn').disabled=S.spinDone;$('spinBtn').textContent=S.spinDone?'امروز چرخاندی ✅':'بچرخون! 🎰';
+ if(!spinning){$('spinBtn').disabled=!!S.spinDone;$('spinBtn').textContent=S.spinDone?'امروز چرخاندی ✅':'بچرخون! 🎰';}
  $('prize').textContent=S.leaguePrize.toLocaleString('fa-IR');
  for(const[m,el]of[['channel','m-channel'],['invite','m-invite'],['streak','m-streak']]){const card=$(el);const done=S.missions.done.includes(m);
   card.querySelectorAll('.claim').forEach(b=>{b.disabled=done||!(m==='invite'?S.missions.invited:m==='streak'?S.streak>=2:true)});
@@ -309,7 +341,11 @@ function paint(){if(!S)return;$('coins').textContent=S.coins.toLocaleString('fa-
  if(!S.missions.channel)$('m-channel').style.display='none';
  const sl=$('shoplist');sl.innerHTML='';for(const it of S.shopItems){const d=document.createElement('div');d.className='item';
   d.innerHTML='<div><b>'+it.title+'</b><div class="mut">'+it.days+' روز</div></div><button class="btn" style="width:auto;margin:0;padding:8px 14px">'+(it.coin_price||0).toLocaleString('fa-IR')+' 🪙</button>';
-  d.querySelector('button').onclick=async()=>{const r=await api('/api/game/buy',{productId:it.id});if(r.ok){toast('✅ خرید شد! لینک ساب در پیوی بات ارسال می‌شود');S.coins-=(it.coin_price||0);paint()}else toast('❌ '+(r.reason==='سکه کافی نیست'?'سکه کافی نیست':'خطا'))};
+  d.querySelector('button').onclick=async(ev)=>{const bt=ev.currentTarget;if(bt.disabled)return;bt.disabled=true;const old=bt.textContent;bt.textContent='⏳';
+  let r=null;try{r=await api('/api/game/buy',{productId:it.id})}catch(e){r=null}
+  bt.disabled=false;bt.textContent=old;
+  if(r&&r.ok){toast('✅ خرید شد! کانفیگ در پیوی بات ارسال شد');S.coins-=(it.coin_price||0);paint()}
+  else toast('❌ '+((r&&(r.message||r.reason))||'خطا در ارتباط'))};
   sl.appendChild(d)}}
 function energyTick(){if(!S)return;const nowT=Date.now();const dt=(nowT-lastT)/1000;lastT=nowT;lastE=Math.min(S.energyCap,lastE+dt*S.regen);$('energy').textContent=Math.floor(lastE);$('efill').style.width=(lastE/S.energyCap*100)+'%'}
 setInterval(energyTick,500);
@@ -323,8 +359,37 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.que
  if(b.dataset.pg==='league')loadLeague();});
 $('buyE').onclick=async()=>{const r=await api('/api/game/upgrade',{type:'energy'});if(r.ok){Object.assign(S,r);paint();toast('✅ ارتقا یافت')}else toast('🪙 سکه کافی نیست')};
 $('buyS').onclick=async()=>{const r=await api('/api/game/upgrade',{type:'speed'});if(r.ok){Object.assign(S,r);paint();toast('✅ ارتقا یافت')}else toast('🪙 سکه کافی نیست')};
-$('spinBtn').onclick=async()=>{$('spinBtn').disabled=true;const r=await api('/api/game/spin',{});if(r.ok){const deg=1440+Math.floor(Math.random()*360);$('wheel').style.transform='rotate('+deg+'deg)';
- setTimeout(()=>{toast('🎉 '+r.prize+' سکه بردی!');S.coins=r.coins;S.spinDone=true;paint()},3500)}else toast('امروز استفاده شده ⏰')};
+/* ── چرخ شانس: یک درخواست، انیمیشن واقعی، بدون گیر کردن در حالت disabled ── */
+let wheelRot=0,spinning=false;
+function buildWheelLabels(){const w=$('wheel');if(!w||w.dataset.built)return;const prizes=(S&&S.spinPrizes)||[5,10,25,50,100,250,1000];const n=prizes.length,seg=360/n;
+ for(let i=0;i<n;i++){const a=(i*seg+seg/2)*Math.PI/180;const R=88;const el=document.createElement('div');el.className='slice';
+  el.innerHTML='<span style="left:'+(Math.sin(a)*R)+'px;top:'+(-Math.cos(a)*R)+'px">'+prizes[i].toLocaleString('fa-IR')+'</span>';w.appendChild(el)}
+ w.dataset.built='1'}
+function finishSpin(r){spinning=false;S.coins=r.coins;S.spinDone=true;
+ $('spinResult').textContent='🎉 '+Number(r.prize).toLocaleString('fa-IR')+' سکه بردی!';
+ toast('🎉 '+Number(r.prize).toLocaleString('fa-IR')+' سکه بردی!');paint()}
+$('spinBtn').onclick=async()=>{
+ if(spinning||!S||S.spinDone)return;                       // ⛔ ضد دابل‌کلیک و ضد جایزهٔ تکراری
+ spinning=true;const b=$('spinBtn');b.disabled=true;b.textContent='در حال چرخش… ⏳';
+ $('spinErr').textContent='';$('spinResult').textContent='';
+ let r=null;
+ try{r=await api('/api/game/spin',{})}catch(e){r=null}
+ if(!r||(!r.ok&&r.reason!=='already')){                     // ❗ خطای شبکه/سرور → UI آزاد می‌شود
+  spinning=false;$('spinErr').textContent='⛔ ارتباط برقرار نشد. دوباره تلاش کنید.';
+  b.disabled=false;b.textContent='بچرخون! 🎰';return}
+ if(!r.ok){spinning=false;S.spinDone=true;if(typeof r.coins==='number')S.coins=r.coins;
+  $('spinErr').textContent='⏰ امروز چرخش رایگانت را استفاده کرده‌ای.';paint();return}
+ buildWheelLabels();
+ const n=r.segments||((S.spinPrizes&&S.spinPrizes.length)||7),seg=360/n;
+ const w=$('wheel');
+ w.classList.remove('spinning');void w.offsetWidth;        // reset انیمیشن
+ w.classList.add('spinning');
+ wheelRot+=360*5+(360-(r.index*seg+seg/2))-((wheelRot%360)); // همیشه رو به جلو، دقیقاً روی بخش برنده
+ w.style.transform='rotate('+wheelRot+'deg)';
+ let done=false;const end=()=>{if(done)return;done=true;w.removeEventListener('transitionend',end);finishSpin(r)};
+ w.addEventListener('transitionend',end);
+ setTimeout(end,4600);                                      // شبکهٔ ایمنی اگر transitionend نیامد
+};
 document.querySelectorAll('#m-channel .mb')[0]?.addEventListener('click',()=>{if(S.missions.channelUrl)open(S.missions.channelUrl,'_blank')});
 document.querySelectorAll('.claim').forEach(b=>b.onclick=async e=>{const card=e.target.closest('.card');const m=card.id.replace('m-','');
  const r=await api('/api/game/mission',{mission:m});
@@ -336,6 +401,6 @@ async function loadLeague(){const r=await fetch('/api/game/league',{method:'POST
  if(!r.top.length)tb.innerHTML='<tr><td colspan="3" style="text-align:center;color:var(--mut)">هنوز کسی تپ نزده — تو شروع کن! 🚀</td></tr>';
  $('myrank').textContent=r.me.rank;$('mytaps').textContent=r.me.weeklyTaps.toLocaleString('fa-IR')}
 (async()=>{S=await api('/api/game/init',{});if(S.error){document.body.innerHTML='<div style="padding:40px;text-align:center">⚠️ فقط از داخل تلگرام باز کنید</div>';return}
- lastE=S.energy;paint();flushTimer=setInterval(flushTaps,3000)})();
+ lastE=S.energy;buildWheelLabels();paint();flushTimer=setInterval(flushTaps,3000)})();
 </script></body></html>`);
 }
