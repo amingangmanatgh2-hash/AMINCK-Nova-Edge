@@ -15,6 +15,7 @@ import { scheduled } from './jobs.js';
 import { gameHtml, handleGameApi } from './game.js';
 import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
 import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
+import { probeTargets, probeReport } from './cleanip.js';
 import {
   handleStart, handleUserText, handleUserCallback, setState, showMainMenu, openProduct, openShop, handleReceiptPhoto,
 } from './user.js';
@@ -47,6 +48,11 @@ export default {
       await rememberOrigin(env, url.origin);
       if (path === '/setup' || path === '/setup/') return await handleSetup(env, request, url);
       if (path === `/webhook` || path === '/webhook/') return await webhook(request, env, url);
+      if (path === '/api/probe/targets') {
+        const targets = await probeTargets(env, Number(url.searchParams.get('n')) || 6);
+        return json({ ok: true, targets });
+      }
+      if (path === '/api/probe/report') return await probeReport(env, request);
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
       if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
       if (path === '/panel' || path === '/panel/') return await panelHtml(env);

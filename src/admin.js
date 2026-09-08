@@ -58,7 +58,8 @@ export async function openAdminPanel(ctx, editMsg) {
   const warn = realServers === 0
     ? '\n\n⚠️ <b>هیچ سرور واقعی فعالی ثبت نشده است!</b>\nتا زمانی که از «🖥 سرورها» یک سرور با host/IP، port و secret واقعی ثبت نکنید، خرید و تحویل کانفیگ متوقف است.'
     : '';
-  const text = `📊 <b>پنل مدیریت</b>\n\n👤 ${u.role === 'super' ? '👑 سوپرادمین' : '🛡 ادمین'}: ${u.first_name || u.id}\n💵 نرخ دلار: ${faDigits(rate.toLocaleString('en-US'))} تومان\n🖥 سرور واقعی فعال: ${faDigits(realServers)}${warn}`;
+  const rateLine = rate ? `${faDigits(rate.toLocaleString('en-US'))} تومان` : '⛔ در دسترس نیست (نرخ دستی تنظیم کنید)';
+  const text = `📊 <b>پنل مدیریت</b>\n\n👤 ${u.role === 'super' ? '👑 سوپرادمین' : '🛡 ادمین'}: ${u.first_name || u.id}\n💵 نرخ دلار: ${rateLine}\n🖥 سرور واقعی فعال: ${faDigits(realServers)}${warn}`;
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
 }
@@ -77,12 +78,13 @@ async function showStats(ctx, editMsg) {
   const pendingR = await q("SELECT COUNT(*) v FROM receipts WHERE status='pending'");
   const rate = await getUsdRate(ctx.env);
   const refs = await q('SELECT COALESCE(SUM(invited_count),0) v FROM users');
+  const usdLine = rate ? `$${faDigits((monthSales / rate).toFixed(1))}` : '—';
   const text = [
     `📊 <b>آمار فروش</b>\n`,
     `📅 امروز: <b>${fmtToman(daySales)}</b> (${faDigits(dayCount)} سفارش)`,
     `🗓 هفته: <b>${fmtToman(weekSales)}</b>`,
     `📆 ماه: <b>${fmtToman(monthSales)}</b>`,
-    `💵 معادل دلاری ماه: <b>$${faDigits((monthSales / rate).toFixed(1))}</b>\n`,
+    `💵 معادل دلاری ماه: <b>${usdLine}</b>\n`,
     `👥 کل کاربران: ${faDigits(usersTotal)} | جدید هفته: ${faDigits(usersNew)}`,
     `🎯 مجموع دعوت‌های رفرال: ${faDigits(refs)}`,
     `🧾 فیش‌های در انتظار: ${faDigits(pendingR)}`,

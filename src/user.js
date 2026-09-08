@@ -4,7 +4,7 @@
 import { fmtToman, faDigits, fmtDate, getUser, addBalance, hasPerm } from './db.js';
 import { send, editText, answerCb, ikb, btn, ubtn, menuKb, userMainKb, forceReply, tg } from './tg.js';
 import { getText, getSettingValue, getNum, isEnabled } from './texts.js';
-import { productPriceToman, priceLine } from './pricing.js';
+import { productPriceToman, priceLine, RATE_UNAVAILABLE_MESSAGE } from './pricing.js';
 import { createOrder, payWithWallet, payWithCoins, approveReceipt, sendDelivery, assertDeliverable } from './pay.js';
 import { analyzeReceipt } from './verify.js';
 import { grantTrial, buildConfigs, buildDirectLinks } from './subs.js';
@@ -108,6 +108,9 @@ async function startBuy(ctx, productId, method) {
   const p = await ctx.db.prepare('SELECT * FROM products WHERE id=?').bind(productId).first();
   if (!p) return send(ctx.token, ctx.user.id, '❌ محصول یافت نشد.');
   const price = await productPriceToman(ctx.env, p);
+
+  // ⛔ بدون نرخ معتبر، خرید با قیمت صفر انجام نمی‌شود
+  if (!price) return send(ctx.token, ctx.user.id, RATE_UNAVAILABLE_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
 
   if (method === 'w') {
     if (!(await isEnabled(ctx.db, 'wallet_enabled'))) return send(ctx.token, ctx.user.id, '🚫 پرداخت کیف پولی موقتاً غیرفعال است.');
@@ -572,6 +575,7 @@ export function customProductOf(step) {
 async function buyCustom(ctx, spec, method) {
   const p = customProductOf(spec);
   const price = Math.round((await productPriceToman(ctx.env, p)) / 1000) * 1000;
+  if (!price) return send(ctx.token, ctx.user.id, RATE_UNAVAILABLE_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   const canBuy = await assertDeliverable(ctx.env, p);
   if (!canBuy.ok) return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   if (method === 'buywc') {
