@@ -7,21 +7,10 @@
 node_modules/
 
 # Build / output
-dist/
-out/
 .wrangler/
+dist/
 coverage/
-*.tsbuildinfo
-
-# Local artifacts
 *.log
 .DS_Store
-.env
-.env.*
-!.env.example
 tmp/
-# Miniflare test workdir
-.nova-test-workdir/
-
-# esbuild temp output for scripts/build-public.mjs
-.nova-build/
+assets/
