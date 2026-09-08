@@ -5,7 +5,7 @@ import { createSubscription } from './subs.js';
 import { addBalance, getUser, fmtToman, faDigits } from './db.js';
 import { getNum, getSettingValue } from './texts.js';
 import { send, ikb, ubtn, btn } from './tg.js';
-import { deepLink } from './util.js';
+import { deepLink, getBase } from './util.js';
 
 /** ایجاد سفارش */
 export async function createOrder(env, userId, product, amountToman, method, status = 'pending') {
@@ -121,7 +121,7 @@ export async function approveReceipt(env, receipt) {
 
 /** پیام تحویل با QR و لینک ساب */
 export async function sendDelivery(env, user, productTitle, sub) {
-  const base = (env.WORKER_URL || '').replace(/\/$/, '');
+  const base = await getBase(env);
   const subUrl = base ? `${base}/sub/${sub.token}` : `https://t.me/${(await env.DB.prepare("SELECT value FROM settings WHERE key='bot_username'").first())?.value || ''}`;
   const lines = [
     `✅ <b>تحویل شد!</b>\n`,

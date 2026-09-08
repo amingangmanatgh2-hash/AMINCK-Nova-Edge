@@ -9,7 +9,7 @@ import { createOrder, payWithWallet, payWithCoins, approveReceipt, sendDelivery 
 import { analyzeReceipt } from './verify.js';
 import { grantTrial, buildConfigs } from './subs.js';
 import { makeBrandQR } from './qr.js';
-import { tmpl, deepLink, workerBase, parseMoney } from './util.js';
+import { tmpl, deepLink, getBase, parseMoney } from './util.js';
 import { deliverOrder } from './pay.js';
 import { openAdminPanel, handleAdminCallback, handleAdminText } from './admin.js';
 
@@ -264,7 +264,7 @@ export async function myOrders(ctx) {
 export async function showQR(ctx, token) {
   const sub = await ctx.db.prepare('SELECT * FROM subscriptions WHERE token=?').bind(token).first();
   if (!sub || sub.user_id !== ctx.user.id) return answerCb(ctx.token, ctx.cbId, 'یافت نشد');
-  const base = workerBase(null, ctx.env);
+  const base = await getBase(ctx.env);
   const url = base ? `${base}/sub/${sub.token}` : `token:${sub.token}`;
   const png = await makeBrandQR(url, sub.title);
   const form = new FormData();
@@ -562,7 +562,7 @@ export async function handleUserText(ctx, text) {
 
 export async function openGame(ctx) {
   if (!(await isEnabled(ctx.db, 'game_enabled'))) return send(ctx.token, ctx.user.id, '🚫 مینی‌اپ موقتاً غیرفعال است.');
-  const base = workerBase(null, ctx.env);
+  const base = await getBase(ctx.env);
   const kb = ikb([[{ text: '🎮 باز کردن مینی‌اپ سکه‌ای', web_app: { url: `${base}/app` } }]]);
   await send(
     ctx.token,

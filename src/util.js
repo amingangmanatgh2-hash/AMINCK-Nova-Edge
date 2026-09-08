@@ -54,6 +54,16 @@ export function workerBase(request, env) {
   }
 }
 
+/** آدرس عمومی ورکر برای لینک ساب/QR/وب‌اپ — از vars یا کش خودکار */
+export async function getBase(env) {
+  if (env.WORKER_URL) return String(env.WORKER_URL).replace(/\/$/, '');
+  try {
+    const cached = await env.KV.get('worker_origin');
+    if (cached) return cached;
+  } catch {}
+  return '';
+}
+
 /** جایگذاری {name} در متن */
 export function tmpl(str, vars = {}) {
   return String(str).replace(/\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : ''));

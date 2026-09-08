@@ -3,6 +3,12 @@
 // ═══════════════════════════════════════════════════════════════════
 
 export const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS kv (
+     key   TEXT PRIMARY KEY,
+     value TEXT NOT NULL DEFAULT '',
+     exp   INTEGER DEFAULT 0
+   )`,
+
   `CREATE TABLE IF NOT EXISTS settings (
      key   TEXT PRIMARY KEY,
      value TEXT NOT NULL DEFAULT ''
@@ -140,6 +146,58 @@ export const SCHEMA = [
 
 export async function initDb(db) {
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
+  await seedIfEmpty(db);
+}
+
+/** داده‌های اولیه — فقط یک‌بار، قابل ویرایش از پنل مدیریت */
+async function seedIfEmpty(db) {
+  const flag = await db.prepare('SELECT value FROM kv WHERE key=?').bind('seeded').first();
+  if (flag) return;
+  const stmts = [];
+  const run = (sql, ...a) => stmts.push(db.prepare(sql).bind(...a));
+  run(`INSERT OR IGNORE INTO settings (key,value) VALUES ('seed_note','داده نمونه — از پنل مدیریت قابل تغییر است')`);
+  const products = [
+    ['⚡ VLESS برنزی — ۱ ماهه', 'vless', 'vless', 30, 0, 0.9, 1],
+    ['⚡ VLESS نقره‌ای — ۳ ماهه', 'vless', 'vless', 90, 0, 2.2, 2],
+    ['⚡ VLESS طلایی — ۶ ماهه', 'vless', 'vless', 180, 0, 3.9, 3],
+    ['⚡ VLESS الماس — ۱ ساله', 'vless', 'vless', 365, 0, 6.9, 4],
+    ['🛰 V2ray VMess — ۱ ماهه', 'vmess', 'vmess', 30, 0, 0.9, 5],
+    ['🐴 Trojan — ۱ ماهه', 'trojan', 'trojan', 30, 0, 1.1, 6],
+    ['🧩 Shadowsocks — ۱ ماهه', 'ss', 'ss', 30, 0, 1.0, 7],
+    ['🔐 OpenVPN — ۱ ماهه', 'openvpn', 'openvpn', 30, 0, 1.2, 8],
+    ['📡 MTProto اختصاصی تلگرام — ۱ ماهه', 'mtproto', 'mtproto', 30, 0, 0.8, 9],
+    ['🧦 SOCKS5 اختصاصی — ۱ ماهه', 'socks5', 'socks5', 30, 0, 0.8, 10],
+    ['🪙 کانفیگ اقتصادی — ۱۰ روزه', 'coin', 'vless', 10, 5, 0, 100],
+    ['🪙 کانفیگ اقتصادی — ۳۰ روزه', 'coin', 'vless', 30, 20, 0, 101],
+  ];
+  const coinPrices = { 100: 3000, 101: 8000 };
+  for (const [title, cat, proto, days, gb, usd, sort] of products) {
+    run('INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, sort) VALUES (?,?,?,?,?,?,?,?)',
+      title, cat, proto, days, gb, usd, coinPrices[sort] || 0, sort);
+  }
+  const servers = [
+    ['آلمان ۱', '🇩🇪 آلمان', 'vless', 'de1.example.com', 1],
+    ['هلند ۱', '🇳🇱 هلند', 'vless', 'nl1.example.com', 2],
+    ['فنلاند ۱', '🇮 فنلاند', 'vless', 'fi1.example.com', 3],
+    ['انگلیس ۱', '🇬🇧 انگلیس', 'vmess', 'uk1.example.com', 4],
+    ['آمریکا ۱', '🇺🇸 آمریکا', 'trojan', 'us1.example.com', 4],
+    ['کانادا ۱', '🇨🇦 کانادا', 'ss', 'ca1.example.com', 5],
+    ['آلمان ۲ (بکاپ)', '🇩 آلمان', 'vless', 'de2.example.com', 2],
+    ['هلند ۲ (بکاپ)', '🇳 هلند', 'vmess', 'nl2.example.com', 3],
+    ['فرانسه ۱ (بکاپ)', '🇫 فرانسه', 'trojan', 'fr1.example.com', 4],
+    ['سوئد ۱ (بکاپ)', '🇸🇪 سوئد', 'vless', 'se1.example.com', 5],
+  ];
+  for (const [name, country, proto, ip, rank] of servers) {
+    run('INSERT INTO servers (name, country, protocol, ip, template, speed_rank) VALUES (?,?,?,?,?,?)',
+      name, country, proto, ip,
+      proto === 'trojan' ? `trojan://{uuid}@${ip}:443?type=tcp&security=tls#{name}` :
+      proto === 'ss' ? `ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTp7dXVpZH0@${ip}:8388#{name}` :
+      proto === 'vmess' ? '' :
+      `vless://{uuid}@${ip}:443?type=ws&security=tls&path=%2Fvless#{name}`,
+      rank);
+  }
+  await db.batch(stmts);
+  await db.prepare('INSERT INTO kv (key,value) VALUES (?,?)').bind('seeded', '1').run();
 }
 
 // ─── تنظیمات ───

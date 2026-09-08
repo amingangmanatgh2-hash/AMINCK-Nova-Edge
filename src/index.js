@@ -2,6 +2,7 @@
 //  AMINCK Nova Bot — نقطه ورود ورکر
 //  مسیرها: /webhook (تلگرام) | /app (مینی‌اپ) | /sub/:token | /logo.png
 // ═══════════════════════════════════════════════════════════════════
+import { NovaStore, withStore } from './store.js';
 import { initDb, ensureUser, getUser, isAdmin, getSetting, setSetting } from './db.js';
 import { tg, send, getMe, setupBotProfile, uploadProfilePhoto, userMainKb } from './tg.js';
 import { getText, DEFAULT_TEXTS } from './texts.js';
@@ -19,8 +20,11 @@ import { LOGO_JPG_B64 } from './logo.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 
+export { NovaStore };
+
 export default {
-  async fetch(request, env, executionCtx) {
+  async fetch(request, envRaw, executionCtx) {
+    const env = withStore(envRaw);
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -42,7 +46,8 @@ export default {
     }
   },
 
-  async scheduled(event, env, ctx) {
+  async scheduled(event, envRaw, ctx) {
+    const env = withStore(envRaw);
     await initDb(env.DB);
     ctx.waitUntil(scheduled(env));
   },
@@ -53,11 +58,11 @@ async function webhook(request, env, url) {
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) return json({ ok: false, error: 'TELEGRAM_BOT_TOKEN is not set' }, 500);
 
-  // خود-راه‌اندازی: ثبت وب‌هوک و پروفایل (فقط یک‌بار)
+  // خود-راه‌اندازی: ثبت وب‌هوک و پروفایل (فقط یک‌بار) + ذخیره آدرس عمومی
   const origin = env.WORKER_URL || url.origin;
+  if (!(await env.KV.get('worker_origin'))) await env.KV.put('worker_origin', origin);
   if ((await getSetting(env.DB, 'setup_done')) !== '1') {
     await tg(token, 'setWebhook', { url: `${origin}/webhook`, drop_pending_updates: false });
-    await setSetting(env.DB, 'worker_origin', origin);
     await setSetting(env.DB, 'setup_done', '1');
   }
 

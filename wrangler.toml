@@ -1,26 +1,38 @@
 # ═══════════════════════════════════════════════════════════════════
 #  AMINCK Nova Bot — ربات فروش کانفیگ روی Cloudflare Workers
-#  دیپلوی:  npx wrangler deploy
+#
+#  🚀 دیپلوی با یک کلیک (بدون ساخت دستی KV/D1):
+#     https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge
+#
+#  یا دستی:  npx wrangler deploy
 # ═══════════════════════════════════════════════════════════════════
 name = "aminck-nova-bot"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 # هر ۱۵ دقیقه: کش نرخ ارز + سلامت سرورها + یادآوری + تبلیغ گروه‌ها + لیگ
 [triggers]
 crons = ["*/15 * * * *"]
 
-[[kv_namespaces]]
-binding = "KV"
-id = "KV_PLACEHOLDER_ID"
+# دیتابیس + کش داخل Durable Object (SQLite) — با دیپلوی خودکار ساخته می‌شود؛
+# هیچ کلید KV/D1 لازم نیست.
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "NovaStore"
 
-[[d1_databases]]
-binding = "DB"
-database_name = "nova-bot-db"
-database_id = "D1_PLACEHOLDER_ID"
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NovaStore"]
 
 [vars]
-# آدرس عمومی ورکر — بعد از اولین دیپلوی همین آدرس را اینجا بگذارید
-# مثال: https://aminck-nova-bot.<your-subdomain>.workers.dev
+# توکن ربات — مطابق درخواست، داخل کانفیگ دیپلوی قرار داده شده است.
+# (برای امنیت بیشتر می‌توان بعداً با `wrangler secret put TELEGRAM_BOT_TOKEN`
+#  منتقل و این خط را حذف کرد.)
+TELEGRAM_BOT_TOKEN = "8769506572:AAGJ1IwsDxGtoIZmfsppmt_aNSMJW9wztkY"
+# کلید رایگان Groq برای چت هوش مصنوعی و تایید فیش (اختیاری)
+GROQ_API_KEY = ""
+# آدرس عمومی ورکر — بعد از اولین دیپلوی همین آدرس را اینجا بگذارید (اختیاری؛
+# در غیر این صورت به‌صورت خودکار از اولین درخواست ذخیره می‌شود)
 WORKER_URL = ""
