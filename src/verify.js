@@ -1,7 +1,9 @@
 // ═══════════════════════════════════════════════════════════════════
 //  بررسی هوشمند فیش پرداخت — استخراج مبلغ/تاریخ/ساعت + تشخیص دستکاری
-//  موتور: بینایی ماشین رایگان (Groq) — در نبود کلید، ارجاع به پنل ادمین
+//  موتور: Workers AI بومی کلادفلر — در نبود بایندینگ، ارجاع به پنل ادمین
 // ═══════════════════════════════════════════════════════════════════
+
+import { aiVision, aiAvailable } from './ai.js';
 
 const VISION_PROMPT = (expectedToman) => `تو یک کارشناس دقیق بررسی فیش تراکنش بانکی هستی. اطلاعات فیش را فقط در قالب JSON زیر برگردان (بدون هیچ متن اضافه):
 {
@@ -17,39 +19,14 @@ const VISION_PROMPT = (expectedToman) => `تو یک کارشناس دقیق بر
 }
 مبلغ مورد انتظار سفارش: ${expectedToman} تومان.`;
 
-/** ارسال تصویر به مدل بینایی و گرفتن خروجی ساخت‌یافته */
-async function visionAnalyze(env, imageB64, expectedToman) {
-  const key = env.GROQ_API_KEY;
-  if (!key) return { verdict: 'manual', reasons: ['کلید هوش مصنوعی تنظیم نشده؛ بررسی دستی لازم است.'] };
-  const body = {
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: VISION_PROMPT(expectedToman) },
-          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageB64}` } },
-        ],
-      },
-    ],
-    temperature: 0,
-    max_tokens: 600,
-  };
-  let res;
-  try {
-    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(25000),
-    });
-  } catch {
-    return { verdict: 'manual', reasons: ['خطای شبکه در بررسی خودکار؛ بررسی دستی.'] };
+/** ارسال تصویر به مدل بینایی Workers AI و گرفتن خروجی ساخت‌یافته */
+async function visionAnalyze(env, imageBytes, expectedToman) {
+  if (!aiAvailable(env)) {
+    return { verdict: 'manual', reasons: ['هوش مصنوعی کلادفلر در دسترس نیست؛ بررسی دستی لازم است.'] };
   }
-  if (!res.ok) return { verdict: 'manual', reasons: [`پاسخ نامعتبر سرویس بینایی (${res.status})`] };
-  const data = await res.json();
-  let text = data?.choices?.[0]?.message?.content || '';
-  const m = text.match(/\{[\s\S]*\}/);
+  const res = await aiVision(env, imageBytes, VISION_PROMPT(expectedToman));
+  if (!res.ok) return { verdict: 'manual', reasons: ['خطا در بررسی خودکار تصویر؛ بررسی دستی لازم است.'] };
+  const m = res.text.match(/\{[\s\S]*\}/);
   if (!m) return { verdict: 'manual', reasons: ['خروجی مدل قابل پردازش نبود.'] };
   try {
     return JSON.parse(m[0]);
@@ -63,15 +40,7 @@ async function visionAnalyze(env, imageB64, expectedToman) {
  * @returns {Promise<{verdict:'auto'|'manual'|'reject', reasons:string[], data:object}>}
  */
 export async function analyzeReceipt(env, imageBytes, expectedToman) {
-  // تبدیل بایت به بیس۶۴
-  let b64 = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < imageBytes.length; i += chunk) {
-    b64 += String.fromCharCode(...imageBytes.subarray(i, i + chunk));
-  }
-  b64 = btoa(b64);
-
-  const info = await visionAnalyze(env, b64, expectedToman);
+  const info = await visionAnalyze(env, imageBytes, expectedToman);
   if (info.verdict === 'manual' && !info.amount_toman) {
     return { verdict: 'manual', reasons: info.reasons || ['بررسی دستی'], data: info };
   }

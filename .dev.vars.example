@@ -1,5 +1,6 @@
 # ─── secrets برای توسعه محلی (wrangler dev) ───
-# برای دیپلوی واقعی از `npx wrangler secret put <NAME>` استفاده کنید
+# این فایل را به .dev.vars کپی کنید و مقادیر را پر کنید.
+# برای دیپلوی واقعی از `npx wrangler secret put <NAME>` استفاده کنید.
+# هوش مصنوعی روی Workers AI اجرا می‌شود و هیچ کلید خارجی لازم ندارد.
 
-TELEGRAM_BOT_TOKEN=8769506572:AAGJ1IwsDxGtoIZmfsppmt_aNSMJW9wztkY
-GROQ_API_KEY=
+TELEGRAM_BOT_TOKEN=

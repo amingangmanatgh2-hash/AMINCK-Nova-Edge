@@ -78,7 +78,7 @@ export function userMainKb(isAdmin) {
       [{ text: '🛍 فروشگاه' }, { text: '🎁 پروکسی و تست رایگان' }],
       [{ text: '💳 حساب من' }, { text: '👥 زیرمجموعه من' }],
       [{ text: '🎮 مینی‌اپ سکه‌ای' }, { text: '🤖 چت هوش مصنوعی' }],
-      [{ text: '📞 پشتیبانی' }],
+      [{ text: '📞 پشتیبانی' }, { text: '📖 راهنما' }],
     ],
     resize_keyboard: true,
     is_persistent: true,
@@ -100,6 +100,8 @@ export const COMMANDS = [
   { command: 'account', description: '💳 حساب من' },
   { command: 'ref', description: '👥 زیرمجموعه من' },
   { command: 'trial', description: '🎁 تست رایگان' },
+  { command: 'ai', description: '🤖 چت هوش مصنوعی' },
+  { command: 'support', description: '📞 پشتیبانی و اپراتور' },
   { command: 'help', description: '📖 راهنما' },
 ];
 

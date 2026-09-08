@@ -11,7 +11,8 @@ import { subLandingHtml } from './subs.js';
 import { makeBrandQR } from './qr.js';
 import { scheduled } from './jobs.js';
 import { gameHtml, handleGameApi } from './game.js';
-import { onBotJoinedGroup, welcomeNewMember } from './group.js';
+import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
+import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
 import {
   handleStart, handleUserText, handleUserCallback, setState, showMainMenu, openProduct, openShop, handleReceiptPhoto,
 } from './user.js';
@@ -32,6 +33,8 @@ export default {
       await initDb(env.DB);
       if (path === `/webhook` || path === '/webhook/') return await webhook(request, env, url);
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
+      if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
+      if (path === '/panel' || path === '/panel/') return await panelHtml(env);
       if (path === '/app' || path === '/app/') return gameHtml(env);
       if (path.startsWith('/sub/')) return await subPage(env, path.slice(5));
       if (path === '/logo.png' || path === '/logo.jpg') {
@@ -103,8 +106,11 @@ async function dispatch(update, env, token) {
     const newMembers = msg.new_chat_members?.filter((m) => !m.is_bot);
     if (newMembers?.length) {
       for (const nm of newMembers) await welcomeNewMember(env, msg.chat, nm);
+      return;
     }
-    return; // در گروه فقط خوش‌آمد و تبلیغ؛ خرید فقط در پیوی
+    // چت هوش مصنوعی داخل گروه (ریپلای/منشن/«ربات ...»)
+    await groupAiReply(env, msg, await getBotUsername(env, token));
+    return; // خرید همچنان فقط در پیوی انجام می‌شود
   }
 
   // ── کال‌بک ──
@@ -192,6 +198,7 @@ async function postFirstRunSetup(env, token) {
     } catch (e) {
       console.error('photo upload failed', e);
     }
+    await ensurePanelPassword(env.DB);
     await setSetting(env.DB, 'profile_done', '1');
   } catch (e) {
     console.error('setup failed', e);
@@ -228,6 +235,7 @@ function landingHtml() {
 a{display:inline-block;background:linear-gradient(135deg,#f5b31e,#ff8a00);color:#171305;font-weight:800;border-radius:14px;padding:14px 28px;text-decoration:none;margin-top:18px}
 p{color:#8fa3c8;font-size:14px;line-height:2}</style></head><body><div class="c">
 <div class="g">⚡</div><h1>ربات فروش کانفیگ AMINCK</h1>
-<p>فروشگاه خودکار کانفیگ روی Cloudflare Workers — تحویل آنی، تست رایگان، رفرال، مینی‌اپ سکه‌ای و چت هوش مصنوعی</p>
+<p>فروشگاه خودکار کانفیگ روی Cloudflare Workers — تحویل آنی، تست رایگان، رفرال، مینی‌اپ سکه‌ای و هوش مصنوعی بومی کلادفلر</p>
+<a href="/panel">🖥 ورود به پنل مدیریت</a>
 </div></body></html>`;
 }
