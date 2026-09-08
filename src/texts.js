@@ -124,6 +124,25 @@ export const DEFAULT_SETTINGS = {
   reminder_hours: '48',
   auto_verify: '1',
   bot_username: '',
+  // ─── بخش ۱: مخزن IP تمیز + پروب از داخل ایران ───
+  probe_enabled: '0',          // پیش‌فرض خاموش — فعال‌سازی آگاهانه توسط ادمین
+  probe_reward_coins: '5',     // سکهٔ هر گزارش معتبر
+  probe_daily_cap: '30',       // سقف گزارش روزانهٔ هر کاربر
+  probe_min_samples: '5',      // حداقل نمونه قبل از معتبر شمردن امتیاز
+  probe_timeout_ms: '3000',    // تایم‌اوت پروب در مینی‌اپ
+  clean_ip_auto_manage: '0',   // غیرفعال‌سازی خودکار IP بد در کرون (پیش‌فرض خاموش)
+  clean_ip_min_healthy: '3',   // آستانهٔ هشدار کمبود IP سالم
+  // ─── بخش ۵: قیمت‌گذاری پویا ───
+  price_base: '0.2',
+  price_per_gb: '0.02',
+  price_per_day: '0.03',
+  price_per_device: '0.1',
+  price_protocol_mult: '{"vless":1,"vmess":1,"trojan":1.1,"ss":0.9}',
+  price_location_mult: '{}',
+  price_tier_mult: '{"economy":0.8,"standard":1,"premium":1.4}',
+  discount_tiers: '[{"days":90,"percent":5},{"days":180,"percent":10},{"days":365,"percent":15},{"gb":100,"percent":5}]',
+  loyalty_discount_percent: '0',
+  loyalty_min_paid: '500000',
 };
 
 export async function getText(db, key) {

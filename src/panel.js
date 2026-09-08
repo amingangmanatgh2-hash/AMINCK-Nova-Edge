@@ -18,6 +18,12 @@ import { serverIssues, isServerDeliverable, isValidMtprotoSecret, isValidHost } 
 import { defaultTemplate, defaultPort } from './subs.js';
 import { approveReceipt, sendDelivery } from './pay.js';
 import { aiDiagnostics, TEXT_MODELS } from './ai.js';
+import { getRateInfo, computeDynamicPrice } from './pricing.js';
+import {
+  probeTargets, addCleanIps, parseIpEntries, importCloudflareRanges, importFromUrl,
+  applyBestCleanIps, cleanIpDto,
+} from './cleanip.js';
+import { generateSecretFor } from './secrets.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 const SESSION_TTL = 6 * 3600;
@@ -35,6 +41,13 @@ const EDITABLE_SETTINGS = [
   'ai_price_coins', 'ai_model', 'league_prize_coins', 'reminder_hours',
   'inactive_days', 'inactive_discount', 'group_ai_cooldown',
   'card_number', 'card_holder', 'channel_id', 'channel_url',
+  // بخش ۵: قیمت‌گذاری پویا
+  'price_base', 'price_per_gb', 'price_per_day', 'price_per_device',
+  'price_protocol_mult', 'price_location_mult', 'price_tier_mult',
+  'discount_tiers', 'loyalty_discount_percent', 'loyalty_min_paid',
+  // بخش ۱: پروب IP تمیز
+  'probe_enabled', 'probe_reward_coins', 'probe_daily_cap', 'probe_min_samples',
+  'clean_ip_auto_manage', 'clean_ip_min_healthy',
 ];
 
 /** متن‌های قابل ویرایش از پنل وب */
@@ -556,6 +569,136 @@ export async function handlePanelApi(env, request, path) {
     return json({ ok: true });
   }
 
+  // ═══════════ نرخ ارز (بخش ۷) ═══════════
+  if (path === '/api/panel/rate') {
+    const info = await getRateInfo(env, body.force === true);
+    return json({
+      ok: true,
+      rate: info.rate,
+      source: info.source,
+      ts: info.ts,
+      manual: info.manual,
+      stale: info.stale,
+      unavailable: info.unavailable,
+      alert: info.alert,
+      updated_at: info.ts ? fmtDate(info.ts) : '—',
+      manual_rate: await getSetting(DB, 'usd_rate_manual', '0'),
+    });
+  }
+
+  // ═══════════ قیمت‌گذاری پویا (بخش ۵) ═══════════
+  if (path === '/api/panel/pricing/preview') {
+    const res = await computeDynamicPrice(env, {
+      days: body.days,
+      traffic_gb: body.traffic_gb,
+      devices: body.devices,
+      protocol: body.protocol,
+      location: body.location,
+      tier: body.tier,
+      code: body.code,
+      userId: body.userId,
+    });
+    return json({ ok: res.ok, ...(res.ok ? { usd: res.usd, toman: res.toman, breakdown: res.breakdown } : { error: res.error }) });
+  }
+
+  if (path === '/api/panel/discounts/list') {
+    const rows = (await DB.prepare('SELECT * FROM discount_codes ORDER BY id DESC LIMIT 200').all()).results;
+    return json({
+      ok: true,
+      items: rows.map((d) => ({
+        id: d.id, code: d.code, kind: d.kind, value: d.value,
+        max_uses: d.max_uses, used_count: d.used_count,
+        expires_at: d.expires_at, user_id: d.user_id, min_order: d.min_order,
+        active: !!d.active, created_at: d.created_at ? fmtDate(d.created_at) : '—',
+      })),
+    });
+  }
+
+  if (path === '/api/panel/discounts/save') {
+    const code = String(body.code || '').trim().toUpperCase().slice(0, 40);
+    if (!/^[A-Z0-9_-]{3,40}$/.test(code)) return json({ ok: false, error: 'کد باید ۳ تا ۴۰ کاراکتر (حروف/عدد/خط‌تیره) باشد.' }, 400);
+    const kind = body.kind === 'amount' ? 'amount' : 'percent';
+    const value = Math.max(0, Number(body.value) || 0);
+    if (!value) return json({ ok: false, error: 'مقدار تخفیف معتبر نیست.' }, 400);
+    const id = Number(body.id) || 0;
+    const f = [
+      code, kind, value,
+      Math.max(0, Number(body.max_uses) || 0),
+      Number(body.expires_at) || 0,
+      Number(body.user_id) || 0,
+      Math.max(0, Number(body.min_order) || 0),
+      body.active ? 1 : 0,
+    ];
+    if (id) {
+      await DB.prepare('UPDATE discount_codes SET code=?, kind=?, value=?, max_uses=?, expires_at=?, user_id=?, min_order=?, active=? WHERE id=?').bind(...f, id).run();
+    } else {
+      await DB.prepare('INSERT INTO discount_codes (code, kind, value, max_uses, expires_at, user_id, min_order, active, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+        .bind(...f, now()).run();
+    }
+    return json({ ok: true });
+  }
+
+  if (path === '/api/panel/discounts/delete') {
+    if (body.confirm !== true) return json({ ok: false, error: 'برای حذف باید تایید ارسال شود.' }, 400);
+    await DB.prepare('DELETE FROM discount_codes WHERE id=?').bind(Number(body.id)).run();
+    return json({ ok: true });
+  }
+
+  // ═══════════ مخزن IP تمیز (بخش ۱) ═══════════
+  if (path === '/api/panel/cleanips/list') {
+    const rows = (await DB.prepare('SELECT * FROM clean_ips ORDER BY score DESC, samples DESC LIMIT 300').all()).results;
+    const pending = (await DB.prepare('SELECT COUNT(*) c FROM clean_ips WHERE active=1').first())?.c || 0;
+    const alert = await getSetting(DB, 'clean_ip_alert', '');
+    return json({ ok: true, total: rows.length, active: pending, alert, items: rows.map(cleanIpDto) });
+  }
+
+  if (path === '/api/panel/cleanips/add') {
+    const text = String(body.text || '').trim();
+    const entries = parseIpEntries(text);
+    if (!entries.length) return json({ ok: false, error: 'هیچ IP معتبری در متن پیدا نشد.' }, 400);
+    const n = await addCleanIps(env, entries, 'manual');
+    return json({ ok: true, added: n });
+  }
+
+  if (path === '/api/panel/cleanips/import_cf') {
+    try {
+      const n = await importCloudflareRanges(env, Math.min(500, Math.max(10, Number(body.count) || 200)));
+      return json({ ok: true, added: n });
+    } catch (e) {
+      return json({ ok: false, error: 'ایمپورت رنج کلادفلر ناموفق بود: ' + String(e?.message || e).slice(0, 120) }, 502);
+    }
+  }
+
+  if (path === '/api/panel/cleanips/import_url') {
+    const url = String(body.url || '').trim();
+    if (!/^https?:\/\//i.test(url)) return json({ ok: false, error: 'آدرس URL معتبر نیست.' }, 400);
+    try {
+      const n = await importFromUrl(env, url);
+      return json({ ok: true, added: n });
+    } catch (e) {
+      return json({ ok: false, error: 'ایمپورت از URL ناموفق بود: ' + String(e?.message || e).slice(0, 120) }, 502);
+    }
+  }
+
+  if (path === '/api/panel/cleanips/apply') {
+    const protocol = String(body.protocol || 'vless').toLowerCase().slice(0, 20);
+    if (body.confirm !== true) return json({ ok: false, error: 'اعمال بهترین IPها نیازمند تایید است.' }, 400);
+    const n = await applyBestCleanIps(env, protocol, Number(body.limit) || 10);
+    return json({ ok: true, applied: n, note: 'فقط ستون clean_ip سرورها به‌روز شد؛ host/port/secret دست‌نخورده ماند.' });
+  }
+
+  if (path === '/api/panel/cleanips/delete') {
+    if (body.confirm !== true) return json({ ok: false, error: 'برای حذف باید تایید ارسال شود.' }, 400);
+    await DB.prepare('DELETE FROM clean_ips WHERE id=?').bind(Number(body.id)).run();
+    return json({ ok: true });
+  }
+
+  // ═══════════ ساخت خودکار سکرت (بخش ۴) ═══════════
+  if (path === '/api/panel/secret') {
+    const res = generateSecretFor(String(body.protocol || 'vless'), { mtprotoMode: body.mtprotoMode || 'raw', fakeTlsDomain: body.fakeTlsDomain });
+    return json({ ok: !res.error, ...res });
+  }
+
   return json({ ok: false, error: 'not found' }, 404);
 }
 
@@ -644,6 +787,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:7px 4px;b
   <button data-p="ord">🧾 سفارش‌ها</button>
   <button data-p="rcp">💳 فیش‌ها</button>
   <button data-p="grp">📢 گروه‌ها</button>
+  <button data-p="ips">🌐 IP تمیز</button>
+  <button data-p="cfg">🎛 کانفیگ‌ساز</button>
   <button data-p="set">⚙️ تنظیمات</button>
 </div>
 
@@ -694,6 +839,8 @@ async function render(){
   if(CUR==='ord')return pgOrders(0,'');
   if(CUR==='rcp')return pgReceipts(0,'pending');
   if(CUR==='grp')return pgGroups();
+  if(CUR==='ips')return pgIps();
+  if(CUR==='cfg')return pgCfg();
   if(CUR==='set')return pgSettings();
 }
 
@@ -822,6 +969,7 @@ function srvForm(id){
    '<label>هاست یا IP واقعی</label><input id="s_ip" value="'+esc(s.ip)+'" placeholder="mtp.mydomain.com" style="direction:ltr;text-align:left">'+
    '<label>Secret / Password / UUID '+(s.hasSecret?'(خالی = بدون تغییر)':'')+'</label>'+
    '<input id="s_secret" value="" placeholder="'+(s.hasSecret?'بدون تغییر':'برای MTProto: ۳۲ هگز یا dd/ee+هگز')+'" style="direction:ltr;text-align:left">'+
+   '<div class="row" style="margin-top:6px"><button class="gh" onclick="srvGenSecret()">🎲 ساخت خودکار</button><span class="mut" id="s_secret_hint"></span></div>'+
    '<label>قالب کانفیگ (خالی = پیش‌فرض)</label><textarea id="s_tpl" rows="2" style="direction:ltr;text-align:left">'+esc(s.template)+'</textarea>'+
    '<div class="grid2"><div><label>آدرس تست سلامت</label><input id="s_health" value="'+esc(s.health_url)+'" style="direction:ltr;text-align:left"></div>'+
    '<div><label>رتبه سرعت (۱=بهترین)</label><input id="s_rank" type="number" min="1" max="5" value="'+(s.speed_rank||3)+'"></div></div>'+
@@ -840,6 +988,13 @@ async function srvSave(id){
 }
 async function srvToggle(id){var r=await api('/api/panel/servers/toggle',{id:id});
   if(!r.ok)return flash((r.error||'خطا')+(r.issues?' '+r.issues.join(' '):''),1); pgServers(0)}
+async function srvGenSecret(){
+  var p=$('s_proto').value;
+  var r=await api('/api/panel/secret',{protocol:p});
+  var hint=$('s_secret_hint');
+  if(!r.ok){hint.textContent='⛔ '+(r.error||'خطا');return}
+  $('s_secret').value=r.secret||'';
+  hint.textContent=r.note?r.note:'✅ ساخته شد';}
 async function srvDel(id){if(!confirmAsk('حذف این سرور؟ این کار برگشت‌پذیر نیست.'))return;var r=await api('/api/panel/servers/delete',{id:id,confirm:true});if(!r.ok)return flash(r.error||'خطا',1);flash('🗑 حذف شد');pgServers(0)}
 async function srvHealth(id){flash('⏳ در حال تست…');var r=await api('/api/panel/servers/health',{id:id});
   if(!r.ok)return flash(r.error||'خطا',1); flash(r.healthy?'✅ سالم (HTTP '+r.status+') — این پینگ واقعی از ایران نیست':'⛔ ناسالم',!r.healthy); pgServers(0)}
@@ -970,6 +1125,106 @@ async function grpMsg(id){var t=prompt('متن پیام به این گروه:');
 async function postAll(){var r=await api('/api/panel/group/postall');flash('✅ ارسال به '+fa(r.count||0)+' گروه');pgGroups()}
 async function bcast(){var t=$('bmsg').value.trim();if(!t)return;if(!confirmAsk('ارسال به همهٔ گروه‌های فعال؟'))return;var r=await api('/api/panel/group/message',{text:t});flash('✅ ارسال به '+fa(r.count||0)+' گروه');$('bmsg').value=''}
 
+/* ═════ IP تمیز ═════ */
+async function pgIps(){
+  var r=await api('/api/panel/cleanips/list',{});
+  if(!r.ok){$('pages').innerHTML=errBox(r.error);return}
+  var h='<div class="card"><h2>🌐 مخزن IP تمیز — فعال: '+fa(r.active)+'</h2>'+
+   '<div class="hint">⚠️ امتیاز فقط از پروب کاربران داخل ایران (مینی‌اپ تلگرام) واقعی می‌شود؛ تست خود Worker به نت ملی ربطی ندارد و ICMP/ping روی Workers نیست.</div>';
+  if(r.alert)h+='<div class="warn">'+esc(r.alert)+'</div>';
+  h+='<label>افزودن دسته‌ای (هر خط: ip یا ip:port)</label><textarea id="ip_in" rows="3" placeholder="104.16.0.1:443&#10;104.16.0.2" style="direction:ltr;text-align:left"></textarea>'+
+   '<div class="row" style="margin-top:8px"><button onclick="ipAdd()">➕ افزودن</button>'+
+   '<button class="gh" onclick="ipImportCf()">☁️ ایمپورت رنج کلادفلر</button>'+
+   '<button class="gh" onclick="ipImportUrl()">🔗 ایمپورت از URL</button></div>'+
+   '<div class="row" style="margin-top:8px"><select id="ip_apply_proto"><option value="vless">VLESS</option><option value="vmess">VMess</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select>'+
+   '<button onclick="ipApplyBest()">🎯 اعمال بهترین‌ها روی سرورها</button></div>'+
+   '<div class="err" id="ip_err"></div><div class="okmsg" id="ip_ok"></div></div>';
+  h+='<div class="card"><table><tr><th>IP</th><th>امتیاز</th><th>نمونه</th><th>میانگین</th><th>موفقیت</th><th>منبع</th><th>وضعیت</th><th></th></tr>';
+  if(!r.items.length)h+='<tr><td colspan="8" class="mut">هنوز IP ثبت نشده است.</td></tr>';
+  for(var i=0;i<r.items.length;i++){var x=r.items[i];
+   h+='<tr><td style="direction:ltr;text-align:left">'+esc(x.ip)+':'+x.port+'</td><td>'+fa(x.score)+'</td><td>'+fa(x.samples)+'</td>'+
+    '<td>'+fa(x.avg_ms)+'ms</td><td>'+Math.round((x.success_rate||0)*100)+'%</td><td>'+esc(x.source)+'</td>'+
+    '<td>'+(x.active?'<span class="pill ok">فعال</span>':(x.blocked_until?'<span class="pill warn">مدارشکن</span>':'<span class="pill bad">غیرفعال</span>'))+'</td>'+
+    '<td><button class="rd" onclick="ipDel('+x.id+')">🗑</button></td></tr>';}
+  h+='</table></div>';
+  $('pages').innerHTML=h;
+}
+async function ipAdd(){var t=$('ip_in').value.trim();if(!t)return;var r=await api('/api/panel/cleanips/add',{text:t});
+ if(!r.ok){$('ip_err').textContent='⛔ '+(r.error||'خطا');return}$('ip_ok').textContent='✅ '+fa(r.added)+' IP افزوده شد';$('ip_in').value='';pgIps()}
+async function ipImportCf(){if(!confirmAsk('ایمپورت و نمونه‌برداری از رنج رسمی Cloudflare؟'))return;flash('⏳ در حال ایمپورت…');var r=await api('/api/panel/cleanips/import_cf',{count:200});
+ if(!r.ok)return flash(r.error||'خطا',1);flash('✅ '+fa(r.added)+' IP نمونه‌گیری شد');pgIps()}
+async function ipImportUrl(){var u=prompt('آدرس URL لیست IPها:');if(!u)return;var r=await api('/api/panel/cleanips/import_url',{url:u});
+ if(!r.ok)return flash(r.error||'خطا',1);flash('✅ '+fa(r.added)+' IP وارد شد');pgIps()}
+async function ipApplyBest(){var p=$('ip_apply_proto').value;if(!confirmAsk('بهترین IPها روی سرورهای '+p.toUpperCase()+' اعمال شود؟ (فقط ستون clean_ip)'))return;
+ var r=await api('/api/panel/cleanips/apply',{protocol:p,limit:10,confirm:true});
+ if(!r.ok)return flash(r.error||'خطا',1);flash('✅ روی '+fa(r.applied)+' سرور اعمال شد');}
+async function ipDel(id){if(!confirmAsk('حذف این IP؟'))return;await api('/api/panel/cleanips/delete',{id:id,confirm:true});pgIps()}
+
+/* ═════ کانفیگ‌ساز پویا ═════ */
+async function pgCfg(){
+  var h='<div class="card"><h2>🎛 کانفیگ‌ساز پویا (قیمت لحظه‌ای)</h2>'+
+   '<div class="grid2"><div><label>پروتکل</label><select id="cfg_p">'+
+   '<option value="vless">VLESS</option><option value="vmess">VMess</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select></div>'+
+   '<div><label>کیفیت</label><select id="cfg_tier"><option value="economy">اقتصادی</option><option value="standard" selected>استاندارد</option><option value="premium">پرمیوم</option></select></div></div>'+
+   '<div class="grid2"><div><label>مدت: <b id="cfg_dv">30</b> روز</label><input id="cfg_d" type="range" min="7" max="365" value="30" oninput="$(\'cfg_dv\').textContent=this.value"></div>'+
+   '<div><label>حجم: <b id="cfg_gv">0</b> گیگ (۰=نامحدود)</label><input id="cfg_g" type="range" min="0" max="200" step="10" value="0" oninput="$(\'cfg_gv\').textContent=this.value"></div></div>'+
+   '<div class="grid2"><div><label>کاربر همزمان</label><input id="cfg_dev" type="number" min="1" max="10" value="1"></div>'+
+   '<div><label>لوکیشن (کلید)</label><input id="cfg_loc" value="default" placeholder="de/nl/us"></div></div>'+
+   '<label>کد تخفیف (اختیاری)</label><input id="cfg_code" placeholder="مثل NOVA10" style="direction:ltr;text-align:left">'+
+   '<div class="row" style="margin-top:10px"><button onclick="cfgPreview()">💵 محاسبه قیمت</button></div>'+
+   '<div id="cfg_res" class="mut" style="margin-top:10px;white-space:pre-wrap"></div></div>';
+  h+='<div class="card"><h2>🏷 کدهای تخفیف</h2><div id="discBox" class="mut">در حال بارگذاری…</div>'+
+   '<h2 style="margin-top:12px">➕ کد جدید</h2>'+
+   '<div class="grid2"><div><label>کد</label><input id="d_code" style="direction:ltr;text-align:left"></div>'+
+   '<div><label>نوع</label><select id="d_kind"><option value="percent">درصدی</option><option value="amount">مبلغی (تومان)</option></select></div></div>'+
+   '<div class="grid2"><div><label>مقدار</label><input id="d_val" type="number"></div>'+
+   '<div><label>سقف استفاده (۰=نامحدود)</label><input id="d_max" type="number" value="0"></div></div>'+
+   '<div class="grid2"><div><label>انقضا (unix یا ۰)</label><input id="d_exp" type="number" value="0"></div>'+
+   '<div><label>حداقل سفارش (تومان)</label><input id="d_min" type="number" value="0"></div></div>'+
+   '<div class="row" style="margin-top:10px"><button onclick="discSave()">💾 ذخیره کد</button></div></div>';
+  $('pages').innerHTML=h;loadDiscounts();
+}
+async function cfgPreview(){
+  var r=await api('/api/panel/pricing/preview',{days:$('cfg_d').value,traffic_gb:$('cfg_g').value,devices:$('cfg_dev').value,
+   protocol:$('cfg_p').value,location:$('cfg_loc').value,tier:$('cfg_tier').value,code:$('cfg_code').value});
+  if(!r.ok){$('cfg_res').textContent='⛔ '+(r.error||'خطا');return}
+  var b=r.breakdown;
+  $('cfg_res').textContent='قیمت خام: $'+b.rawUsd+' | نرخ: '+fa(b.rate)+' تومان | مارجین: ×'+b.margin+'\n'+
+   'تخفیف پلکانی: '+fa(b.tierDiscountPercent)+'٪ | وفاداری: '+fa(b.loyaltyDiscountPercent)+'٪ | کد: '+(b.discountPercent?fa(b.discountPercent)+'٪':(b.discountAmount?fa(b.discountAmount)+' تومان':'—'))+'\n'+
+   '💰 قیمت نهایی: '+toman(r.toman);
+}
+async function loadDiscounts(){
+  var r=await api('/api/panel/discounts/list',{});
+  var box=$('discBox');if(!box)return;
+  if(!r.ok){box.innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';return}
+  if(!r.items.length){box.innerHTML='<span>کدی ثبت نشده است.</span>';return}
+  box.innerHTML=r.items.map(function(d){
+    return '<div class="g"><div class="row" style="justify-content:space-between"><b style="direction:ltr">'+esc(d.code)+'</b>'+
+     '<span class="pill">'+(d.kind==='percent'?fa(d.value)+'٪':toman(d.value))+'</span></div>'+
+     '<div class="mut">استفاده: '+fa(d.used_count)+(d.max_uses?'/'+fa(d.max_uses):'')+(d.min_order?' | حداقل: '+toman(d.min_order):'')+(d.expires_at?' | انقضا: '+esc(d.expires_at):'')+'</div>'+
+     '<div class="row" style="margin-top:6px"><button class="rd" onclick="discDel('+d.id+')">🗑 حذف</button></div></div>';
+  }).join('');
+}
+async function discSave(){var r=await api('/api/panel/discounts/save',{code:$('d_code').value,kind:$('d_kind').value,value:$('d_val').value,
+ max_uses:$('d_max').value,expires_at:$('d_exp').value,min_order:$('d_min').value,active:true});
+ if(!r.ok)return flash(r.error||'خطا',1);flash('✅ ذخیره شد');loadDiscounts();$('d_code').value='';$('d_val').value=''}
+async function discDel(id){if(!confirmAsk('حذف این کد تخفیف؟'))return;await api('/api/panel/discounts/delete',{id:id,confirm:true});loadDiscounts()}
+
+/* ═════ نرخ ارز ═════ */
+async function loadRate(){
+  var r=await api('/api/panel/rate',{});
+  var box=$('rateBox');if(!box)return;
+  if(!r.ok){box.textContent='⛔ '+(r.error||'خطا');return}
+  var s='💵 نرخ فعلی: <b>'+(r.unavailable?'در دسترس نیست':toman(r.rate))+'</b>'+
+   ' | منبع: '+(r.manual?'دستی':(r.source||'—'))+
+   ' | بروزرسانی: '+(r.updated_at||'—');
+  if(r.stale)s+=' (کهنه — منابع آنلاین در دسترس نبودند)';
+  if(r.alert)s+=' ⚠️ انحراف نرخ ثبت شد';
+  if(r.unavailable)s+=' — لطفاً نرخ دستی را در تنظیمات ثبت کنید';
+  box.innerHTML=s;
+}
+async function rateRefresh(){var r=await api('/api/panel/rate',{force:true});if(!r.ok)return flash(r.error||'خطا',1);flash('🔄 نرخ بروزرسانی شد');loadRate()}
+
 /* ═════ تنظیمات ═════ */
 async function pgSettings(){
   var r=await api('/api/panel/state');
@@ -978,7 +1233,10 @@ async function pgSettings(){
   function tog(k,l){return '<label>'+l+'</label><select id="c_'+k+'"><option value="1"'+(s[k]==='1'?' selected':'')+'>فعال</option><option value="0"'+(s[k]!=='1'?' selected':'')+'>غیرفعال</option></select>'}
   function num(k,l){return '<label>'+l+'</label><input id="c_'+k+'" value="'+esc(s[k])+'">'}
   var models=(r.models||[]).map(function(m){return '<option value="'+esc(m)+'"'+(s.ai_model===m?' selected':'')+'>'+esc(m)+'</option>'}).join('');
-  var h='<div class="card"><h2>🤖 هوش مصنوعی</h2>'+
+  var h='<div class="card"><h2>💵 نرخ ارز (تتر)</h2><div id="rateBox" class="mut">در حال بارگذاری…</div>'+
+   '<div class="row" style="margin-top:8px"><button class="gh" onclick="rateRefresh()">🔄 بروزرسانی فوری</button></div>'+
+   '<div class="hint">منبع: میانهٔ قیمت تتر از صرافی‌های داخلی (نوبیتکس، والکس، بیت‌پین، رمزینکس). در نبود نرخ آنلاین، نرخ دستی اعمال می‌شود.</div></div>';
+  h+='<div class="card"><h2>🤖 هوش مصنوعی</h2>'+
    tog('ai_enabled','چت هوش مصنوعی')+
    '<label>مدل Workers AI (خالی = زنجیرهٔ پیش‌فرض)</label><select id="c_ai_model"><option value="">پیش‌فرض (خودکار)</option>'+models+'</select>'+
    num('ai_price_coins','هزینهٔ هر پیام (سکه)')+
@@ -987,6 +1245,14 @@ async function pgSettings(){
   h+='<div class="card"><h2>💰 قیمت‌گذاری</h2>'+num('usd_rate_manual','نرخ دلار دستی (۰ = خودکار)')+num('margin','ضریب سود')+
    num('referral_percent','درصد پاداش رفرال')+num('referral_goal','هدف تعداد دعوت')+
    num('card_number','شماره کارت')+num('card_holder','نام صاحب کارت')+'</div>';
+  h+='<div class="card"><h2>🧮 فرمول قیمت‌گذاری پویا</h2>'+
+   '<div class="grid2">'+num('price_base','base (دلار)')+num('price_per_gb','قیمت هر گیگ (دلار)')+'</div>'+
+   '<div class="grid2">'+num('price_per_day','قیمت هر روز (دلار)')+num('price_per_device','قیمت هر دستگاه (دلار)')+'</div>'+
+   '<label>جدول تخفیف پلکانی (JSON)</label><textarea id="c_discount_tiers" rows="3">'+esc(s.discount_tiers)+'</textarea>'+
+   '<div class="grid2">'+num('loyalty_discount_percent','تخفیف وفاداری (٪)')+num('loyalty_min_paid','حداقل خرید برای وفاداری (تومان)')+'</div></div>';
+  h+='<div class="card"><h2>🌐 پروب IP تمیز</h2>'+
+   '<div class="grid2">'+tog('probe_enabled','پروب کاربران فعال')+tog('clean_ip_auto_manage','مدیریت خودکار IP بد')+'</div>'+
+   '<div class="grid2">'+num('probe_reward_coins','سکهٔ هر گزارش معتبر')+num('probe_daily_cap','سقف گزارش روزانه هر کاربر')+'</div></div>';
   h+='<div class="card"><h2>🔀 فعال/غیرفعال</h2><div class="grid2">'+
    '<div>'+tog('shop_enabled','فروشگاه')+tog('trial_enabled','تست رایگان')+tog('card_pay_enabled','پرداخت کارتی')+tog('wallet_enabled','کیف پول')+'</div>'+
    '<div>'+tog('game_enabled','مینی‌اپ')+tog('referral_enabled','رفرال')+tog('auto_verify','تایید خودکار فیش')+tog('group_ai_enabled','AI در گروه')+'</div>'+
@@ -1001,8 +1267,11 @@ async function pgSettings(){
    '<div class="row" style="margin-top:8px"><button onclick="chpw()">تغییر رمز</button></div></div>';
   $('pages').innerHTML=h;
   loadTexts();
+  loadRate();
 }
-var SETTING_KEYS=['ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text'];
+var SETTING_KEYS=['ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text',
+ 'price_base','price_per_gb','price_per_day','price_per_device','discount_tiers','loyalty_discount_percent','loyalty_min_paid',
+ 'probe_enabled','probe_reward_coins','probe_daily_cap','probe_min_samples','clean_ip_auto_manage','clean_ip_min_healthy'];
 async function saveSettings(){
   var b=$('setSave');b.disabled=true;$('setErr').textContent='';$('setOk').textContent='';
   var payload={};

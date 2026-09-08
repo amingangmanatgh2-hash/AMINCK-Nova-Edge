@@ -6,7 +6,7 @@ import { randToken, fmtDate, faDigits } from './db.js';
 import { tmpl } from './util.js';
 import {
   buildMtprotoLinks, buildSocks5Links, isServerDeliverable, serverIssues,
-  deliveryKind, NoRealServerError,
+  deliveryKind, NoRealServerError, isValidHost,
 } from './proxy.js';
 
 /** انتخاب سرورهای سالم و «واقعاً پیکربندی‌شده» برای ساب */
@@ -46,11 +46,13 @@ export function buildConfigs(servers, uuid, product, userName) {
     } catch {
       return; // اطلاعات ناقص → لینک ساخته نمی‌شود
     }
-    const t = s.template || defaultTemplate(proto, s.ip, s.port);
+    // IP تمیز انتخابی (اگر ادمین برای این سرور ست کرده باشد) جایگزین هاست می‌شود
+    const host = s.clean_ip && isValidHost(s.clean_ip) ? s.clean_ip : s.ip;
+    const t = s.template || defaultTemplate(proto, host, s.port);
     const line = tmpl(t, {
       uuid,
       name,
-      ip: s.ip,
+      ip: host,
       port: String(s.port || defaultPort(proto)),
       days: String(product.days || 30),
       user: userName || 'AMINCK',

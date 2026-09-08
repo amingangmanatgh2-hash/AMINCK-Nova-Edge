@@ -146,6 +146,57 @@ export const SCHEMA = [
      week            TEXT PRIMARY KEY,             -- مثل 2026-37
      winner_id       INTEGER DEFAULT 0,
      paid            INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۱: مخزن IP تمیز (سنجش واقعی از داخل ایران) ───
+  `CREATE TABLE IF NOT EXISTS clean_ips (
+     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+     ip              TEXT NOT NULL,
+     port            INTEGER DEFAULT 443,
+     family          TEXT DEFAULT 'v4',            -- v4 | v6
+     source          TEXT DEFAULT 'manual',        -- manual | cloudflare_range | url_import | user_feedback
+     sni             TEXT DEFAULT '',              -- SNI استتار اختیاری
+     note            TEXT DEFAULT '',
+     colo            TEXT DEFAULT '',              -- کولو/شهر کلادفلر
+     score           REAL DEFAULT 0,               -- امتیاز نهایی (بالاتر = بهتر)
+     samples         INTEGER DEFAULT 0,            -- تعداد نمونهٔ گزارش‌شده
+     avg_ms          REAL DEFAULT 0,               -- میانگین متحرک نمایی
+     p95_ms          REAL DEFAULT 0,
+     success_rate    REAL DEFAULT 0,               -- 0..1
+     last_ok_at      INTEGER DEFAULT 0,
+     fail_count      INTEGER DEFAULT 0,
+     consecutive_fail INTEGER DEFAULT 0,
+     active          INTEGER DEFAULT 1,
+     blocked_until   INTEGER DEFAULT 0,            -- مدارشکن (ثانیه)
+     added_at        INTEGER DEFAULT 0
+   )`,
+
+  // گزارش‌های پروب کاربران (مینی‌اپ تلگرام — تنها جایی که کد ما داخل ایران اجرا می‌شود)
+  `CREATE TABLE IF NOT EXISTS probe_reports (
+     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id         INTEGER,
+     ip_id           INTEGER,
+     operator        TEXT DEFAULT '',              -- همراه اول | ایرانسل | مخابرات | رایتل | unknown
+     ms              INTEGER DEFAULT 0,
+     ok              INTEGER DEFAULT 1,
+     day_key         TEXT DEFAULT '',              -- برای سقف روزانهٔ هر کاربر
+     fp              TEXT DEFAULT '',              -- انگشت‌نگاشت ضد گزارش تکراری
+     created_at      INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۵: کدهای تخفیف ───
+  `CREATE TABLE IF NOT EXISTS discount_codes (
+     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+     code            TEXT UNIQUE,
+     kind            TEXT DEFAULT 'percent',       -- percent | amount
+     value           REAL DEFAULT 0,               -- درصد یا مبلغ تومان
+     max_uses        INTEGER DEFAULT 0,            -- ۰ = نامحدود
+     used_count      INTEGER DEFAULT 0,
+     expires_at      INTEGER DEFAULT 0,
+     user_id         INTEGER DEFAULT 0,            -- ۰ = همه؛ وگرنه مخصوص یک کاربر
+     min_order       INTEGER DEFAULT 0,            -- حداقل مبلغ سفارش
+     active          INTEGER DEFAULT 1,
+     created_at      INTEGER DEFAULT 0
    )`
 ];
 
@@ -166,6 +217,8 @@ const COLUMN_MIGRATIONS = [
   ['subscriptions', 'delivered_at', 'INTEGER DEFAULT 0'],
   ['subscriptions', 'delivery_claim', "TEXT DEFAULT ''"],
   ['users', 'spin_claim', "TEXT DEFAULT ''"],
+  // بخش ۱: IP تمیز انتخابی برای یک سرور (فقط ستون جدید؛ ساختار قبلی دست‌نخورده)
+  ['servers', 'clean_ip', "TEXT DEFAULT ''"],
 ];
 
 /** الگوهای SQL هاست‌های نمونه که هرگز نباید تحویل داده شوند */

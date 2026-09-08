@@ -9,6 +9,7 @@ import { getUsdRate } from './pricing.js';
 import { healSubscription } from './subs.js';
 import { runAdScheduler } from './group.js';
 import { tmpl } from './util.js';
+import { cleanIpMaintenance } from './cleanip.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -25,6 +26,7 @@ export async function scheduled(env) {
     await refreshRate(env);
     await expireSubs(env);
     await runAdScheduler(env);
+    await cleanIpMaintenance(env);
     if (now() - (await lastRun(env, 'health')) > 6 * 3600) {
       await healthCheck(env);
       await markRun(env, 'health');

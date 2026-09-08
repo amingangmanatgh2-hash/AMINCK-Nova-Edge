@@ -38,7 +38,16 @@ globalThis.fetch = async (url, init = {}) => {
     return jsonRes({ ok: true, result: { message_id: sent.length } });
   }
   if (u.includes('api.telegram.org/file')) return new Response(new Uint8Array([1, 2, 3]));
-  if (u.includes('er-api.com') || u.includes('frankfurter')) return jsonRes({ rates: { IRR: 1000000 } });
+  if (u.includes('cloudflare.com/ips-')) {
+    return new Response('104.16.0.0/13\n104.24.0.0/14\n', { headers: { 'Content-Type': 'text/plain' } });
+  }
+  if (globalThis.__rateFail) throw new Error('rate source down');
+  // ─── صرافی‌های داخلی (میلی‌ریال → تومان) — بخش ۷ ───
+  const irr = globalThis.__rateIrr || { nobitex: 970000, wallex: 1000000, bitpin: 1000000, ramzinex: 1030000 };
+  if (u.includes('nobitex.ir')) return jsonRes({ stats: { 'usdt-rls': { latest: String(irr.nobitex) } } });
+  if (u.includes('wallex.ir')) return jsonRes({ result: { symbols: { USDTIRT: { stats: { latestPrice: String(irr.wallex) } } } } });
+  if (u.includes('bitpin.ir')) return jsonRes([{ symbol: 'USDTIRT', price: String(irr.bitpin) }]);
+  if (u.includes('ramzinex.com')) return jsonRes({ data: { usdtirr: { buy: String(irr.ramzinex), sell: String(irr.ramzinex) } } });
   return jsonRes({ ok: true });
 };
 const jsonRes = (o) => new Response(JSON.stringify(o), { headers: { 'Content-Type': 'application/json' } });
@@ -497,18 +506,47 @@ section('۱۲) بررسی هوشمند فیش');
   check('بدون AI به بررسی دستی می‌رود (کرش نمی‌کند)', manual.verdict === 'manual', manual.verdict);
 }
 
-// ── ۱۳) قیمت‌گذاری ──
+// ── ۱۳) قیمت‌گذاری و نرخ ارز (بازنویسی‌شده — بخش ۷) ──
 section('۱۳) قیمت‌گذاری و نرخ ارز');
 {
   const env = await makeEnv();
-  const { getUsdRate, productPriceToman } = await import('../src/pricing.js');
-  const rate = await getUsdRate(env);
-  check('نرخ دلار از API گرفته شد', rate === 100000, String(rate));
+  const { getUsdRate, getRateInfo, productPriceToman, median, RATE_UNAVAILABLE_MESSAGE } = await import('../src/pricing.js');
+
+  check('میانهٔ چند منبع محاسبه می‌شود', median([97000, 100000, 100000, 103000]) === 100000, String(median([97000, 100000, 100000, 103000])));
+
+  globalThis.__rateFail = false;
+  globalThis.__rateIrr = { nobitex: 970000, wallex: 1000000, bitpin: 1000000, ramzinex: 1030000 };
+  const info = await getRateInfo(env, true);
+  check('نرخ از چند صرافی گرفته شد (میانه، نه اولی)', info.rate === 100000, String(info.rate));
+  check('منبع نرخ گزارش می‌شود', typeof info.source === 'string' && info.source.length > 0, info.source);
+
   const { setSetting } = await import('../src/db.js');
   await setSetting(env.DB, 'usd_rate_manual', '50000');
   check('نرخ دستی اولویت دارد', (await getUsdRate(env)) === 50000);
+  check('نرخ دستی manual علامت می‌خورد', (await getRateInfo(env)).manual === true);
+  await setSetting(env.DB, 'usd_rate_manual', '0');
+
   const price = await productPriceToman(env, { price_usd: 2 });
-  check('قیمت با مارجین محاسبه و رند می‌شود', price === 130000, String(price));
+  check('قیمت با نرخ ۱۰۰هزار و مارجین ۱٫۳ رند می‌شود', price === 260000, String(price));
+
+  // هشدار انحراف بزرگ نسبت به کش
+  globalThis.__rateIrr = { nobitex: 1300000, wallex: 1300000, bitpin: 1300000, ramzinex: 1300000 };
+  const alertInfo = await getRateInfo(env, true);
+  check('انحراف >۲۰٪ نسبت به کش هشدار ثبت می‌کند', alertInfo.alert === true, JSON.stringify(alertInfo));
+
+  // همه منابع شکست → آخرین کش (کهنه)
+  globalThis.__rateFail = true;
+  const stale = await getRateInfo(env, true);
+  check('وقتی همه منابع fail شوند آخرین کش برمی‌گردد', stale.rate === 130000 && stale.stale === true, JSON.stringify(stale));
+  globalThis.__rateFail = false;
+
+  // همه منابع شکست + بدون کش → عدد جعلی نه
+  const empty = await makeEnv();
+  globalThis.__rateFail = true;
+  const none = await getRateInfo(empty, true);
+  check('بدون کش و با شکست همه، عدد جعلی برنمی‌گردد', none.unavailable === true && none.rate === 0, JSON.stringify(none));
+  check('پیام «نرخ در دسترس نیست» برای ادمین تعریف شده', RATE_UNAVAILABLE_MESSAGE.length > 10);
+  globalThis.__rateFail = false;
 }
 
 // ── ۱۴) اعلان‌های ادمین (رگرسیون .all()) ──
@@ -1076,6 +1114,169 @@ section('۲۰) ستاپ اولیه ربات');
     setupUrl
   );
   check('ستاپ پس از پیکربندی دوباره توکن را عوض نمی‌کند', r.status === 409);
+}
+
+// ── ۲۸) قیمت‌گذاری پویا و کد تخفیف (بخش ۵) ──
+section('۲۸) قیمت‌گذاری پویا و کد تخفیف');
+{
+  const env = await makeEnv();
+  const { setSetting } = await import('../src/db.js');
+  const { computeDynamicPrice, applyDiscountCode, tierDiscount, discountTiers, consumeDiscountCode } = await import('../src/pricing.js');
+
+  // تنظیمات تمیز برای محاسبهٔ قطعی
+  await setSetting(env.DB, 'price_base', '1');
+  await setSetting(env.DB, 'price_per_gb', '0');
+  await setSetting(env.DB, 'price_per_day', '0');
+  await setSetting(env.DB, 'price_per_device', '0');
+  await setSetting(env.DB, 'margin', '1');
+  await setSetting(env.DB, 'usd_rate_manual', '100000');
+  await setSetting(env.DB, 'discount_tiers', '[{"days":30,"percent":10},{"gb":100,"percent":5}]');
+
+  const tiers = await discountTiers(env);
+  check('جدول تخفیف پلکانی خوانده می‌شود', Array.isArray(tiers) && tiers.length === 2);
+  check('تخفیف پلکانی مدت اعمال می‌شود', tierDiscount(tiers, 30, 0) === 10, String(tierDiscount(tiers, 30, 0)));
+  check('تخفیف پلکانی حجم اعمال می‌شود', tierDiscount(tiers, 30, 100) === 10, String(tierDiscount(tiers, 30, 100)));
+  check('بدون تطبیق تخفیف صفر است', tierDiscount(tiers, 10, 0) === 0, String(tierDiscount(tiers, 10, 0)));
+
+  const base = await computeDynamicPrice(env, { days: 30, traffic_gb: 0, devices: 1, protocol: 'vless', location: 'default', tier: 'standard' });
+  check('فرمول پایه قیمت می‌دهد', base.ok === true && base.toman === 90000, JSON.stringify(base)); // 100000 × 0.9
+  check('رند به نزدیک‌ترین ۱۰۰۰', base.toman % 1000 === 0);
+
+  const withGb = await computeDynamicPrice(env, { days: 30, traffic_gb: 100, devices: 1, protocol: 'vless', location: 'default', tier: 'standard' });
+  check('تخفیف حجم در محاسبه اعمال می‌شود', withGb.toman === 90000, String(withGb.toman));
+
+  // کد تخفیف درصدی
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, max_uses, active, created_at) VALUES ('NOVA10','percent',10,0,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  const coded = await computeDynamicPrice(env, { days: 30, traffic_gb: 0, devices: 1, protocol: 'vless', location: 'default', tier: 'standard', code: 'nova10' });
+  check('کد تخفیف درصدی روی قیمت اعمال می‌شود', coded.ok === true && coded.toman === 80000, JSON.stringify(coded)); // 100000 × (1−0.2)
+
+  // کد تخفیف مبلغی
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, max_uses, active, created_at) VALUES ('FLAT5K','amount',5000,0,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  const flat = await computeDynamicPrice(env, { days: 30, traffic_gb: 0, devices: 1, protocol: 'vless', location: 'default', tier: 'standard', code: 'FLAT5K' });
+  check('کد تخفیف مبلغی اعمال می‌شود', flat.toman === 85000, String(flat.toman)); // 90000 − 5000
+
+  // کد نامعتبر / منقضی / سقف استفاده / حداقل سفارش / مخصوص کاربر
+  const invalid = await applyDiscountCode(env, 'NOTEXIST', 111, 100000);
+  check('کد نامعتبر رد می‌شود', invalid.ok === false);
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, max_uses, active, expires_at, created_at) VALUES ('OLD','percent',10,0,1,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  check('کد منقضی رد می‌شود', (await applyDiscountCode(env, 'OLD', 111, 100000)).ok === false);
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, max_uses, used_count, active, created_at) VALUES ('LIMIT','percent',10,1,1,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  check('کد با سقف استفادهٔ پر رد می‌شود', (await applyDiscountCode(env, 'LIMIT', 111, 100000)).ok === false);
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, min_order, active, created_at) VALUES ('MIN','percent',10,500000,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  check('کد با حداقل سفارش رد می‌شود', (await applyDiscountCode(env, 'MIN', 111, 100000)).ok === false);
+  await env.DB.prepare("INSERT INTO discount_codes (code, kind, value, user_id, active, created_at) VALUES ('PRIVATE','percent',10,999,1,?)").bind(Math.floor(Date.now() / 1000)).run();
+  check('کد مخصوص کاربر دیگر رد می‌شود', (await applyDiscountCode(env, 'PRIVATE', 111, 100000)).ok === false);
+
+  // تخفیف وفاداری
+  const { ensureUser } = await import('../src/db.js');
+  await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  await env.DB.prepare('UPDATE users SET total_paid=200000 WHERE id=111').run();
+  await setSetting(env.DB, 'loyalty_discount_percent', '5');
+  await setSetting(env.DB, 'loyalty_min_paid', '100000');
+  const loyal = await computeDynamicPrice(env, { days: 30, traffic_gb: 0, devices: 1, protocol: 'vless', location: 'default', tier: 'standard', userId: 111 });
+  check('تخفیف وفاداری اعمال می‌شود', loyal.breakdown.loyaltyDiscountPercent === 5 && loyal.toman === 85000, JSON.stringify(loyal));
+
+  const codeRow = await env.DB.prepare("SELECT id FROM discount_codes WHERE code='NOVA10'").first();
+  await consumeDiscountCode(env, codeRow.id);
+  const after = await env.DB.prepare("SELECT used_count FROM discount_codes WHERE code='NOVA10'").first();
+  check('مصرف کد تخفیف شمارنده را زیاد می‌کند', after.used_count === 1, String(after.used_count));
+}
+
+// ── ۲۹) مخزن IP تمیز و پروب (بخش ۱) ──
+section('۲۹) مخزن IP تمیز و پروب');
+{
+  const env = await makeEnv();
+  const { setSetting } = await import('../src/db.js');
+  const { ensureUser, getUser } = await import('../src/db.js');
+  const {
+    parseIpEntries, sampleCidr, scoreOf, iqrBounds, addCleanIps, probeTargets,
+    applyProbeReport, applyBestCleanIps, importCloudflareRanges, probeReport,
+  } = await import('../src/cleanip.js');
+
+  check('parseIpEntries تجزیه می‌کند', JSON.stringify(parseIpEntries('104.16.0.1:443 104.16.0.2')) === JSON.stringify([{ ip: '104.16.0.1', port: 443 }, { ip: '104.16.0.2', port: 443 }]));
+  const sample = sampleCidr('104.16.0.0/13', 5);
+  check('نمونه‌برداری CIDR آدرس‌های داخل رنج می‌دهد', sample.length === 5 && sample.every((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip)), JSON.stringify(sample));
+  check('scoreOf فرمول پایدار دارد', scoreOf({ samples: 10, avg_ms: 100, success_rate: 1, consecutive_fail: 0 }) === scoreOf({ samples: 10, avg_ms: 100, success_rate: 1, consecutive_fail: 0 }));
+  check('scoreOf شکست پیاپی را جریمه می‌کند', scoreOf({ samples: 10, avg_ms: 100, success_rate: 1, consecutive_fail: 5 }) < scoreOf({ samples: 10, avg_ms: 100, success_rate: 1, consecutive_fail: 0 }));
+  const bounds = iqrBounds([100, 110, 105, 108, 120, 115, 200, 112]);
+  check('IQR مرز پرت می‌دهد', bounds && bounds.lo < bounds.hi);
+
+  // پیش‌فرض خاموش
+  check('پروب پیش‌فرض خاموش است', (await probeTargets(env, 6)).length === 0);
+  await setSetting(env.DB, 'probe_enabled', '1');
+  await setSetting(env.DB, 'probe_daily_cap', '1');
+  await setSetting(env.DB, 'probe_reward_coins', '5');
+
+  const n1 = await addCleanIps(env, [{ ip: '104.16.0.1', port: 443 }, { ip: '104.16.0.2' }]);
+  check('افزودن IP تمیز', n1 === 2, String(n1));
+  check('هاست نمونه در مخزن IP رد می‌شود', (await addCleanIps(env, [{ ip: 'x.example.com' }])) === 0);
+
+  const targets = await probeTargets(env, 2);
+  check('probeTargets کاندید می‌دهد', targets.length === 2, JSON.stringify(targets));
+
+  const { user } = await ensureUser(env.DB, { id: 111, first_name: 'A' });
+  const ip1 = await env.DB.prepare("SELECT * FROM clean_ips WHERE ip='104.16.0.1'").first();
+  const r1 = await applyProbeReport(env, user, { ip_id: ip1.id, ms: 50, ok: true, operator: 'mci' });
+  check('گزارش معتبر ثبت و سکه می‌گیرد', r1.ok === true && r1.reward === 5, JSON.stringify(r1));
+  const ip1b = await env.DB.prepare('SELECT * FROM clean_ips WHERE id=?').bind(ip1.id).first();
+  check('میانگین و تعداد نمونه ثبت شد', ip1b.samples === 1 && ip1b.avg_ms === 50, JSON.stringify(ip1b));
+  check('سکه به کاربر افزوده شد', (await getUser(env.DB, 111)).coins === 5);
+
+  // گزارش بدون initData معتبر رد می‌شود (route)
+  const anon = await probeReport(env, new Request('https://x.test/api/probe/report', { method: 'POST', body: JSON.stringify({ ip_id: ip1.id, ms: 10 }) }));
+  check('گزارش پروب بدون initData معتبر رد می‌شود', anon.status === 403, String(anon.status));
+
+  // سقف روزانه
+  const r2 = await applyProbeReport(env, user, { ip_id: ip1.id, ms: 60, ok: true });
+  check('سقف روزانه اعمال می‌شود', r2.ok === false && r2.reason === 'daily_cap', JSON.stringify(r2));
+
+  // مدارشکن: ۵ شکست پیاپی → غیرفعال موقت
+  const env2 = await makeEnv();
+  await setSetting(env2.DB, 'probe_enabled', '1');
+  await setSetting(env2.DB, 'probe_daily_cap', '100');
+  await addCleanIps(env2, [{ ip: '104.16.0.9' }]);
+  const { user: u2 } = await ensureUser(env2.DB, { id: 222, first_name: 'B' });
+  const ip9 = await env2.DB.prepare("SELECT * FROM clean_ips WHERE ip='104.16.0.9'").first();
+  for (let i = 0; i < 5; i++) await applyProbeReport(env2, u2, { ip_id: ip9.id, ms: 300 + i * 10, ok: false });
+  const ip9b = await env2.DB.prepare('SELECT * FROM clean_ips WHERE id=?').bind(ip9.id).first();
+  check('شکست پیاپی IP را خودکار غیرفعال می‌کند (مدارشکن)', ip9b.active === 0 && Number(ip9b.blocked_until) > 0, JSON.stringify(ip9b));
+  const afterBlock = await probeTargets(env2, 6);
+  check('IP مدارشکن‌شده در کاندیدها نمی‌آید', !afterBlock.some((t) => t.id === ip9.id), JSON.stringify(afterBlock));
+
+  // ایمپورت رنج کلادفلر (mock شده)
+  const n3 = await importCloudflareRanges(env, 10);
+  check('ایمپورت رنج کلادفلر نمونه می‌گیرد', n3 > 0, String(n3));
+
+  // اعمال بهترین‌ها روی سرورها (فقط ستون clean_ip)
+  await addRealServer(env, { protocol: 'vless', ip: 'edge.realhost.net' });
+  const applied = await applyBestCleanIps(env, 'vless', 10);
+  check('اعمال بهترین IP روی سرور vless', applied >= 1, String(applied));
+}
+
+// ── ۳۰) ساخت خودکار سکرت (بخش ۴) ──
+section('۳۰) ساخت خودکار سکرت/کلید');
+{
+  const { randomUuid, randomSecurePassword, randomMtprotoSecret, generateSecretFor, MTPROTO_SECRET_WARNING } = await import('../src/secrets.js');
+  const { isValidMtprotoSecret } = await import('../src/proxy.js');
+
+  check('UUID معتبر ساخته می‌شود', /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(randomUuid()));
+  const pw = randomSecurePassword(32);
+  check('پسورد امن حداقل ۲۴ کاراکتر base64url', pw.length >= 24 && /^[A-Za-z0-9_-]{24,}$/.test(pw));
+
+  const raw = randomMtprotoSecret('raw');
+  check('سکرت MTProto خام ۳۲ هگزی معتبر است', /^[0-9a-f]{32}$/i.test(raw) && isValidMtprotoSecret(raw));
+  const dd = randomMtprotoSecret('dd');
+  check('سکرت dd+هگز معتبر است', dd.startsWith('dd') && isValidMtprotoSecret(dd));
+  const ee = randomMtprotoSecret('ee', 'www.microsoft.com');
+  check('سکرت ee+هگز+FakeTLS معتبر است', ee.startsWith('ee') && isValidMtprotoSecret(ee), ee);
+
+  const vless = generateSecretFor('vless');
+  check('سکرت VLESS یک UUID است', /^[0-9a-f-]{36}$/i.test(vless.secret));
+  const mtp = generateSecretFor('mtproto');
+  check('سکرت MTProto معتبر و همراه هشدار است', isValidMtprotoSecret(mtp.secret) && mtp.note === MTPROTO_SECRET_WARNING);
+  check('هشدار MTProto به محدودیت Worker اشاره دارد', MTPROTO_SECRET_WARNING.includes('TCP خام ورودی'));
+  const reality = generateSecretFor('reality');
+  check('Reality فقط راهنما می‌دهد (کلید جعلی نمی‌سازد)', !!reality.error && reality.error.includes('x25519'));
 }
 
 // ═══════════════════ نتیجه ═══════════════════
