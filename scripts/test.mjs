@@ -1279,6 +1279,82 @@ section('۳۰) ساخت خودکار سکرت/کلید');
   check('Reality فقط راهنما می‌دهد (کلید جعلی نمی‌سازد)', !!reality.error && reality.error.includes('x25519'));
 }
 
+// ── ۳۱) بخش ۰ — ساب داینامیک، multi-IP و kill-switch ──
+section('۳۱) ساب داینامیک، multi-IP و kill-switch');
+{
+  const { bestCleanIps, protocolHealth, checkDeliverable, setProductKillSwitch, killSwitchStatus, buildConfigsMulti, dynamicSubContent, createSubscription, subLandingHtml } = await import('../src/subs.js');
+  const { applyConnectionFeedback, addCleanIps } = await import('../src/cleanip.js');
+  const { ensureUser } = await import('../src/db.js');
+
+  const env = await makeEnv();
+  const { user } = await ensureUser(env.DB, { id: 333, first_name: 'K' });
+  await addRealServer(env, { protocol: 'vless', ip: 'edge.realhost.net', name: 'سرور آلمان' });
+
+  // ۱) bestCleanIps: فعال، خارج از مدارشکن و مرتب بر اساس امتیاز
+  await addCleanIps(env, [{ ip: '104.16.0.10' }, { ip: '104.16.0.11' }, { ip: '104.16.0.12' }]);
+  await env.DB.prepare("UPDATE clean_ips SET samples=5, score=40 WHERE ip='104.16.0.10'").run();
+  await env.DB.prepare("UPDATE clean_ips SET samples=50, score=95 WHERE ip='104.16.0.11'").run();
+  await env.DB.prepare("UPDATE clean_ips SET samples=20, score=70 WHERE ip='104.16.0.12'").run();
+  const ips = await bestCleanIps(env.DB, 2);
+  check('bestCleanIps بر اساس امتیاز مرتب است', ips[0] === '104.16.0.11', JSON.stringify(ips));
+  check('bestCleanIps آی‌پی نمونه/مدارشکن را نمی‌آورد', ips.every((i) => !/example\.(com|net|org)/i.test(i)), JSON.stringify(ips));
+
+  // ۲) buildConfigsMulti: چند کانفیگ برای هر سرور با IPهای تمیز
+  const srv = await env.DB.prepare("SELECT * FROM servers WHERE protocol='vless' AND active=1 ORDER BY id DESC LIMIT 1").first();
+  const multi = buildConfigsMulti([srv], 'UUIDM', { title: 'تست', days: 30, protocol: 'vless' }, '', { cleanIps: ips, perServer: 2 });
+  check('buildConfigsMulti چند کانفیگ می‌سازد', multi.length >= 2, JSON.stringify(multi));
+  check('کانفیگ multi حاوی IP تمیز است', multi.some((l) => l.includes(ips[0])), JSON.stringify(multi));
+  check('کانفیگ multi هاست نمونه ندارد', !multi.some((l) => /example\.(com|net|org)/i.test(l)));
+
+  // ۳) kill-switch دستی ادمین
+  const ok0 = await checkDeliverable(env.DB, { protocol: 'vless', server_count: 5 });
+  check('checkDeliverable با مسیر سالم ok است', ok0.ok === true, JSON.stringify(ok0));
+  await setProductKillSwitch(env.DB, 'vless', '1');
+  const off = await checkDeliverable(env.DB, { protocol: 'vless', server_count: 5 });
+  check('kill-switch دستی خاموش مانع تحویل می‌شود', off.ok === false && off.reason === 'manual_killswitch', JSON.stringify(off));
+  await setProductKillSwitch(env.DB, 'vless', '0');
+  const on = await checkDeliverable(env.DB, { protocol: 'vless', server_count: 5 });
+  check('kill-switch force_on تحویل می‌دهد', on.ok === true, JSON.stringify(on));
+  await setProductKillSwitch(env.DB, 'vless', '');
+  const st = await killSwitchStatus(env.DB);
+  check('killSwitchStatus وضعیت vless را گزارش می‌کند', st.vless && st.vless.available === true, JSON.stringify(st.vless));
+  check('killSwitchStatus پروتکل نامعتبر را رد می‌کند', (await setProductKillSwitch(env.DB, 'hack', '1')).ok === false);
+
+  // ۴) kill-switch خودکار: هیچ مسیر سالمی نمانده
+  await env.DB.prepare('UPDATE servers SET healthy=0').run();
+  const auto = await checkDeliverable(env.DB, { protocol: 'vless', server_count: 5 });
+  check('بدون مسیر سالم kill-switch خودکار ok=false', auto.ok === false && auto.reason === 'no_healthy_route', JSON.stringify(auto));
+  await env.DB.prepare('UPDATE servers SET healthy=1').run();
+
+  // ۵) dynamicSubContent در هر fetch بازسازی می‌شود
+  const sub = await createSubscription(env, user, { id: 1, title: 'محصول', protocol: 'vless', days: 30, server_count: 5 }, {});
+  const row = await env.DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind(sub.token).first();
+  const dyn = await dynamicSubContent(env, row);
+  check('dynamicSubContent ok با کانفیگ چندگانه', dyn.ok === true && dyn.lines.length >= 1, JSON.stringify({ ok: dyn.ok, n: dyn.lines.length }));
+  check('dynamicSubContent IPهای تمیز را گزارش می‌کند', dyn.cleanIps.length >= 1, JSON.stringify(dyn.cleanIps));
+
+  // ۶) subLandingHtml: تحویل واقعی + پیام صادقانه در kill-switch
+  const html1 = await subLandingHtml(env, row);
+  check('صفحه ساب کانفیگ واقعی دارد', html1.includes('vless://'));
+  check('صفحه ساب دکمه تأیید IP تمیز دارد', html1.includes('connOk'));
+  await setProductKillSwitch(env.DB, 'vless', '1');
+  const html2 = await subLandingHtml(env, row);
+  check('صفحه ساب در kill-switch پیام صادقانه می‌دهد', html2.includes('سرویس در دسترس نیست') && !html2.includes('vless://'));
+  await setProductKillSwitch(env.DB, 'vless', '');
+
+  // ۷) استخراج خودکار IP از اتصال موفق کاربر (applyConnectionFeedback)
+  const fbBad = await applyConnectionFeedback(env, row.token, '1.2.3.4');
+  check('بازخورد IP خارج از کانفیگ رد می‌شود', fbBad.ok === false && fbBad.reason === 'not_in_config', JSON.stringify(fbBad));
+  const fbTok = await applyConnectionFeedback(env, 'BADTOKEN', ips[0]);
+  check('بازخورد با توکن نامعتبر رد می‌شود', fbTok.ok === false && fbTok.reason === 'notfound', JSON.stringify(fbTok));
+  const fbOk = await applyConnectionFeedback(env, row.token, ips[0]);
+  check('بازخورد معتبر ثبت و به clean_ips می‌رود', fbOk.ok === true, JSON.stringify(fbOk));
+  const added = await env.DB.prepare('SELECT * FROM clean_ips WHERE ip=?').bind(ips[0]).first();
+  check('IP تأییدشده امتیاز و نمونه دارد', added && Number(added.samples) >= 1 && Number(added.score) >= 0, JSON.stringify(added && { samples: added.samples, score: added.score }));
+  const fbDup = await applyConnectionFeedback(env, row.token, ips[0]);
+  check('بازخورد تکراری در ساعت rate-limit می‌شود', fbDup.ok === false && fbDup.reason === 'rate_limited', JSON.stringify(fbDup));
+}
+
 // ═══════════════════ نتیجه ═══════════════════
 globalThis.fetch = origFetch;
 console.log('\n' + '─'.repeat(50));

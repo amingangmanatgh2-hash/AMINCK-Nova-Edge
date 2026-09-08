@@ -15,7 +15,7 @@ import { scheduled } from './jobs.js';
 import { gameHtml, handleGameApi } from './game.js';
 import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
 import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
-import { probeTargets, probeReport } from './cleanip.js';
+import { probeTargets, probeReport, applyConnectionFeedback } from './cleanip.js';
 import {
   handleStart, handleUserText, handleUserCallback, setState, showMainMenu, openProduct, openShop, handleReceiptPhoto,
 } from './user.js';
@@ -53,6 +53,14 @@ export default {
         return json({ ok: true, targets });
       }
       if (path === '/api/probe/report') return await probeReport(env, request);
+      if (path === '/api/sub/success') {
+        let body = {};
+        try {
+          body = await request.json();
+        } catch {}
+        const res = await applyConnectionFeedback(env, body?.token || '', body?.ip || '');
+        return json(res, res.ok ? 200 : 400);
+      }
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
       if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
       if (path === '/panel' || path === '/panel/') return await panelHtml(env);

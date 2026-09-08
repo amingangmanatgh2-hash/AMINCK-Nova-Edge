@@ -171,6 +171,14 @@ export function isServerDeliverable(s) {
 export const NO_REAL_SERVER_MESSAGE =
   '⚠️ هنوز سرور واقعی تنظیم نشده است؛ این محصول فعلاً قابل تحویل نیست.';
 
+/**
+ * پیام صادقانهٔ kill-switch: وقتی هیچ مسیر سالمی برای یک پروتکل باقی نمانده،
+ * به‌جای تحویل کانفیگ مرده، همین پیام داده می‌شود.
+ */
+export const SERVICE_UNAVAILABLE_MESSAGE =
+  '⚠️ سرویس در دسترس نیست؛ در حال حاضر هیچ مسیر سالمی برای این پروتکل باقی نمانده است. ' +
+  'لطفاً کمی بعد دوباره تلاش کنید یا با پشتیبانی تماس بگیرید. 🙏';
+
 /** خطای اختصاصی «سرور واقعی موجود نیست» */
 export class NoRealServerError extends Error {
   constructor(message = NO_REAL_SERVER_MESSAGE) {

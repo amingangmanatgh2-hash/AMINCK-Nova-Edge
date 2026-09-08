@@ -3,11 +3,15 @@
 //  ⛔ هیچ کانفیگی با هاست نمونه (example.com) یا سکرت جعلی ساخته نمی‌شود.
 // ═══════════════════════════════════════════════════════════════════
 import { randToken, fmtDate, faDigits } from './db.js';
+import { getSettingValue } from './texts.js';
 import { tmpl } from './util.js';
 import {
   buildMtprotoLinks, buildSocks5Links, isServerDeliverable, serverIssues,
-  deliveryKind, NoRealServerError, isValidHost,
+  deliveryKind, NoRealServerError, isValidHost, SUBSCRIPTION_PROTOCOLS,
+  SERVICE_UNAVAILABLE_MESSAGE,
 } from './proxy.js';
+
+const now = () => Math.floor(Date.now() / 1000);
 
 /** انتخاب سرورهای سالم و «واقعاً پیکربندی‌شده» برای ساب */
 export async function pickServers(db, protocol, count = 10) {
@@ -25,6 +29,37 @@ export async function pickServers(db, protocol, count = 10) {
     ? [...primary, ...otherProto, ...sameProtoUnhealthy]
     : [...primary, ...sameProtoUnhealthy];
   return pool.slice(0, Math.max(1, count));
+}
+
+/** چند IP تمیز برتر (فعال و خارج از مدارشکن) — مرتب بر اساس امتیاز واقعی */
+export async function bestCleanIps(db, count = 3) {
+  const rows = (
+    await db
+      .prepare('SELECT ip FROM clean_ips WHERE active=1 AND (blocked_until=0 OR blocked_until<=?) ORDER BY score DESC, samples DESC LIMIT ?')
+      .bind(now(), Math.min(20, Math.max(1, Number(count) || 1)))
+      .all()
+  ).results;
+  return rows.map((r) => r.ip).filter(isValidHost);
+}
+
+/**
+ * وضعیت سلامت مسیرهای یک پروتکل — پایهٔ kill-switch صادقانه.
+ * برای پروتکل‌های اشتراکی، سرور سالم از پروتکل دیگر هم یک «مسیر سالم» محسوب
+ * می‌شود (کلاینت چندپروتکلی می‌تواند از آن استفاده کند).
+ * @returns {Promise<{ok:boolean, healthyCount:number, totalSame:number, reason:string}>}
+ */
+export async function protocolHealth(db, protocol) {
+  const kind = deliveryKind(protocol);
+  const rows = (await db.prepare('SELECT * FROM servers WHERE active=1').all()).results.filter(isServerDeliverable);
+  const same = rows.filter((s) => s.protocol === protocol);
+  const healthySame = same.filter((s) => s.healthy);
+  if (kind === 'subscription') {
+    const otherHealthy = rows.filter((s) => s.healthy && SUBSCRIPTION_PROTOCOLS.includes(s.protocol) && s.protocol !== protocol);
+    const healthyCount = healthySame.length + otherHealthy.length;
+    return { ok: healthyCount > 0, healthyCount, totalSame: same.length, reason: healthyCount > 0 ? '' : 'no_healthy_route' };
+  }
+  const healthyCount = healthySame.length;
+  return { ok: healthyCount > 0, healthyCount, totalSame: same.length, reason: healthyCount > 0 ? '' : 'no_healthy_route' };
 }
 
 /** ساخت رشته‌های کانفیگ برای یک ساب — سرورهای ناقص نادیده گرفته می‌شوند */
@@ -58,6 +93,68 @@ export function buildConfigs(servers, uuid, product, userName) {
       user: userName || 'AMINCK',
     });
     if (line.trim() && !/example\.(com|net|org)/i.test(line)) lines.push(line.trim());
+  });
+  return lines;
+}
+
+/**
+ * ساخت کانفیگ با چند IP تمیز برای هر سرور (بخش ۰ — چند IP به‌جای یک IP).
+ * ترتیب: clean_ip اختصاصی سرور → IPهای تمیز برتر (مرتب با امتیاز) → خود سرور.
+ * پروتکل‌های اتصال مستقیم (MTProto/SOCKS5) فقط هاست واقعی خودشان را می‌گیرند؛
+ * جایگزینی IP تمیز فقط برای پروتکل‌های اشتراکی (VLESS/VMess/Trojan/SS) معنا دارد.
+ *
+ * @param {object[]} servers سرورهای تحویل‌دادنی
+ * @param {string} uuid
+ * @param {object} product {title, days, protocol}
+ * @param {string} userName
+ * @param {object} opts {cleanIps:string[], perServer:number}
+ */
+export function buildConfigsMulti(servers, uuid, product, userName = '', opts = {}) {
+  const perServer = Math.min(6, Math.max(1, Number(opts.perServer) || 3));
+  const cleanIps = (opts.cleanIps || []).filter(isValidHost);
+  const lines = [];
+  (servers || []).forEach((s, i) => {
+    if (serverIssues(s).length) return;
+    const proto = String(s.protocol || '').toLowerCase();
+    const name = `${product.title || 'AMINCK'} | ${s.name || 'سرور ' + (i + 1)}`;
+    try {
+      if (proto === 'mtproto') {
+        lines.push(buildMtprotoLinks({ host: s.ip, port: s.port, secret: s.secret }).tg);
+        return;
+      }
+      if (proto === 'socks5') {
+        lines.push(buildSocks5Links({ host: s.ip, port: s.port, user: userName || '', pass: s.secret || '' }).tg);
+        return;
+      }
+    } catch {
+      return;
+    }
+    const hosts = [];
+    const pushHost = (h) => {
+      if (isValidHost(h) && !hosts.includes(h)) hosts.push(h);
+    };
+    if (s.clean_ip) pushHost(s.clean_ip);
+    for (const c of cleanIps) {
+      if (hosts.length >= perServer) break;
+      pushHost(c);
+    }
+    pushHost(s.ip);
+    for (const host of hosts.slice(0, perServer + 1)) {
+      let t = s.template || defaultTemplate(proto, host, s.port);
+      // اگر قالب، هاست سرور را سفت کرده باشد (بدون {ip})، برای هر IP تمیز همان
+      // هاست جایگزین می‌شود تا کانفیگ‌های چندگانه واقعاً متفاوت باشند.
+      if (s.ip && host !== s.ip) t = t.split(s.ip).join(host);
+      if (s.clean_ip && s.clean_ip !== s.ip && host !== s.clean_ip) t = t.split(s.clean_ip).join(host);
+      const line = tmpl(t, {
+        uuid,
+        name,
+        ip: host,
+        port: String(s.port || defaultPort(proto)),
+        days: String(product.days || 30),
+        user: userName || 'AMINCK',
+      });
+      if (line.trim() && !/example\.(com|net|org)/i.test(line) && !lines.includes(line)) lines.push(line.trim());
+    }
   });
   return lines;
 }
@@ -115,13 +212,60 @@ export function defaultTemplate(protocol, ip, port) {
 }
 
 /**
- * آیا محصول با سرورهای واقعیِ فعلی قابل تحویل است؟
+ * آیا محصول با سرورهای واقعیِ فعلی قابل تحویل است؟ (با kill-switch)
+ *
+ * reasonهای ممکن:
+ *   ''                → قابل تحویل
+ *   'no_real_server'  → هیچ سرور واقعی/قابل‌تحویلی ثبت نشده
+ *   'no_healthy_route'→ سرور هست اما هیچ مسیر سالمی برای پروتکل نمانده (kill-switch خودکار)
+ *   'manual_killswitch'→ ادمین دستی این پروتکل را خاموش کرده است
+ *
  * @returns {Promise<{ok:boolean, servers:object[], reason?:string}>}
  */
 export async function checkDeliverable(db, product) {
-  const servers = await pickServers(db, product?.protocol || 'vless', product?.server_count || 10);
+  const protocol = product?.protocol || 'vless';
+  const servers = await pickServers(db, protocol, product?.server_count || 10);
   if (!servers.length) return { ok: false, servers: [], reason: 'no_real_server' };
+
+  const manual = await getSettingValue(db, `killswitch:${protocol}`);
+  if (manual === '1') return { ok: false, servers, reason: 'manual_killswitch' };
+  if (manual === '0') return { ok: true, servers };
+
+  const health = await protocolHealth(db, protocol);
+  if (!health.ok) return { ok: false, servers, reason: 'no_healthy_route' };
   return { ok: true, servers };
+}
+
+/**
+ * kill-switch دستی ادمین: force_on ('0') / force_off ('1') / auto ('')
+ * @param {string} protocol
+ * @param {'0'|'1'|''} mode
+ */
+export async function setProductKillSwitch(db, protocol, mode) {
+  const p = String(protocol || '').toLowerCase();
+  if (!SUBSCRIPTION_PROTOCOLS.includes(p) && !['mtproto', 'socks5', 'openvpn'].includes(p)) return { ok: false, reason: 'bad_protocol' };
+  const v = mode === '1' || mode === '0' ? mode : '';
+  await db
+    .prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value')
+    .bind(`killswitch:${p}`, v)
+    .run();
+  return { ok: true, protocol: p, mode: v };
+}
+
+/** وضعیت kill-switch همهٔ پروتکل‌ها برای پنل */
+export async function killSwitchStatus(db) {
+  const out = {};
+  for (const p of [...SUBSCRIPTION_PROTOCOLS, 'mtproto', 'socks5', 'openvpn']) {
+    const manual = await getSettingValue(db, `killswitch:${p}`);
+    const health = await protocolHealth(db, p);
+    out[p] = {
+      manual: manual === '1' ? 'off' : manual === '0' ? 'on' : 'auto',
+      healthyCount: health.healthyCount,
+      totalSame: health.totalSame,
+      available: manual === '1' ? false : manual === '0' ? true : health.ok,
+    };
+  }
+  return out;
 }
 
 /** ایجاد اشتراک جدید در دیتابیس */
@@ -157,18 +301,29 @@ export async function createSubscription(env, user, product, opts = {}) {
   return { token, servers, expire, uuid };
 }
 
-/** محتوای صفحه لندینگ ساب — مینیمال (بدون هیچ کانفیگ نمونه/جعلی) */
-export async function subLandingHtml(env, sub) {
+/**
+ * محتوای پویای ساب — بخش ۰ (ساب داینامیک):
+ * در هر fetch سرورهای سالم بر اساس امتیاز لحظه‌ای clean_ips دوباره انتخاب و
+ * کانفیگ rebuild می‌شود؛ هر سرور چند IP تمیز (مرتب با امتیاز) می‌گیرد.
+ * @returns {Promise<{ok:boolean, reason:string, servers:object[], cleanIps:string[], lines:string[]}>}
+ */
+export async function dynamicSubContent(env, sub) {
   const { DB } = env;
-  const servers = JSON.parse(sub.server_ids || '[]');
-  const rawRows = servers.length
-    ? (await DB.prepare(`SELECT * FROM servers WHERE id IN (${servers.map(() => '?').join(',')})`).bind(...servers).all()).results
-    : [];
-  // ⛔ صفحهٔ ساب هرگز کانفیگ example.com یا سرور ناقص را نمایش نمی‌دهد
-  const serverRows = (rawRows || []).filter((s) => serverIssues(s).length === 0);
-  const fakeProduct = { title: sub.title, days: sub.days };
-  const lines = buildConfigs(serverRows, sub.uuid, fakeProduct, '');
-  const direct = buildDirectLinks(serverRows);
+  const prod = sub.product_id ? await DB.prepare('SELECT * FROM products WHERE id=?').bind(sub.product_id).first() : null;
+  const protocol = (prod?.protocol || 'vless').toLowerCase();
+  const product = { title: sub.title, days: sub.days, protocol, server_count: prod?.server_count || 10 };
+  const check = await checkDeliverable(DB, product);
+  if (!check.ok) return { ok: false, reason: check.reason, servers: [], cleanIps: [], lines: [] };
+  const cleanIps = await bestCleanIps(DB, 3);
+  const lines = buildConfigsMulti(check.servers, sub.uuid, product, '', { cleanIps, perServer: 3 });
+  return { ok: true, reason: '', servers: check.servers, cleanIps, lines };
+}
+
+/** محتوای صفحه لندینگ ساب — پویا و بدون هیچ کانفیگ نمونه/جعلی */
+export async function subLandingHtml(env, sub) {
+  const dyn = await dynamicSubContent(env, sub);
+  const lines = dyn.lines;
+  const direct = buildDirectLinks(dyn.servers);
   const expired = sub.expire_at < Math.floor(Date.now() / 1000);
   const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const directHtml = direct.length
@@ -179,10 +334,33 @@ export async function subLandingHtml(env, sub) {
         )
         .join('')
     : '';
-  const body = lines.length
-    ? `<button class="btn" onclick="copyAll()">📋 کپی همه کانفیگ‌ها</button>
-<pre id="cfg">${esc(lines.join('\n\n'))}</pre>`
-    : `<div class="expired">⚠️ هنوز سرور واقعی برای این اشتراک تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.</div>`;
+
+  // دکمهٔ بازخورد اتصال موفق (استخراج خودکار IP از اتصال موفق کاربر)
+  const ipChips = dyn.cleanIps.length
+    ? `<div class="row" style="display:block">
+<span style="color:#8fa3c8">📡 اگر با یکی از این IPها وصل شدید، تأیید کنید تا امتیازش واقعی‌تر شود:</span>
+<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${dyn.cleanIps
+      .map(
+        (ip) =>
+          `<button class="chip" data-ip="${esc(ip)}" onclick="connOk(this)">✅ ${esc(ip)}</button>`
+      )
+      .join('')}</div></div>`
+    : '';
+
+  let body;
+  if (!dyn.ok) {
+    const reasonText =
+      dyn.reason === 'no_real_server'
+        ? '⚠️ هنوز سرور واقعی برای این اشتراک تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.'
+        : '⚠️ سرویس در دسترس نیست؛ در حال حاضر مسیر سالمی برای این اشتراک باقی نمانده است. کمی بعد دوباره امتحان کنید.';
+    body = `<div class="expired">${reasonText}</div>`;
+  } else if (!lines.length) {
+    body = `<div class="expired">⚠️ هنوز سرور واقعی برای این اشتراک تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.</div>`;
+  } else {
+    body = `<button class="btn" onclick="copyAll()">📋 کپی همه کانفیگ‌ها</button>
+<pre id="cfg">${esc(lines.join('\n\n'))}</pre>`;
+  }
+
   return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AMINCK | ${esc(sub.title)}</title>
@@ -194,6 +372,8 @@ export async function subLandingHtml(env, sub) {
  pre{background:#0a0f1d;border-radius:12px;padding:14px;font-size:11px;overflow:auto;max-height:320px;color:#7ee0a3;direction:ltr;text-align:left}
  .btn{display:block;background:linear-gradient(135deg,#f5b31e,#ff8a00);color:#1a1a1a;text-align:center;font-weight:700;border-radius:12px;padding:13px;margin:14px 0;text-decoration:none;cursor:pointer;border:none;width:100%;font-size:15px}
  .expired{background:#3d1420;color:#ff7b93;border-radius:12px;padding:14px;text-align:center;font-weight:700}
+ .chip{background:#22314f;color:#eaf1ff;border:1px solid #33477a;border-radius:10px;padding:7px 12px;cursor:pointer;font-family:inherit;font-size:12px;direction:ltr}
+ .chip.ok{background:#14513c;color:#b8f5df;border-color:#2a8063}
 </style></head><body><div class="card">
 <h1>⚡ ${esc(sub.title)}</h1>
 <div class="sub">AMINCK — اشتراک اختصاصی شما</div>
@@ -201,11 +381,13 @@ ${expired ? '<div class="expired">⛔ این اشتراک منقضی شده اس
 <div class="row"><span>📅 تاریخ انقضا</span><b>${fmtDate(sub.expire_at)}</b></div>
 <div class="row"><span>⏱ مدت</span><b>${faDigits(sub.days)} روز</b></div>
 <div class="row"><span>📊 حجم</span><b>${sub.traffic_gb > 0 ? faDigits(sub.traffic_gb) + ' گیگابایت' : 'نامحدود'}</b></div>
-<div class="row"><span>🖥 تعداد سرور</span><b>${faDigits(serverRows.length)}</b></div>
+<div class="row"><span>🖥 تعداد سرور سالم</span><b>${faDigits(dyn.servers.length)}</b></div>
 ${directHtml}
+${ipChips}
 ${body}`}
 <script>
 function copyAll(){var e=document.getElementById('cfg');if(!e)return;navigator.clipboard.writeText(e.innerText).then(function(){alert('✅ کپی شد')})}
+function connOk(btn){var ip=btn.getAttribute('data-ip');fetch('/api/sub/success',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:${JSON.stringify(sub.token)},ip:ip})}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){btn.classList.add('ok');btn.textContent='✅ ثبت شد'}else{alert('⚠️ '+(j&&j.reason?j.reason:'ناموفق'))}}).catch(function(){alert('⚠️ ارتباط برقرار نشد')})}
 </script></div></body></html>`;
 }
 
@@ -242,5 +424,10 @@ export async function grantTrial(env, user) {
     traffic_gb: 0.5,
     server_count: Math.min(3, best.results.length || 1),
   };
+  // kill-switch: بدون مسیر سالم، تست رایگان هم تحویل داده نمی‌شود
+  const check = await checkDeliverable(DB, product);
+  if (!check.ok) {
+    throw new NoRealServerError(check.reason === 'no_real_server' ? undefined : SERVICE_UNAVAILABLE_MESSAGE);
+  }
   return createSubscription(env, user, product, { isTrial: true, days: 1, trafficGb: 0.5 });
 }

@@ -20,6 +20,7 @@ import { todayStr, faDigits, getUser } from './db.js';
 import { getNum, isEnabled } from './texts.js';
 import { clamp, verifyInitData, json } from './util.js';
 import { isValidHost, isValidPort } from './proxy.js';
+import { checkDeliverable, bestCleanIps } from './subs.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -267,6 +268,58 @@ export async function cleanIpMaintenance(env) {
     await DB.prepare("DELETE FROM settings WHERE key='clean_ip_alert'").run();
   }
   return { healthy, minHealthy };
+}
+
+/**
+ * استخراج خودکار IP از «اتصال موفق کاربر» (بخش ۰).
+ *
+ * در معماری Worker هیچ راهی برای دیدن ترافیک VPN کاربر وجود ندارد؛ تنها
+ * سیگنال قابل اتکا، تأییدِ خود کاربر از صفحهٔ /sub است که با توکنِ خودِ
+ * اشتراک (نه initData که در صفحهٔ وب معمولی موجود نیست) احراز می‌شود.
+ * برای جلوگیری از تزریق IP دلخواه، IP باید جزو مجموعهٔ فعلیِ همان اشتراک باشد
+ * و هر (کاربر، IP) حداکثر یک بار در ساعت می‌تواند تأیید شود.
+ */
+export async function applyConnectionFeedback(env, token, ip) {
+  const { DB } = env;
+  const target = String(ip || '').trim();
+  if (!isValidHost(target)) return { ok: false, reason: 'invalid_ip' };
+  const sub = await DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind(String(token || '').trim()).first();
+  if (!sub) return { ok: false, reason: 'notfound' };
+  if (Number(sub.expire_at || 0) < now()) return { ok: false, reason: 'expired' };
+
+  // IP باید جزو خروجیِ فعلیِ همین اشتراک باشد
+  const prod = sub.product_id ? await DB.prepare('SELECT * FROM products WHERE id=?').bind(sub.product_id).first() : null;
+  const protocol = (prod?.protocol || 'vless').toLowerCase();
+  const product = { title: sub.title, days: sub.days, protocol, server_count: prod?.server_count || 10 };
+  const check = await checkDeliverable(DB, product);
+  const cleanIps = await bestCleanIps(DB, 6);
+  const valid = new Set([
+    ...(check.servers || []).map((s) => s.ip),
+    ...(check.servers || []).map((s) => s.clean_ip).filter(Boolean),
+    ...cleanIps,
+  ]);
+  if (!valid.has(target)) return { ok: false, reason: 'not_in_config' };
+
+  // سقف: یک تأیید در ساعت برای هر (کاربر، IP)
+  const key = `connok:${sub.user_id}:${target}`;
+  if (await env.KV.get(key)) return { ok: false, reason: 'rate_limited' };
+  await env.KV.put(key, '1', { expirationTtl: 3600 });
+
+  const row = await DB.prepare('SELECT * FROM clean_ips WHERE ip=?').bind(target).first();
+  if (!row) {
+    const initialScore = scoreOf({ samples: 1, avg_ms: 0, success_rate: 1, consecutive_fail: 0 });
+    await DB.prepare(
+      'INSERT INTO clean_ips (ip, port, family, source, note, added_at, active, samples, success_rate, score, last_ok_at) VALUES (?,?,?,?,?,?,1,1,1,?,?)'
+    ).bind(target, 443, familyOf(target), 'user_feedback', 'از تأیید اتصال کاربر', now(), initialScore, now()).run();
+    return { ok: true, added: true };
+  }
+  const samples = Number(row.samples || 0) + 1;
+  const successRate = Math.round((Number(row.success_rate || 0) * 0.8 + 0.2) * 1000) / 1000;
+  const newScore = scoreOf({ samples, avg_ms: Number(row.avg_ms || 0), success_rate: successRate, consecutive_fail: 0 });
+  await DB.prepare(
+    'UPDATE clean_ips SET samples=?, success_rate=?, consecutive_fail=0, score=?, last_ok_at=?, active=1, blocked_until=0 WHERE id=?'
+  ).bind(samples, successRate, newScore, now(), row.id).run();
+  return { ok: true, added: false, score: newScore };
 }
 
 /**

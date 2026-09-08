@@ -8,7 +8,7 @@ import { productPriceToman, priceLine, RATE_UNAVAILABLE_MESSAGE } from './pricin
 import { createOrder, payWithWallet, payWithCoins, approveReceipt, sendDelivery, assertDeliverable } from './pay.js';
 import { analyzeReceipt } from './verify.js';
 import { grantTrial, buildConfigs, buildDirectLinks } from './subs.js';
-import { buildMtprotoLinks, buildSocks5Links, serverIssues, NO_REAL_SERVER_MESSAGE, NoRealServerError } from './proxy.js';
+import { buildMtprotoLinks, buildSocks5Links, serverIssues, NO_REAL_SERVER_MESSAGE, SERVICE_UNAVAILABLE_MESSAGE, NoRealServerError } from './proxy.js';
 import { makeBrandQR } from './qr.js';
 import { tmpl, deepLink, getBase, parseMoney } from './util.js';
 import { deliverOrder } from './pay.js';
@@ -119,6 +119,9 @@ async function startBuy(ctx, productId, method) {
       if (res.reason === 'no_real_server') {
         return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
       }
+      if (res.reason === 'no_healthy_route' || res.reason === 'manual_killswitch') {
+        return send(ctx.token, ctx.user.id, res.message || SERVICE_UNAVAILABLE_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+      }
       return send(
         ctx.token,
         ctx.user.id,
@@ -133,7 +136,7 @@ async function startBuy(ctx, productId, method) {
 
   if (!(await isEnabled(ctx.db, 'card_pay_enabled'))) return send(ctx.token, ctx.user.id, '🚫 پرداخت کارتی موقتاً غیرفعال است.');
   const canCard = await assertDeliverable(ctx.env, p);
-  if (!canCard.ok) return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+  if (!canCard.ok) return send(ctx.token, ctx.user.id, canCard.message || NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   const order = await createOrder(ctx.env, ctx.user.id, p, price, 'card');
   const card = await getSettingValue(ctx.db, 'card_number');
   const holder = await getSettingValue(ctx.db, 'card_holder');
@@ -345,7 +348,7 @@ export async function giveTrial(ctx) {
     sub = await grantTrial(ctx.env, ctx.user);
   } catch (e) {
     if (e instanceof NoRealServerError) {
-      return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+      return send(ctx.token, ctx.user.id, e.message || NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
     }
     throw e;
   }
@@ -577,7 +580,7 @@ async function buyCustom(ctx, spec, method) {
   const price = Math.round((await productPriceToman(ctx.env, p)) / 1000) * 1000;
   if (!price) return send(ctx.token, ctx.user.id, RATE_UNAVAILABLE_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   const canBuy = await assertDeliverable(ctx.env, p);
-  if (!canBuy.ok) return send(ctx.token, ctx.user.id, NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+  if (!canBuy.ok) return send(ctx.token, ctx.user.id, canBuy.message || NO_REAL_SERVER_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
   if (method === 'buywc') {
     const fresh = await getUser(ctx.db, ctx.user.id);
     if (fresh.balance < price) return send(ctx.token, ctx.user.id, '😕 موجودی کیف پول کافی نیست.');

@@ -15,12 +15,12 @@ import { html, json, isValidPanelPassword, randomPanelPassword, hmacSha256, toHe
 import { postAdToGroup, postAdsNow } from './group.js';
 import { tg, send } from './tg.js';
 import { serverIssues, isServerDeliverable, isValidMtprotoSecret, isValidHost } from './proxy.js';
-import { defaultTemplate, defaultPort } from './subs.js';
+import { defaultTemplate, defaultPort, killSwitchStatus, setProductKillSwitch } from './subs.js';
 import { approveReceipt, sendDelivery } from './pay.js';
 import { aiDiagnostics, TEXT_MODELS } from './ai.js';
 import { getRateInfo, computeDynamicPrice } from './pricing.js';
 import {
-  probeTargets, addCleanIps, parseIpEntries, importCloudflareRanges, importFromUrl,
+  addCleanIps, parseIpEntries, importCloudflareRanges, importFromUrl,
   applyBestCleanIps, cleanIpDto,
 } from './cleanip.js';
 import { generateSecretFor } from './secrets.js';
@@ -699,6 +699,18 @@ export async function handlePanelApi(env, request, path) {
     return json({ ok: !res.error, ...res });
   }
 
+  // ═══════════ kill-switch محصول (بخش ۰) ═══════════
+  if (path === '/api/panel/killswitch') {
+    if (body.set) {
+      const protocol = String(body.protocol || '').toLowerCase().slice(0, 20);
+      const mode = ['0', '1', ''].includes(body.mode) ? body.mode : '';
+      const res = await setProductKillSwitch(DB, protocol, mode);
+      if (!res.ok) return json({ ok: false, error: 'پروتکل نامعتبر است.' }, 400);
+      return json({ ok: true, status: await killSwitchStatus(DB) });
+    }
+    return json({ ok: true, status: await killSwitchStatus(DB) });
+  }
+
   return json({ ok: false, error: 'not found' }, 404);
 }
 
@@ -1253,6 +1265,8 @@ async function pgSettings(){
   h+='<div class="card"><h2>🌐 پروب IP تمیز</h2>'+
    '<div class="grid2">'+tog('probe_enabled','پروب کاربران فعال')+tog('clean_ip_auto_manage','مدیریت خودکار IP بد')+'</div>'+
    '<div class="grid2">'+num('probe_reward_coins','سکهٔ هر گزارش معتبر')+num('probe_daily_cap','سقف گزارش روزانه هر کاربر')+'</div></div>';
+  h+='<div class="card"><h2>🛑 Kill-switch محصول</h2><div id="ksBox" class="mut">در حال بارگذاری…</div>'+
+   '<div class="hint">وقتی هیچ مسیر سالمی برای یک پروتکل نماند، فروش آن خودکار متوقف می‌شود (پیام «سرویس در دسترس نیست»). اینجا می‌توانید دستی روشن/خاموش کنید.</div></div>';
   h+='<div class="card"><h2>🔀 فعال/غیرفعال</h2><div class="grid2">'+
    '<div>'+tog('shop_enabled','فروشگاه')+tog('trial_enabled','تست رایگان')+tog('card_pay_enabled','پرداخت کارتی')+tog('wallet_enabled','کیف پول')+'</div>'+
    '<div>'+tog('game_enabled','مینی‌اپ')+tog('referral_enabled','رفرال')+tog('auto_verify','تایید خودکار فیش')+tog('group_ai_enabled','AI در گروه')+'</div>'+
@@ -1268,6 +1282,7 @@ async function pgSettings(){
   $('pages').innerHTML=h;
   loadTexts();
   loadRate();
+  loadKillswitch();
 }
 var SETTING_KEYS=['ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text',
  'price_base','price_per_gb','price_per_day','price_per_device','discount_tiers','loyalty_discount_percent','loyalty_min_paid',
@@ -1304,6 +1319,22 @@ async function aiTest(){
 async function chpw(){var pw=$('npw').value.trim();if(!/^[0-9]{10}$/.test(pw)){$('perr').textContent='⛔ رمز باید دقیقاً ۱۰ رقم عددی باشد.';return}
  if(!confirmAsk('رمز پنل تغییر کند؟'))return;
  var r=await api('/api/panel/password',{password:pw});$('perr').textContent=r.ok?'':'⛔ '+(r.error||'خطا');if(r.ok){flash('✅ رمز تغییر کرد');$('npw').value=''}}
+
+/* ═════ Kill-switch محصول ═════ */
+var KS_PROTOS=['vless','vmess','trojan','ss','mtproto','socks5'];
+var KS_LABEL={vless:'VLESS',vmess:'VMess',trojan:'Trojan',ss:'Shadowsocks',mtproto:'MTProto',socks5:'SOCKS5'};
+async function loadKillswitch(){
+  var r=await api('/api/panel/killswitch',{});var box=$('ksBox');if(!box)return;
+  if(!r.ok){box.innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';return}
+  var st=r.status||{};
+  box.innerHTML=KS_PROTOS.map(function(p){var x=st[p]||{manual:'auto',healthyCount:0};
+   var opt=['auto','on','off'].map(function(m){return '<option value="'+m+'"'+(x.manual===m?' selected':'')+'>'+(m==='auto'?'خودکار':m==='on'?'روشن':'خاموش')+'</option>'}).join('');
+   return '<div class="g"><div class="row" style="justify-content:space-between"><b>'+KS_LABEL[p]+'</b>'+(x.available?'<span class="pill ok">در دسترس ('+x.healthyCount+' مسیر سالم)</span>':'<span class="pill bad">متوقف</span>')+'</div>'+
+    '<div class="row" style="margin-top:6px"><select id="ks_'+p+'">'+opt+'</select><button onclick="ksSet(\''+p+'\')">ذخیره</button></div></div>';
+  }).join('');
+}
+async function ksSet(p){var v=$('ks_'+p).value;var r=await api('/api/panel/killswitch',{set:true,protocol:p,mode:v});
+  if(!r.ok)return flash(r.error||'خطا',1);flash('✅ ذخیره شد');loadKillswitch()}
 
 /* ═════ مودال ═════ */
 function modal(inner){closeModal();var d=document.createElement('div');d.className='modal';d.id='modalBox';
