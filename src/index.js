@@ -1,9 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
 //  AMINCK Nova Bot — نقطه ورود ورکر
-//  مسیرها: /webhook (تلگرام) | /app (مینی‌اپ) | /sub/:token | /logo.png
+//  مسیرها: /setup (راه‌اندازی) | /webhook (تلگرام) | /app (مینی‌اپ) | /sub/:token | /logo.png
 // ═══════════════════════════════════════════════════════════════════
 import { NovaStore, withStore } from './store.js';
 import { initDb, ensureUser, getUser, isAdmin, getSetting, setSetting } from './db.js';
+import { withBotToken } from './config.js';
+import { handleSetup } from './setup.js';
 import { tg, send, getMe, setupBotProfile, uploadProfilePhoto, userMainKb } from './tg.js';
 import { getText, DEFAULT_TEXTS } from './texts.js';
 import { html, text, json } from './util.js';
@@ -21,16 +23,29 @@ import { LOGO_JPG_B64 } from './logo.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 
+async function rememberOrigin(env, origin) {
+  try {
+    if (!(await env.KV.get('worker_origin'))) await env.KV.put('worker_origin', origin);
+  } catch (e) {
+    console.error('origin cache failed', e);
+  }
+}
+
 export { NovaStore };
 
 export default {
   async fetch(request, envRaw, executionCtx) {
-    const env = withStore(envRaw);
+    let env = withStore(envRaw);
     const url = new URL(request.url);
     const path = url.pathname;
 
     try {
       await initDb(env.DB);
+      // تمام ماژول‌ها توکن را از DB می‌خوانند و فقط در نبود آن به env fallback می‌کنند.
+      env = await withBotToken(env);
+      // اولین درخواست، origin عمومی Worker را برای لینک‌ها و وب‌هوک ثبت می‌کند.
+      await rememberOrigin(env, url.origin);
+      if (path === '/setup' || path === '/setup/') return await handleSetup(env, request, url);
       if (path === `/webhook` || path === '/webhook/') return await webhook(request, env, url);
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
       if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
@@ -50,8 +65,9 @@ export default {
   },
 
   async scheduled(event, envRaw, ctx) {
-    const env = withStore(envRaw);
+    let env = withStore(envRaw);
     await initDb(env.DB);
+    env = await withBotToken(env);
     ctx.waitUntil(scheduled(env));
   },
 };
@@ -61,12 +77,11 @@ async function webhook(request, env, url) {
   const token = env.TELEGRAM_BOT_TOKEN;
   if (!token) return json({ ok: false, error: 'TELEGRAM_BOT_TOKEN is not set' }, 500);
 
-  // خود-راه‌اندازی: ثبت وب‌هوک و پروفایل (فقط یک‌بار) + ذخیره آدرس عمومی
-  const origin = env.WORKER_URL || url.origin;
-  if (!(await env.KV.get('worker_origin'))) await env.KV.put('worker_origin', origin);
+  // برای نصب‌های قدیمی که Secret دارند، ثبت وب‌هوک همچنان خودکار است.
+  const origin = url.origin;
   if ((await getSetting(env.DB, 'setup_done')) !== '1') {
-    await tg(token, 'setWebhook', { url: `${origin}/webhook`, drop_pending_updates: false });
-    await setSetting(env.DB, 'setup_done', '1');
+    const hook = await tg(token, 'setWebhook', { url: `${origin}/webhook`, drop_pending_updates: false });
+    if (hook?.ok) await setSetting(env.DB, 'setup_done', '1');
   }
 
   let update;
@@ -246,12 +261,8 @@ function landingHtml(hasToken = true) {
   const setupBox = hasToken
     ? ''
     : `<div class="warn"><b>⚠️ ربات هنوز پیکربندی نشده است</b>
-<p style="margin:8px 0 0">توکن ربات تنظیم نشده. یکی از این دو راه را انجام دهید:</p>
-<ol style="text-align:right;margin:8px 0 0;padding-right:18px;line-height:2;color:#ffd9a8">
-<li>در داشبورد کلادفلر: <b>Workers &amp; Pages → این ورکر → Settings → Variables</b> و مقدار <code>TELEGRAM_BOT_TOKEN</code> را بگذارید.</li>
-<li>یا در ترمینال: <code>npx wrangler secret put TELEGRAM_BOT_TOKEN</code></li>
-</ol>
-<p style="margin:8px 0 0">توکن را از <b>@BotFather</b> بگیرید. بعد از تنظیم، اولین پیام <code>/start</code> ربات را خودکار راه‌اندازی می‌کند.</p></div>`;
+<p style="margin:8px 0 0">برای راه‌اندازی اولیه، توکن BotFather را در صفحه ستاپ وارد کنید.</p>
+<a href="/setup" style="margin-top:10px;padding:10px 16px;font-size:13px">🔐 رفتن به صفحه راه‌اندازی</a></div>`;
   return landingShell(setupBox);
 }
 

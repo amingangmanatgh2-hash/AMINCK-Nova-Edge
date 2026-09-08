@@ -4,7 +4,7 @@
 import { send, tg, ikb, ubtn } from './tg.js';
 import { getText, getSettingValue, getNum, isEnabled } from './texts.js';
 import { priceLine } from './pricing.js';
-import { deepLink, workerBase } from './util.js';
+import { deepLink } from './util.js';
 import { faDigits, fmtDate } from './db.js';
 import { aiChatComplete, SHOP_SYSTEM_PROMPT } from './ai.js';
 

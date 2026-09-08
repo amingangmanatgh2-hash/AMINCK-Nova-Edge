@@ -95,7 +95,6 @@ async function makeEnv({ ai = true } = {}) {
     DB,
     KV: makeKv(),
     TELEGRAM_BOT_TOKEN: 'TESTTOKEN',
-    WORKER_URL: 'https://test.workers.dev',
     AI: ai
       ? {
           run: async (model, input) => {
@@ -577,6 +576,49 @@ section('۱۹) ابزارهای کمکی');
   check('تبدیل به ارقام فارسی', faDigits('123') === '۱۲۳');
   check('قالب تومان', fmtToman(1500).includes('تومان'));
   check('کلید هفته پایدار است', weekKey(Date.parse('2026-09-08T00:00:00Z')) === weekKey(Date.parse('2026-09-09T00:00:00Z')));
+}
+
+// ── ۲۰) راه‌اندازی اولیه توکن و وب‌هوک ──
+section('۲۰) ستاپ اولیه ربات');
+{
+  const env = await makeEnv();
+  const { handleSetup } = await import('../src/setup.js');
+  const { withBotToken } = await import('../src/config.js');
+  const { getSetting } = await import('../src/db.js');
+  const setupUrl = new URL('https://setup.test/setup');
+
+  let r = await handleSetup(env, new Request(setupUrl), setupUrl);
+  check('صفحه /setup بدون توکن باز می‌شود', r.status === 200);
+
+  sent.length = 0;
+  r = await handleSetup(
+    env,
+    new Request(setupUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'token=TESTTOKEN',
+    }),
+    setupUrl
+  );
+  check('ستاپ با توکن معتبر موفق می‌شود', r.status === 200);
+  check('توکن ستاپ در Durable Object ذخیره می‌شود', (await getSetting(env.DB, 'telegram_bot_token', '')) === 'TESTTOKEN');
+  const hook = sent.find((x) => x.method === 'setWebhook');
+  check('ستاپ setWebhook را با origin همان درخواست صدا می‌زند', hook?.payload?.url === 'https://setup.test/webhook');
+
+  env.TELEGRAM_BOT_TOKEN = 'ENV_FALLBACK';
+  const resolved = await withBotToken(env);
+  check('توکن DB بر env fallback اولویت دارد', resolved.TELEGRAM_BOT_TOKEN === 'TESTTOKEN');
+
+  r = await handleSetup(
+    env,
+    new Request(setupUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'token=ANOTHER_TOKEN',
+    }),
+    setupUrl
+  );
+  check('ستاپ پس از پیکربندی دوباره توکن را عوض نمی‌کند', r.status === 409);
 }
 
 // ═══════════════════ نتیجه ═══════════════════
