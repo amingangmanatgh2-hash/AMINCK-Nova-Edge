@@ -1,0 +1,26 @@
+# ═══════════════════════════════════════════════════════════════════
+#  AMINCK Nova Bot — ربات فروش کانفیگ روی Cloudflare Workers
+#  دیپلوی:  npx wrangler deploy
+# ═══════════════════════════════════════════════════════════════════
+name = "aminck-nova-bot"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+workers_dev = true
+
+# هر ۱۵ دقیقه: کش نرخ ارز + سلامت سرورها + یادآوری + تبلیغ گروه‌ها + لیگ
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "KV_PLACEHOLDER_ID"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nova-bot-db"
+database_id = "D1_PLACEHOLDER_ID"
+
+[vars]
+# آدرس عمومی ورکر — بعد از اولین دیپلوی همین آدرس را اینجا بگذارید
+# مثال: https://aminck-nova-bot.<your-subdomain>.workers.dev
+WORKER_URL = ""
