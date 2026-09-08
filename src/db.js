@@ -197,6 +197,30 @@ export const SCHEMA = [
      min_order       INTEGER DEFAULT 0,            -- حداقل مبلغ سفارش
      active          INTEGER DEFAULT 1,
      created_at      INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۶: لاگ کامل اقدامات AI Agent (با undo جایی که ممکن است) ───
+  `CREATE TABLE IF NOT EXISTS ai_actions (
+     id              INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id         INTEGER,
+     role            TEXT DEFAULT 'admin',          -- admin | user
+     tool            TEXT DEFAULT '',
+     args            TEXT DEFAULT '{}',
+     summary         TEXT DEFAULT '',
+     status          TEXT DEFAULT 'done',           -- done | blocked | pending_confirm | undone
+     prev            TEXT DEFAULT 'null',           -- JSON دادهٔ قبلی برای undo
+     undoable        INTEGER DEFAULT 0,
+     undid_at        INTEGER DEFAULT 0,
+     created_at      INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۲: مصرف تانل هر اشتراک (VLESS-over-WS داخل ورکر) ───
+  `CREATE TABLE IF NOT EXISTS tunnel_usage (
+     sub_id          INTEGER PRIMARY KEY,
+     bytes_in        INTEGER DEFAULT 0,
+     bytes_out       INTEGER DEFAULT 0,
+     connects        INTEGER DEFAULT 0,
+     last_seen       INTEGER DEFAULT 0
    )`
 ];
 
@@ -219,6 +243,9 @@ const COLUMN_MIGRATIONS = [
   ['users', 'spin_claim', "TEXT DEFAULT ''"],
   // بخش ۱: IP تمیز انتخابی برای یک سرور (فقط ستون جدید؛ ساختار قبلی دست‌نخورده)
   ['servers', 'clean_ip', "TEXT DEFAULT ''"],
+  // بخش ۲: مصرف حجم تانل VLESS-over-WS (افزایشی)
+  ['subscriptions', 'traffic_used', 'INTEGER DEFAULT 0'],
+  ['subscriptions', 'uuid', "TEXT DEFAULT ''"],
 ];
 
 /** الگوهای SQL هاست‌های نمونه که هرگز نباید تحویل داده شوند */
