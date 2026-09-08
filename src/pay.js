@@ -6,15 +6,19 @@ import { addBalance, getUser, fmtToman, faDigits, fmtDate } from './db.js';
 import { getNum, getSettingValue } from './texts.js';
 import { send, ikb, ubtn, btn } from './tg.js';
 import { deepLink, getBase } from './util.js';
-import { deliveryKind, NO_REAL_SERVER_MESSAGE, NoRealServerError, serverIssues } from './proxy.js';
+import { deliveryKind, NO_REAL_SERVER_MESSAGE, SERVICE_UNAVAILABLE_MESSAGE, NoRealServerError, serverIssues } from './proxy.js';
 
 /**
- * پیش از هر کسر وجه بررسی می‌کند که محصول واقعاً قابل تحویل است.
+ * پیش از هر کسر وجه بررسی می‌کند که محصول واقعاً قابل تحویل است
+ * (شامل kill-switch: بدون مسیر سالم، فروش/تحویل متوقف می‌شود).
  * @returns {Promise<{ok:boolean, reason?:string, message?:string}>}
  */
 export async function assertDeliverable(env, product) {
   const res = await checkDeliverable(env.DB, product || {});
   if (res.ok) return { ok: true };
+  if (res.reason === 'no_healthy_route' || res.reason === 'manual_killswitch') {
+    return { ok: false, reason: res.reason, message: SERVICE_UNAVAILABLE_MESSAGE };
+  }
   return { ok: false, reason: 'no_real_server', message: NO_REAL_SERVER_MESSAGE };
 }
 
