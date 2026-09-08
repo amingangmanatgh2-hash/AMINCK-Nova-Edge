@@ -12,6 +12,7 @@ import { makeBrandQR } from './qr.js';
 import { tmpl, deepLink, getBase, parseMoney } from './util.js';
 import { deliverOrder } from './pay.js';
 import { openAdminPanel, handleAdminCallback, handleAdminText } from './admin.js';
+import { aiChatComplete, SHOP_SYSTEM_PROMPT } from './ai.js';
 
 export const CATS = [
   { id: 'vless', label: '⚡ VLESS' },
@@ -201,7 +202,7 @@ export async function handleReceiptPhoto(ctx, photo) {
 }
 
 async function notifyAdmins(ctx, text, kb) {
-  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')")).results;
+  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
   for (const a of admins) {
     await send(ctx.token, a.id, text, kb ? { reply_markup: kb } : {});
   }
@@ -343,25 +344,84 @@ function tmplLine(s) {
 }
 
 // ─────────────────────────── پشتیبانی ───────────────────────────
-export async function openSupport(ctx) {
+export async function openSupport(ctx, editMsg) {
+  await setState(ctx, '');
+  const text =
+    (await getText(ctx.db, 'support_text')) +
+    '\n\n🤝 پشتیبانی دو حالت دارد:\n' +
+    '🤖 <b>دستیار هوشمند</b> — پاسخ آنی و شبانه‌روزی به سوالات رایج\n' +
+    '🧑‍💼 <b>اپراتور انسانی</b> — برای موارد مالی و پیگیری سفارش\n\n' +
+    'کدام را می‌خواهید؟ 👇';
+  const rows = [
+    [btn('🤖 دستیار هوشمند', 'sup:ai')],
+    [btn('🧑‍💼 اتصال به اپراتور', 'op:connect')],
+  ];
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: ikb(rows) });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: ikb(rows) });
+}
+
+/** ورود به حالت گفتگو با اپراتور انسانی */
+export async function connectOperator(ctx) {
   await setState(ctx, 'support');
   await send(
     ctx.token,
     ctx.user.id,
-    (await getText(ctx.db, 'support_text')) + '\n\n✍️ پیام خود را همین حالا بنویسید و ارسال کنید:',
+    '🧑‍💼 <b>اتصال به اپراتور انسانی</b>\n\n' +
+      '✍️ پیام خود را بنویسید؛ مستقیم به تیم پشتیبانی می‌رسد.\n' +
+      '⏱ میانگین پاسخ‌گویی: کمتر از ۳۰ دقیقه\n' +
+      'تا وقتی از این حالت خارج نشوید، پیام‌هایتان به اپراتور ارسال می‌شود (نه به هوش مصنوعی).',
     { reply_markup: ikb([[btn('🚪 خروج از حالت پشتیبانی', 'sup:exit')]]) }
   );
 }
 
+/** ورود به حالت گفتگو با دستیار هوشمند */
+export async function startAiChat(ctx) {
+  await setState(ctx, '');
+  const price = await getNum(ctx.db, 'ai_price_coins', 5);
+  await send(
+    ctx.token,
+    ctx.user.id,
+    `🤖 <b>دستیار هوشمند AMINCK</b>\n\nسوالت رو همینجا بنویس! 💬\n🪙 هزینه هر پیام: ${faDigits(price)} سکه (در صورت خطا کسر نمی‌شود)`,
+    { reply_markup: ikb([[btn('🎮 دریافت سکه رایگان', 'game')], [btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]]) }
+  );
+}
+
+// ─────────────────────────── راهنما ───────────────────────────
+export async function showHelp(ctx) {
+  const price = await getNum(ctx.db, 'ai_price_coins', 5);
+  const text = [
+    '📖 <b>راهنمای کامل ربات AMINCK</b>\n',
+    '🛍 <b>فروشگاه</b> — انتخاب دسته (VLESS، VMess، Trojan، Shadowsocks، OpenVPN، MTProto، SOCKS5) و خرید با کیف پول یا کارت‌به‌کارت. بعد از پرداخت، کانفیگ و لینک ساب آنی تحویل می‌شود.',
+    '🎁 <b>تست رایگان</b> — یک‌بار برای هر کاربر؛ همراه با لیست پروکسی‌های رایگان تلگرام.',
+    '💳 <b>حساب من</b> — شارژ کیف پول، اشتراک‌های فعال، QR اختصاصی و تاریخچه سفارش‌ها.',
+    '👥 <b>زیرمجموعه من</b> — لینک دعوت اختصاصی؛ بعد از اولین خرید هر دوست، درصدی نقدی به کیف پولتان اضافه می‌شود.',
+    '🎮 <b>مینی‌اپ سکه‌ای</b> — تپ کن و سکه بگیر؛ سکه‌ها برای چت هوش مصنوعی و محصولات سکه‌ای استفاده می‌شوند.',
+    `🤖 <b>چت هوش مصنوعی</b> — دستیار فارسی روی Workers AI؛ هر پیام ${faDigits(price)} سکه.`,
+    '🧑‍💼 <b>اپراتور انسانی</b> — از «📞 پشتیبانی» یا دکمه «اتصال به اپراتور».\n',
+    '⌨️ <b>دستورها:</b>',
+    '<code>/start</code> — منوی اصلی',
+    '<code>/shop</code> — فروشگاه',
+    '<code>/account</code> — حساب من',
+    '<code>/ref</code> — زیرمجموعه',
+    '<code>/trial</code> — تست رایگان',
+    '<code>/ai</code> — چت با هوش مصنوعی',
+    '<code>/support</code> — پشتیبانی و اپراتور',
+    '<code>/help</code> — همین راهنما',
+    '<code>/cancel</code> — لغو عملیات جاری\n',
+    '💡 در گروه‌ها هم می‌توانید با ریپلای روی پیام ربات یا منشن کردن آن، از هوش مصنوعی سوال بپرسید.',
+  ].join('\n');
+  await send(ctx.token, ctx.user.id, text, { reply_markup: ikb([[btn('🛍 فروشگاه', 'shop'), btn('📞 پشتیبانی', 'sup:open')]]) });
+}
+
 export async function handleSupportMsg(ctx, msg) {
-  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')")).results;
+  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
   const preview = msg.text ? msg.text.slice(0, 900) : msg.caption || '(فایل/عکس)';
   const kb = ikb([[btn('✍️ پاسخ به کاربر', `adm:reply:${ctx.user.id}`)]]);
   for (const a of admins) {
     if (msg.photo?.length && msg.photo[msg.photo.length - 1].file_id) {
-      await tg(ctx.token, 'sendPhoto', { chat_id: a.id, photo: msg.photo[msg.photo.length - 1].file_id, caption: `📞 پیام پشتیبانی از ${userTag(ctx.user)}:\n${preview}` , reply_markup: kb});
+      await tg(ctx.token, 'sendPhoto', { chat_id: a.id, photo: msg.photo[msg.photo.length - 1].file_id, caption: `🧑‍💼 پیام اپراتوری از ${userTag(ctx.user)}:\n${preview}` , reply_markup: kb});
     } else {
-      await send(ctx.token, a.id, `📞 پیام پشتیبانی از ${userTag(ctx.user)}:\n\n${preview}`, { reply_markup: kb });
+      await send(ctx.token, a.id, `🧑‍💼 پیام اپراتوری از ${userTag(ctx.user)}:\n\n${preview}`, { reply_markup: kb });
     }
   }
   await send(ctx.token, ctx.user.id, '✅ پیام شما برای تیم پشتیبانی ارسال شد. منتظر پاسخ باشید. 🙏');
@@ -373,42 +433,34 @@ export async function aiChat(ctx, text) {
   const price = await getNum(ctx.db, 'ai_price_coins', 5);
   if ((ctx.user.coins || 0) < price) {
     return send(ctx.token, ctx.user.id, `🪙 برای هر پیام ${faDigits(price)} سکه کسر می‌شود و موجودی سکه شما کافی نیست!\nاز مینی‌اپ سکه‌ای، سکه جمع کنید. 🎮`, {
-      reply_markup: ikb([[btn('🎮 رفتن به مینی‌اپ', 'game')]]),
+      reply_markup: ikb([[btn('🎮 رفتن به مینی‌اپ', 'game')], [btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]]),
     });
   }
-  await ctx.db.prepare('UPDATE users SET coins = coins - ? WHERE id=?').bind(price, ctx.user.id).run();
   await ctx.db.prepare('INSERT INTO ai_history (user_id, role, content, created_at) VALUES (?,?,?,?)').bind(ctx.user.id, 'user', text.slice(0, 1500), now()).run();
 
   const hist = (await ctx.db.prepare('SELECT role, content FROM ai_history WHERE user_id=? ORDER BY id DESC LIMIT 6').bind(ctx.user.id).all()).results.reverse();
   const messages = [
-    {
-      role: 'system',
-      content: 'تو دستیار هوشمند و دوستانه‌ی فروشگاه کانفیگ AMINCK هستی. فارسی، کوتاه، صمیمی و با ایموجی جواب بده. در سوال درباره خرید، کاربر را به منوی فروشگاه هدایت کن.',
-    },
+    { role: 'system', content: SHOP_SYSTEM_PROMPT },
     ...hist.map((h) => ({ role: h.role, content: h.content })),
   ];
-  let reply = '';
-  const key = ctx.env.GROQ_API_KEY;
-  if (!key) {
-    reply = '🤖 کلید هوش مصنوعی هنوز تنظیم نشده است. لطفاً بعداً تلاش کنید یا با پشتیبانی در ارتباط باشید.';
-  } else {
+
+  const res = await aiChatComplete(ctx.env, messages);
+  if (!res.ok) {
+    // در خطا سکه‌ای کسر نمی‌شود
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: 'meta-llama/llama-3.3-70b-versatile', messages, temperature: 0.7, max_tokens: 700 }),
-        signal: AbortSignal.timeout(25000),
-      });
-      const data = await res.json();
-      reply = data?.choices?.[0]?.message?.content || '🤖 پاسخی دریافت نشد، دوباره تلاش کنید.';
-    } catch {
-      reply = '🤖 خطا در ارتباط با سرویس هوش مصنوعی. دوباره تلاش کنید.';
-    }
+      await ctx.db.prepare('DELETE FROM ai_history WHERE id = (SELECT MAX(id) FROM ai_history WHERE user_id=? AND role=?)').bind(ctx.user.id, 'user').run();
+    } catch {}
+    return send(ctx.token, ctx.user.id, '🤖 دستیار هوشمند فعلاً در دسترس نیست (سکه‌ای کسر نشد).\nمی‌توانید مستقیم با اپراتور انسانی صحبت کنید 👇', {
+      reply_markup: ikb([[btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]]),
+    });
   }
+
+  const reply = res.text;
+  await ctx.db.prepare('UPDATE users SET coins = coins - ? WHERE id=?').bind(price, ctx.user.id).run();
   await ctx.db.prepare('INSERT INTO ai_history (user_id, role, content, created_at) VALUES (?,?,?,?)').bind(ctx.user.id, 'assistant', reply.slice(0, 1500), now()).run();
   await ctx.db.prepare('DELETE FROM ai_history WHERE created_at < ?').bind(now() - 86400).run();
-  await send(ctx.token, ctx.user.id, `🤖 ${reply}\n\n🪙 هزینه: ${faDigits(price)} سکه | باقی‌مانده: ${faDigits(Math.max(0, ctx.user.coins - price))}`, {
-    reply_markup: ikb([[btn('🧹 پاک کردن تاریخچه', 'ai:clear')]]),
+  await send(ctx.token, ctx.user.id, `🤖 ${reply}\n\n🪙 هزینه: ${faDigits(price)} سکه | باقی‌مانده: ${faDigits(Math.max(0, (ctx.user.coins || 0) - price))}`, {
+    reply_markup: ikb([[btn('🧹 پاک کردن تاریخچه', 'ai:clear'), btn('🧑‍💼 اتصال به اپراتور', 'op:connect')]]),
   });
 }
 
@@ -521,6 +573,8 @@ export async function handleUserText(ctx, text) {
     if (amount < 10000 || amount > 500000000) return send(ctx.token, ctx.user.id, '⚠️ مبلغ معتبر نیست. حداقل ۱۰,۰۰۰ تومان، حداکثر ۵۰۰ میلیون تومان.');
     const p = { id: 0, title: '💳 شارژ کیف پول', protocol: 'none', days: 0 };
     const order = await createOrder(ctx.env, ctx.user.id, p, amount, 'card');
+    // علامت‌گذاری صریح سفارش شارژ تا هنگام تایید فیش، کیف پول شارژ شود (نه ساخت کانفیگ)
+    await ctx.db.prepare('UPDATE orders SET meta=? WHERE id=?').bind(JSON.stringify({ charge: true }), order.id).run();
     const card = await getSettingValue(ctx.db, 'card_number');
     const holder = await getSettingValue(ctx.db, 'card_holder');
     await setState(ctx, `receipt:${order.id}`);
@@ -544,18 +598,44 @@ export async function handleUserText(ctx, text) {
     case '🎮 مینی‌اپ سکه‌ای':
       return openGame(ctx);
     case '🤖 چت هوش مصنوعی':
-      return send(ctx.token, ctx.user.id, '🤖 <b>چت هوش مصنوعی</b>\n\nهر پیام ۵ سکه هزینه دارد. سوال خود را بفرستید 👇', {
-        reply_markup: ikb([[btn('🎮 دریافت سکه رایگان', 'game')]]),
-      });
+      return startAiChat(ctx);
     case '📞 پشتیبانی':
       return openSupport(ctx);
+    case '📖 راهنما':
+      return showHelp(ctx);
     case '📊 پنل مدیریت':
       if (ctx.user.role !== 'user') return openAdminPanel(ctx);
       return;
   }
-  if (/^\/(start|help)( |$)/.test(text)) {
-    if (text.includes('ref_') || text.includes('shop_')) return;
-    return showMainMenu(ctx);
+  const cmd = (text.match(/^\/([a-zA-Z_]+)/) || [])[1];
+  if (cmd) {
+    switch (cmd) {
+      case 'help':
+      case 'rahnama':
+        return showHelp(ctx);
+      case 'shop':
+        return openShop(ctx);
+      case 'account':
+      case 'wallet':
+        return openAccount(ctx);
+      case 'ref':
+      case 'referral':
+        return openReferral(ctx);
+      case 'trial':
+        return openTrial(ctx);
+      case 'game':
+        return openGame(ctx);
+      case 'ai':
+        return startAiChat(ctx);
+      case 'support':
+      case 'operator':
+        return openSupport(ctx);
+      case 'start':
+        if (text.includes('ref_') || text.includes('shop_')) return;
+        return showMainMenu(ctx);
+      default:
+        return send(ctx.token, ctx.user.id, '🤔 این دستور را نمی‌شناسم. برای دیدن همه امکانات <code>/help</code> را بفرستید.');
+    }
   }
   return aiChat(ctx, text);
 }
@@ -601,6 +681,10 @@ export async function handleUserCallback(ctx, data) {
   if (data === 'free:proxies') return freeProxies(ctx);
   if (data === 'ref:list') return refList(ctx);
   if (data === 'game') return openGame(ctx);
+  if (data === 'sup:open') return openSupport(ctx, edit);
+  if (data === 'sup:ai') return answerAndRun(ctx, () => startAiChat(ctx));
+  if (data === 'op:connect') return answerAndRun(ctx, () => connectOperator(ctx));
+  if (data === 'help') return answerAndRun(ctx, () => showHelp(ctx));
   if (data === 'sup:exit') {
     await setState(ctx, '');
     return send(ctx.token, ctx.user.id, '👌 از حالت پشتیبانی خارج شدید.', userMainKb(ctx.user.role !== 'user'));

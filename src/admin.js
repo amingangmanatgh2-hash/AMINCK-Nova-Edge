@@ -9,7 +9,7 @@ import { getText, getSettingValue, getNum, DEFAULT_TEXTS } from './texts.js';
 import { getUsdRate, productPriceToman } from './pricing.js';
 import { approveReceipt, sendDelivery } from './pay.js';
 import { createSubscription, defaultTemplate } from './subs.js';
-import { parseMoney, workerBase } from './util.js';
+import { parseMoney, workerBase, getBase, isValidPanelPassword } from './util.js';
 import { CATS, userTag } from './user.js';
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -337,6 +337,8 @@ async function settingsMenu(ctx, editMsg) {
     ['card_pay_enabled', '💳 پرداخت کارتی'],
     ['wallet_enabled', '👛 کیف پول'],
     ['group_welcome_enabled', '👋 خوش‌آمد گروه'],
+    ['group_ai_enabled', '🤖 هوش مصنوعی در گروه'],
+    ['panel_enabled', '🖥 پنل تحت وب'],
     ['auto_verify', '🤖 تایید خودکار فیش'],
   ];
   const states = {};
@@ -347,6 +349,8 @@ async function settingsMenu(ctx, editMsg) {
     [btn('🪙 هزینه پیام AI', 'adm:setv:ai_price_coins'), btn('⏰ فاصله تبلیغ (ساعت)', 'adm:setv:ad_interval_hours')],
     [btn('💳 شماره کارت', 'adm:setv:card_number'), btn('👤 صاحب کارت', 'adm:setv:card_holder')],
     [btn('📢 متن تبلیغ', 'adm:setv:ad_text'), btn('🖼 آدرس بنر تبلیغ', 'adm:setv:ad_photo_url')],
+    [btn('⏳ فاصله پاسخ AI در گروه (ثانیه)', 'adm:setv:group_ai_cooldown')],
+    [btn('🔐 رمز پنل وب (۱۰ رقم)', 'adm:setv:panel_password')],
     [btn('✍️ متن‌های بات', 'adm:texts')],
   ];
   for (let i = 0; i < toggles.length; i += 2) {
@@ -629,6 +633,13 @@ export async function handleAdminText(ctx, text) {
   const st = ctx.user.state || '';
   const sd = stateData(ctx);
 
+  // ⛔ لغو سراسری هر ورودی ادمین — باید قبل از همه بررسی شود تا مقدار «/cancel» ذخیره نشود
+  if (typeof text === 'string' && text.trim() === '/cancel') {
+    await setState(ctx, '');
+    await send(ctx.token, ctx.user.id, '❌ عملیات لغو شد.', { reply_markup: menuKb([[btn('📊 پنل مدیریت', 'panel')]]) });
+    return true;
+  }
+
   if (st.startsWith('admin:reply:')) {
     const uid = Number(st.split(':')[2]);
     await send(ctx.token, uid, `📬 پاسخ پشتیبانی:\n\n${text}`);
@@ -686,8 +697,23 @@ export async function handleAdminText(ctx, text) {
   }
   if (st.startsWith('admin:setv:')) {
     const k = st.split(':')[2];
-    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, text.trim()).run();
+    const val = text.trim();
+    // ⛔ اجبار رمز دقیقاً ۱۰ رقمی برای پنل تحت وب
+    if (k === 'panel_password' && !isValidPanelPassword(val)) {
+      return send(
+        ctx.token,
+        ctx.user.id,
+        '⛔ رمز پنل وب باید <b>دقیقاً ۱۰ رقم عددی</b> باشد (بدون حرف، فاصله یا علامت).\nمثال: <code>1234567890</code>\n\nدوباره بفرستید یا /cancel کنید.'
+      );
+    }
+    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, val).run();
     await setState(ctx, '');
+    if (k === 'panel_password') {
+      const base = await getBase(ctx.env);
+      return send(ctx.token, ctx.user.id, `✅ رمز پنل وب ذخیره شد.\n🖥 آدرس پنل: ${base ? `${base}/panel` : '/panel'}\n🔐 رمز: <code>${val}</code>`, {
+        reply_markup: menuKb([[btn('⚙️ بازگشت به تنظیمات', 'adm:set')]]),
+      });
+    }
     return send(ctx.token, ctx.user.id, '✅ ذخیره شد.', { reply_markup: menuKb([[btn('⚙️ بازگشت به تنظیمات', 'adm:set')]]) });
   }
   if (st.startsWith('admin:text:')) {
@@ -743,12 +769,18 @@ export async function handleAdminText(ctx, text) {
       await setState(ctx, 'admin:newsrv', { step: 4, f });
       return send(ctx.token, ctx.user.id, '۴) قالب کانفیگ را بفرستید:\n(از <code>{uuid}</code> برای شناسه یکتا و <code>{name}</code> برای نام استفاده می‌شود)\nیا «پیش‌فرض» بفرستید:');
     }
+    if (step === 4) {
+      const t = text.trim();
+      f.template = !t || t === 'پیش‌فرض' || t === '-' ? defaultTemplate(f.protocol, f.ip) : t;
+      await setState(ctx, 'admin:newsrv', { step: 5, f });
+      return send(ctx.token, ctx.user.id, '۵) آدرس تست سلامت (اختیاری — برای رد کردن «-» بفرستید):');
+    }
     if (step === 5) {
       f.health_url = text.trim() === '-' ? '' : text.trim();
       await setState(ctx, 'admin:newsrv', { step: 6, f });
       return send(ctx.token, ctx.user.id, '۶) رتبه سرعت (۱=پرسرعت‌ترین تا ۵):');
     }
-    if (step === 7) {
+    if (step === 6 || step === 7) {
       f.speed_rank = Math.min(5, Math.max(1, Number(text) || 3));
       await ctx.db
         .prepare('INSERT INTO servers (name, protocol, ip, template, health_url, speed_rank) VALUES (?,?,?,?,?,?)')

@@ -90,3 +90,15 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
+
+/** رمز پنل تحت وب باید دقیقاً ۱۰ رقم عددی باشد */
+export function isValidPanelPassword(v) {
+  return /^\d{10}$/.test(String(v || '').trim());
+}
+
+/** ساخت رمز تصادفی ۱۰ رقمی */
+export function randomPanelPassword() {
+  const buf = new Uint32Array(10);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => n % 10).join('');
+}
