@@ -17,6 +17,10 @@ export async function hmacSha256(keyBytes, msg) {
   return new Uint8Array(sig);
 }
 
+/** فرار HTML برای رندر متن کاربر در صفحه‌های وب */
+export const esc = (v) =>
+  String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 export const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 
 /** اعتبارسنجی initData وب‌اپ تلگرام طبق مستندات رسمی */

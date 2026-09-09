@@ -3,6 +3,7 @@
 //  ⛔ هیچ کانفیگی با هاست نمونه (example.com) یا سکرت جعلی ساخته نمی‌شود.
 // ═══════════════════════════════════════════════════════════════════
 import { randToken, fmtDate, faDigits } from './db.js';
+import { buildVariantConfigs } from './antiblock.js';
 import { getSettingValue } from './texts.js';
 import { tmpl } from './util.js';
 import {
@@ -302,10 +303,13 @@ export async function createSubscription(env, user, product, opts = {}) {
 }
 
 /**
- * محتوای پویای ساب — بخش ۰ (ساب داینامیک):
- * در هر fetch سرورهای سالم بر اساس امتیاز لحظه‌ای clean_ips دوباره انتخاب و
- * کانفیگ rebuild می‌شود؛ هر سرور چند IP تمیز (مرتب با امتیاز) می‌گیرد.
- * @returns {Promise<{ok:boolean, reason:string, servers:object[], cleanIps:string[], lines:string[]}>}
+ * محتوای پویای ساب — بخش ۰ (ساب داینامیک) + بخش ۳.۱ (ضدسانسور):
+ *  ۱) اول «واریانت‌های ضد DPI» هر سرور (ترنسپورت/پورت/SNI متفاوت) چیده می‌شوند؛
+ *  ۲) اگر تعداد به `sub_min_configs` (پیش‌فرض ۱۰) نرسید، با چند IP تمیزِ
+ *     برتر برای همان سرورها پُر می‌شود؛
+ *  ۳) در هر fetch همه چیز بر اساس سلامت لحظه‌ای rebuild می‌شود.
+ * @returns {Promise<{ok:boolean, reason:string, servers:object[], cleanIps:string[],
+ *   lines:string[], entries:{line:string,variantId:number}[], wanted:number, shortfall:number}>}
  */
 export async function dynamicSubContent(env, sub) {
   const { DB } = env;
@@ -313,10 +317,33 @@ export async function dynamicSubContent(env, sub) {
   const protocol = (prod?.protocol || 'vless').toLowerCase();
   const product = { title: sub.title, days: sub.days, protocol, server_count: prod?.server_count || 10 };
   const check = await checkDeliverable(DB, product);
-  if (!check.ok) return { ok: false, reason: check.reason, servers: [], cleanIps: [], lines: [] };
-  const cleanIps = await bestCleanIps(DB, 3);
-  const lines = buildConfigsMulti(check.servers, sub.uuid, product, '', { cleanIps, perServer: 3 });
-  return { ok: true, reason: '', servers: check.servers, cleanIps, lines };
+  if (!check.ok) return { ok: false, reason: check.reason, servers: [], cleanIps: [], lines: [], entries: [], wanted: 0, shortfall: 0 };
+  const wanted = Math.max(1, Number(await getSettingValue(DB, 'sub_min_configs')) || 10);
+  const perServer = Math.min(6, Math.max(1, Number(await getSettingValue(DB, 'sub_ips_per_server')) || 3));
+  const cleanIps = await bestCleanIps(DB, perServer);
+
+  // ۱) واریانت‌های ضدسانسور (هر کدام یک مسیر مستقل؛ مردن یکی = باقی می‌مانند)
+  const varRes = await buildVariantConfigs(DB, check.servers, sub.uuid, product, { count: wanted });
+  const lines = [...varRes.lines];
+  const entries = varRes.entries || [];
+
+  // ۲) تکمیل با IPهای تمیز چندگانه اگر هنوز به حداقل نرسیده‌ایم
+  if (lines.length < wanted) {
+    for (const l of buildConfigsMulti(check.servers, sub.uuid, product, '', { cleanIps, perServer })) {
+      if (lines.length >= wanted) break;
+      if (!lines.includes(l)) lines.push(l);
+    }
+  }
+  return {
+    ok: true,
+    reason: '',
+    servers: check.servers,
+    cleanIps,
+    lines,
+    entries,
+    wanted,
+    shortfall: Math.max(0, wanted - lines.length),
+  };
 }
 
 /** محتوای صفحه لندینگ ساب — پویا و بدون هیچ کانفیگ نمونه/جعلی */
@@ -357,8 +384,20 @@ export async function subLandingHtml(env, sub) {
   } else if (!lines.length) {
     body = `<div class="expired">⚠️ هنوز سرور واقعی برای این اشتراک تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.</div>`;
   } else {
-    body = `<button class="btn" onclick="copyAll()">📋 کپی همه کانفیگ‌ها</button>
-<pre id="cfg">${esc(lines.join('\n\n'))}</pre>`;
+    // تک‌تک کانفیگ‌ها با دکمهٔ بازخورد (بخش ۳.۱: تشخیص فیلتر شدن روی نت ملی)
+    const list = (dyn.entries && dyn.entries.length ? dyn.entries : lines.map((l) => ({ line: l, variantId: 0 })));
+    const rows = list
+      .map((it, i) => {
+        const label = esc(it.label || `کانفیگ ${i + 1}`);
+        const vid = Number(it.variantId || 0);
+        return `<div class="cfg"><div class="ct">${label}</div>
+<div class="cl">${esc(it.line)}</div>
+<div class="cb">${vid ? `<button class="chip ok2" onclick="vfb(${vid},1)">✅ کار می‌کند</button><button class="chip no2" onclick="vfb(${vid},0)">⛔ وصل نشد / فیلتر است</button>` : `<button class="chip" onclick="cpOne(this)">📋 کپی</button>`}</div></div>`;
+      })
+      .join('');
+    body = `<button class="btn" onclick="copyAll()">📋 کپی همه کانفیگ‌ها (${lines.length} مورد)</button>
+${dyn.shortfall ? `<div class="short">⚠️ این اشتراک فعلاً ${faDigits(dyn.lines ? dyn.lines.length : 0)} کانفیگ سالم دارد (هدف: ${faDigits(dyn.wanted)}). اگر همه را یک‌جا قطع دیدید، با پشتیبانی تماس بگیرید — کانفیگ خراب تحویل نمی‌شود.</div>` : ''}
+${rows}`;
   }
 
   return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8">
@@ -370,6 +409,13 @@ export async function subLandingHtml(env, sub) {
  h1{font-size:20px;margin:0 0 4px}.sub{color:#8fa3c8;font-size:13px;margin-bottom:18px}
  .row{display:flex;justify-content:space-between;background:#0d1526;border-radius:12px;padding:12px 14px;margin:8px 0;font-size:13px}
  pre{background:#0a0f1d;border-radius:12px;padding:14px;font-size:11px;overflow:auto;max-height:320px;color:#7ee0a3;direction:ltr;text-align:left}
+ .cfg{background:#0a0f1d;border:1px solid #22314f;border-radius:12px;padding:10px 12px;margin:8px 0}
+ .ct{font-size:12px;color:#eaf1ff;font-weight:700;margin-bottom:6px}
+ .cl{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#7ee0a3;direction:ltr;text-align:left;word-break:break-all;max-height:44px;overflow:hidden}
+ .cb{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+ .ok2{background:#14513c;color:#b8f5df;border-color:#2a8063}
+ .no2{background:#3d1420;color:#ffb3c4;border-color:#7a2440}
+ .short{background:#3a2a0c;border:1px solid #7a5c14;color:#ffe1a3;border-radius:12px;padding:10px;font-size:12px;margin-bottom:10px}
  .btn{display:block;background:linear-gradient(135deg,#f5b31e,#ff8a00);color:#1a1a1a;text-align:center;font-weight:700;border-radius:12px;padding:13px;margin:14px 0;text-decoration:none;cursor:pointer;border:none;width:100%;font-size:15px}
  .expired{background:#3d1420;color:#ff7b93;border-radius:12px;padding:14px;text-align:center;font-weight:700}
  .chip{background:#22314f;color:#eaf1ff;border:1px solid #33477a;border-radius:10px;padding:7px 12px;cursor:pointer;font-family:inherit;font-size:12px;direction:ltr}
@@ -386,7 +432,9 @@ ${directHtml}
 ${ipChips}
 ${body}`}
 <script>
-function copyAll(){var e=document.getElementById('cfg');if(!e)return;navigator.clipboard.writeText(e.innerText).then(function(){alert('✅ کپی شد')})}
+function copyAll(){var t=[];document.querySelectorAll('.cl').forEach(function(e){t.push(e.innerText)});if(!t.length)return;navigator.clipboard.writeText(t.join('\\n')).then(function(){alert('✅ '+t.length+' کانفیگ کپی شد')})}
+function cpOne(b){var c=b.closest('.cfg').querySelector('.cl');navigator.clipboard.writeText(c.innerText).then(function(){b.textContent='✅ کپی شد'})}
+function vfb(vid,ok){var b=event.currentTarget;fetch('/api/sub/variant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:${JSON.stringify(sub.token)},variantId:vid,ok:!!ok})}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){b.textContent=ok?'✅ ثبت شد':'⛔ ثبت شد — این مسیر موقتاً از ساب حذف می‌شود';b.disabled=true}else b.textContent='⚠️ ثبت نشد'}).catch(function(){b.textContent='⚠️ ارتباط برقرار نشد'})}
 function connOk(btn){var ip=btn.getAttribute('data-ip');fetch('/api/sub/success',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:${JSON.stringify(sub.token)},ip:ip})}).then(function(r){return r.json()}).then(function(j){if(j&&j.ok){btn.classList.add('ok');btn.textContent='✅ ثبت شد'}else{alert('⚠️ '+(j&&j.reason?j.reason:'ناموفق'))}}).catch(function(){alert('⚠️ ارتباط برقرار نشد')})}
 </script></div></body></html>`;
 }

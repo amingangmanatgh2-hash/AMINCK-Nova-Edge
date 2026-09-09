@@ -78,6 +78,7 @@ export function userMainKb(isAdmin) {
       [{ text: '🛍 فروشگاه' }, { text: '🎁 پروکسی و تست رایگان' }],
       [{ text: '💳 حساب من' }, { text: '👥 زیرمجموعه من' }],
       [{ text: '🎮 مینی‌اپ سکه‌ای' }, { text: '🤖 چت هوش مصنوعی' }],
+      [{ text: '🧪 پست شیشه‌ای' }, { text: '🎁 باشگاه جوایز' }],
       [{ text: '📞 پشتیبانی' }, { text: '📖 راهنما' }],
     ],
     resize_keyboard: true,
@@ -96,8 +97,14 @@ export const forceReply = (placeholder = '') => ({
 // ─── ست‌آپ پروفایل بات ───
 export const COMMANDS = [
   { command: 'start', description: 'شروع و منوی اصلی' },
+  { command: 'lang', description: '🌐 تغییر زبان / Change language' },
   { command: 'shop', description: '🛍 فروشگاه' },
+  { command: 'buy', description: '🛍 خرید در گروه (همین چت)' },
+  { command: 'glass', description: '🧪 پست/متن شیشه‌ای و دکمه شیشه‌ای' },
+  { command: 'perks', description: '🎁 باشگاه جوایز (خراش، چک‌این، کوپن)' },
+  { command: 'coupon', description: '🏷 استفاده از کد تخفیف' },
   { command: 'account', description: '💳 حساب من' },
+  { command: 'subs', description: '🧩 اشتراک‌های من' },
   { command: 'ref', description: '👥 زیرمجموعه من' },
   { command: 'trial', description: '🎁 تست رایگان' },
   { command: 'ai', description: '🤖 چت هوش مصنوعی' },
@@ -111,9 +118,9 @@ export async function setupBotProfile(token, texts, botUsername) {
   res.desc = await tg(token, 'setMyDescription', { description: texts.bot_description });
   res.short = await tg(token, 'setMyShortDescription', { short_description: texts.bot_short });
   res.cmds = await tg(token, 'setMyCommands', { commands: COMMANDS });
-  if (botUsername) {
-    res.name2 = await tg(token, 'setChatMenuButton', {}).catch?.(() => ({}));
-  }
+  // دکمهٔ «داشبورد» در منوی پیوست تلگرام (WebApp) از menu.js تنظیم می‌شود؛
+  // اینجا فقط menu_button را برای ربات برمی‌گردانیم تا لیست دستورات تمیز بماند.
+  if (botUsername) res.menu = await tg(token, 'getChatMenuButton', {});
   return res;
 }
 

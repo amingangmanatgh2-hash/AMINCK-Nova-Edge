@@ -8,7 +8,7 @@ import { withBotToken } from './config.js';
 import { handleSetup } from './setup.js';
 import { tg, send, getMe, setupBotProfile, uploadProfilePhoto, userMainKb } from './tg.js';
 import { getText, DEFAULT_TEXTS } from './texts.js';
-import { html, text, json } from './util.js';
+import { html, text, json, getBase } from './util.js';
 import { subLandingHtml } from './subs.js';
 import { makeBrandQR } from './qr.js';
 import { scheduled } from './jobs.js';
@@ -16,6 +16,16 @@ import { gameHtml, handleGameApi } from './game.js';
 import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
 import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
 import { probeTargets, probeReport, applyConnectionFeedback } from './cleanip.js';
+import { handleInlineQuery } from './inline.js';
+import { handleChosenInline, configCardHtml, inlineGlassResults, handleGlassCommand, handleGlassCallback, glassLandingHtml, handleGlassApi, glassStudioHtml, getGlassByCode, glassMenu } from './glass.js';
+import { handleGroupMessage, handleGroupCallback, handleGroupReceiptPhoto, groupIntro } from './groupbuy.js';
+import { canonicalLabel } from './i18n.js';
+import { handleGatewayCallback } from './gateway.js';
+import { creatorPageHtml, creatorSubResponse, handleCreatorApi } from './creator.js';
+import { setDashboardMenuButton } from './menu.js';
+import { reportVariantResult } from './antiblock.js';
+import { notifyAdmins } from './notify.js';
+import { getNum, getSettingValue } from './texts.js';
 import {
   handleStart, handleUserText, handleUserCallback, setState, showMainMenu, openProduct, openShop, handleReceiptPhoto,
 } from './user.js';
@@ -53,6 +63,20 @@ export default {
         return json({ ok: true, targets });
       }
       if (path === '/api/probe/report') return await probeReport(env, request);
+      if (path.startsWith('/pay/')) return await handleGatewayCallback(env, request, url);
+      if (path.startsWith('/api/creator/')) return await handleCreatorApi(env, request, path);
+      if (path.startsWith('/creator/')) {
+        const t = path.slice(9);
+        if (t.endsWith('/sub')) return await creatorSubResponse(env, t.slice(0, -4));
+        const lic = await env.DB.prepare('SELECT * FROM creator_licenses WHERE token=?').bind(t).first();
+        if (!lic) return html('<h3 style=\"font-family:sans-serif\">⛔ لایسنس معتبر نیست</h3>', 404);
+        return html(creatorPageHtml(lic, url.origin));
+      }
+      if (path === '/api/sub/variant') {
+        let body = {};
+        try { body = await request.json(); } catch {}
+        return await handleVariantFeedback(env, body);
+      }
       if (path === '/api/sub/success') {
         let body = {};
         try {
@@ -61,11 +85,27 @@ export default {
         const res = await applyConnectionFeedback(env, body?.token || '', body?.ip || '');
         return json(res, res.ok ? 200 : 400);
       }
+      if (path.startsWith('/api/glass/')) return await handleGlassApi(env, request);
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
       if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
       if (path === '/panel' || path === '/panel/') return await panelHtml(env);
       if (path === '/app' || path === '/app/') return gameHtml(env);
-      if (path.startsWith('/sub/')) return await subPage(env, path.slice(5));
+      if (path === '/g/studio' || path.startsWith('/g/studio/')) {
+        const parts = path.split('/').filter(Boolean); // g, studio, uid, sig
+        return await glassStudioHtml(env, request, Number(parts[2] || 0), parts[3] || '');
+      }
+      if (path.startsWith('/g/')) {
+        const code = path.slice(3).replace(/[^0-9]/g, '').slice(0, 8);
+        const p = await getGlassByCode(env.DB, code);
+        if (!p || !p.active) return html('<meta charset="utf-8"><body style=\"font-family:sans-serif;background:#05070f;color:#fff;display:grid;place-items:center;height:100vh;margin:0\"><div>⛔ این پست شیشه‌ای پیدا نشد یا حذف شده است.</div></body>', 404);
+        return await glassLandingHtml(env.DB, p, { bot: await getBotUsername(env, token), origin: url.origin });
+      }
+      if (path.startsWith('/sub/')) {
+        const t = path.slice(5);
+        if (t.endsWith('/card')) return await configCardHtml(env, t.slice(0, -5)); // 🧪 نسخهٔ شیشه‌ای کانفیگ
+        return await subPage(env, t);
+      }
+      if (path.startsWith('/sc/')) return await configCardHtml(env, path.slice(4));
       if (path === '/logo.png' || path === '/logo.jpg') {
         return new Response(Uint8Array.from(atob(LOGO_JPG_B64), (c) => c.charCodeAt(0)), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
       }
@@ -123,7 +163,25 @@ async function dispatch(update, env, token) {
     const chat = mcm.chat;
     if ((chat.type === 'group' || chat.type === 'supergroup') && ['member', 'administrator'].includes(st)) {
       await onBotJoinedGroup(env, chat);
+      try {
+        await groupIntro(env, chat.id, token, await getBotUsername(env, token));
+      } catch (e) {
+        console.error('group intro failed', e);
+      }
     }
+    return;
+  }
+
+  // 📎 حالت Inline — ویترین محصولات + پست شیشه‌ای در هر چت
+  if (update.inline_query) {
+    const username = await getBotUsername(env, token);
+    const glassHandled = await handleGlassInline(env, token, update.inline_query, username);
+    if (glassHandled) return;
+    return handleInlineQuery(env, token, update.inline_query, username);
+  }
+  // 🧪 کاربر نتیجهٔ inline را انتخاب کرد → آمار + (اختیاری) انتشار نسخهٔ دکمه‌دار
+  if (update.chosen_inline_result) {
+    await handleChosenInline(env, token, update.chosen_inline_result, await getBotUsername(env, token));
     return;
   }
 
@@ -137,8 +195,22 @@ async function dispatch(update, env, token) {
       for (const nm of newMembers) await welcomeNewMember(env, msg.chat, nm);
       return;
     }
-    // /start و /help در گروه → هدایت به پیوی به‌جای سکوت
     const gtext = (msg.text || '').trim();
+    // 🧪 پست شیشه‌ای در گروه: /glass post 31763
+    if (/^\/glass(?:@\w+)?\b/i.test(gtext)) {
+      const uid = msg.from?.id;
+      if (!uid) return;
+      await ensureUser(DB, msg.from);
+      const gUser = (await getUser(DB, uid)) || { id: uid, role: 'user', total_paid: 0, lang: 'fa', state: '', first_name: msg.from.first_name || '' };
+      const ctx = { env, db: DB, token, user: gUser, update, botUsername: await getBotUsername(env, token), chatId: msg.chat.id };
+      return handleGlassCommand(ctx, gtext.replace(/^\/glass(?:@\w+)?\s*/i, ''), { inGroup: true, chatId: msg.chat.id });
+    }
+    // 🛍 خرید داخل گروه (فروشگاه، فیش، پرداخت) — همه در گروه، تحویل در پیوی
+    if (msg.photo?.length) {
+      const handledReceipt = await handleGroupReceiptPhoto(env, msg, token);
+      if (handledReceipt) return;
+    }
+    if (await handleGroupMessage(env, msg, token, await getBotUsername(env, token))) return;
     if (/^\/(start|help)(@\w+)?$/i.test(gtext)) {
       const bu = await getBotUsername(env, token);
       await tg(token, 'sendMessage', {
@@ -150,7 +222,7 @@ async function dispatch(update, env, token) {
     }
     // چت هوش مصنوعی داخل گروه (ریپلای/منشن/«ربات ...»)
     await groupAiReply(env, msg, await getBotUsername(env, token));
-    return; // خرید همچنان فقط در پیوی انجام می‌شود
+    return;
   }
 
   // ── کال‌بک ──
@@ -160,6 +232,13 @@ async function dispatch(update, env, token) {
     if (!user || user.banned) return tg(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: '⛔' });
     const ctx = { env, db: DB, token, user: await getUser(DB, uid), update, cbId: cb.id, botUsername: await getBotUsername(env, token) };
     const data = cb.data || '';
+    // 🧪 استودیوی پست شیشه‌ای + 🎁 باشگاه جوایز + 🌐 زبان
+    if (/^(gl:|perk:|rev:|lang:)/.test(data)) {
+      if (data.startsWith('gl:')) return handleGlassCallback(ctx, data);
+      return handleUserCallback(ctx, data);
+    }
+    // 🛍 خرید داخل گروه (کال‌بک‌های gb: از چت گروه)
+    if (data.startsWith('gb:')) return handleGroupCallback(ctx, data);
     if (data.startsWith('adm:') || data === 'panel' || data.startsWith('rcpt:') || data.startsWith('npw:') || data.startsWith('nsw:')) {
       if (!isAdmin(ctx.user)) return tg(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: '⛔ دسترسی ندارید' });
       if (data.startsWith('npw:') || data.startsWith('nsw:')) return handleWizardCallback(ctx, data);
@@ -181,6 +260,21 @@ async function dispatch(update, env, token) {
 
     if (isNew) {
       await postFirstRunSetup(env, token);
+      try {
+        await notifyAdmins(
+          env,
+          'newUser',
+          `🆕 <b>کاربر جدید</b>\n👤 ${tgUser.first_name || ''}${tgUser.username ? ' · @' + tgUser.username : ''}\n🆔 <code>${tgUser.id}</code>` +
+            (user.referrer_id ? `\n👥 زیرمجموعهٔ <code>${user.referrer_id}</code>` : ''),
+          null,
+          { dedupe: 'u:' + tgUser.id }
+        );
+        if (user.referrer_id) {
+          await send(token, user.referrer_id, `👥 <b>زیرمجموعه جدید!</b>\n\n${tgUser.first_name || 'کاربر'} با لینک شما وارد شد.\nبعد از اولین خریدش، پاداش نقدی به کیف پولتان می‌رسد 💸`);
+        }
+      } catch (e) {
+        console.error('new user notify failed', e);
+      }
       if (user.role === 'super') {
         await send(token, tgUser.id, '👑 <b>شما به عنوان سوپرادمین ثبت شدید!</b>\nدکمه «📊 پنل مدیریت» همیشه در منوی شماست.\nحالا پروفایل بات به‌صورت خودکار تنظیم می‌شود... ⏳');
       }
@@ -223,6 +317,24 @@ async function dispatch(update, env, token) {
   }
 }
 
+/** اگر کاربر کد پست شیشه‌ای را نوشت، همان را نشان بده (وگرنه فروشگاه) */
+async function handleGlassInline(env, token, iq, username) {
+  const q = String(iq.query || '').trim();
+  const isCode = /^#?\d{4,8}$/.test(q);
+  const enabled = (await getSettingValue(env.DB, 'glass_enabled', '1')) !== '0';
+  if (!enabled) return false;
+  if (!isCode) return false; // بقیهٔ کوئری‌ها → ویترین محصولات
+  const origin = await getBase(env);
+  let lang = 'fa';
+  try {
+    const u = await getUser(env.DB, iq.from?.id || 0);
+    lang = u?.lang || 'fa';
+  } catch {}
+  const results = await inlineGlassResults(env.DB, { query: q, bot: username, origin, userId: iq.from?.id || 0, lang });
+  await tg(token, 'answerInlineQuery', { inline_query_id: iq.id, results, cache_time: 5, is_personal: false });
+  return true;
+}
+
 let firstRunLock = false;
 async function postFirstRunSetup(env, token) {
   if (firstRunLock) return;
@@ -243,6 +355,15 @@ async function postFirstRunSetup(env, token) {
       console.error('photo upload failed', e);
     }
     await ensurePanelPassword(env.DB);
+    // 🪟 دکمهٔ مربعی «داشبورد» در منوی پیوست تلگرام (WebApp)
+    if ((await getSettingValue(env.DB, 'dashboard_enabled')) !== '0') {
+      try {
+        await setDashboardMenuButton(env, token);
+        await setSetting(env.DB, 'menu_button_done', '1');
+      } catch (e) {
+        console.error('menu button failed', e);
+      }
+    }
     await setSetting(env.DB, 'profile_done', '1');
   } catch (e) {
     console.error('setup failed', e);
@@ -261,6 +382,40 @@ async function getBotUsername(env, token) {
     }
   }
   return u || '';
+}
+
+/**
+ * بازخورد کاربر روی هر کانفیگ صفحهٔ ساب (بخش ۳.۱):
+ * تنها سیگنال واقعیِ «روی نت ملی کار می‌کند / فیلتر شده است».
+ * بعد از variant_fail_limit شکست پیاپی → واریانت خودکار از فروش خارج می‌شود.
+ */
+async function handleVariantFeedback(env, body = {}) {
+  const token = String(body.token || '').slice(0, 64);
+  const variantId = Number(body.variantId || 0);
+  const ok = !!body.ok;
+  if (!token || !variantId) return json({ ok: false, reason: 'bad_request' }, 400);
+  const sub = await env.DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind(token).first();
+  if (!sub) return json({ ok: false, reason: 'invalid_token' }, 403);
+  const rateKey = `vf:${token}:${variantId}:${ok ? 'ok' : 'no'}`;
+  try {
+    if (await env.KV.get(rateKey)) return json({ ok: true, throttled: true });
+    await env.KV.put(rateKey, '1', { expirationTtl: 3600 });
+  } catch {}
+  const res = await reportVariantResult(env.DB, {
+    variantId,
+    ok,
+    limit: await getNum(env.DB, 'variant_fail_limit', 3),
+  });
+  if (res.disabled) {
+    await notifyAdmins(
+      env,
+      'deadConfig',
+      `💀 <b>واریانت کانفیگ از دسترس خارج شد</b>\n🆔 واریانت #${variantId} روی سرور مربوطه\n📉 ${ok ? '' : 'چند بار پیاپی وصل نشد (بازخورد کاربران داخل ایران)'}\n🛠 از پنل «پروفایل ضدسانسور» بررسی/جایگزین کنید.`,
+      null,
+      { dedupe: 'v:' + variantId }
+    );
+  }
+  return json({ ok: true, ...res });
 }
 
 // ─────────────────────────── صفحه ساب ───────────────────────────

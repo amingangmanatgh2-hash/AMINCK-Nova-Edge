@@ -171,12 +171,100 @@ export async function getUsdRate(env, force = false) {
 export const RATE_UNAVAILABLE_MESSAGE =
   '⚠️ نرخ آنلاین در دسترس نیست. لطفاً از پنل، نرخ دستی تنظیم کنید تا خریدها با قیمت درست انجام شوند.';
 
-/** قیمت نهایی محصول به تومان = دلار × نرخ × مارجین (۰ = نرخ در دسترس نیست) */
+// ─── نرخ طلای ۱۸ عیار (تومان / گرم) — اختیاری، برای محصولات با لنگر طلا ───
+const GOLD_KEY = 'cache:gold_rate';
+const GOLD_FRESH = 20 * 60;
+
+/**
+ * استخراج مقدار از JSON با مسیر «data.18k.fields.price»
+ */
+export function pickJson(obj, path) {
+  let cur = obj;
+  for (const part of String(path || '').split('.')) {
+    if (!part) continue;
+    if (cur == null) return undefined;
+    cur = cur[part];
+  }
+  return cur;
+}
+
+export async function getGoldRateInfo(env, force = false) {
+  const db = env.DB;
+  const manual = Number(await getSettingValue(db, 'gold_rate_manual'));
+  if (manual > 0) return { rate: manual, source: 'manual', ts: 0, manual: true, unavailable: false, stale: false };
+  let cached = null;
+  try {
+    cached = JSON.parse((await env.KV.get(GOLD_KEY)) || 'null');
+  } catch {}
+  if (!force && cached?.rate && Date.now() / 1000 - cached.ts < GOLD_FRESH) {
+    return { rate: cached.rate, source: cached.source || 'cache', ts: cached.ts, manual: false, unavailable: false, stale: false };
+  }
+  const url = String(await getSettingValue(db, 'gold_rate_url') || '').trim();
+  const path = String(await getSettingValue(db, 'gold_rate_path') || 'price').trim();
+  if (url) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const d = await r.json();
+      const n = Number(pickJson(d, path));
+      if (Number.isFinite(n) && n > 1000) {
+        const ts = Math.floor(Date.now() / 1000);
+        await env.KV.put(GOLD_KEY, JSON.stringify({ rate: Math.round(n), source: 'custom', ts }), { expirationTtl: 7 * 86400 });
+        return { rate: Math.round(n), source: 'custom', ts, manual: false, unavailable: false, stale: false };
+      }
+    } catch (e) {
+      console.error('gold rate failed', e);
+    }
+  }
+  if (cached?.rate) {
+    return { rate: cached.rate, source: cached.source || 'cache', ts: cached.ts, manual: false, unavailable: false, stale: true };
+  }
+  // ⚠️ عدد جعلی برنمی‌گردانیم: نرخ طلا تنظیم نشده = «در دسترس نیست»
+  return { rate: 0, source: '', ts: 0, manual: false, unavailable: true, stale: false };
+}
+
+export async function getGoldRate(env, force = false) {
+  return (await getGoldRateInfo(env, force)).rate;
+}
+
+/** قیمت واحد لنگر محصول (usdt → نرخ دلار/تتر، gold → نرخ طلا) */
+export async function pegRate(env, peg) {
+  return String(peg || 'usdt').toLowerCase() === 'gold' ? getGoldRate(env) : getUsdRate(env);
+}
+
+const round1000 = (n) => Math.round((Number(n) || 0) / 1000) * 1000;
+
+/**
+ * قیمت نهایی محصول به تومان.
+ *   • price_mode='fixed' → قیمت ثابت ادمین (بدون نرخ ارز)
+ *   • price_mode='fx'    → دلارِ محصول × نرخ لنگر (تتر یا طلا) × مارجین
+ *   • کف قیمت: max(product.min_toman, price_floor_toman) — ضد دامپینگ
+ * @returns {Promise<number>} ۰ یعنی «نرخ لازم در دسترس نیست»
+ */
 export async function productPriceToman(env, product) {
-  const rate = await getUsdRate(env);
+  const floor = Math.max(Number(product?.min_toman) || 0, await getNum(env.DB, 'price_floor_toman', 0));
+  if (String(product?.price_mode || 'fx') === 'fixed') {
+    let t = round1000(product?.price_toman || 0);
+    if (floor && t) t = Math.max(t, round1000(floor));
+    return t;
+  }
+  const rate = await pegRate(env, product?.peg);
   if (!rate) return 0;
-  const margin = await getNum(env.DB, 'margin', 1.3);
-  return Math.round((product.price_usd * rate * margin) / 1000) * 1000;
+  let margin = await getNum(env.DB, 'margin', 1.3);
+  // ضریب اضافی برای محصولات لنگرطلا (طلا حباب/کارمزد مبادله دارد) — پیش‌فرض ۱ = بدون تغییر
+  if (String(product?.peg || 'usdt') === 'gold') margin = margin * (await getNum(env.DB, 'gold_margin', 1) || 1);
+  let t = round1000((Number(product?.price_usd) || 0) * rate * margin);
+  if (floor && t) t = Math.max(t, round1000(floor));
+  return t;
+}
+
+/** خط قیمت محصول با ذکر لنگر/حالت */
+export async function priceModeLine(env, product) {
+  if (String(product?.price_mode || 'fx') === 'fixed') return 'قیمت ثابت (بدون نوسان ارز) ✅';
+  if (String(product?.peg || 'usdt') === 'gold') {
+    const g = await getGoldRate(env);
+    return g ? `💛 قیمت وابسته به نرخ طلا (گرم ۱۸k): ${faDigits(g.toLocaleString('en-US'))} تومان` : '💛 قیمت وابسته به نرخ طلا — نرخ تنظیم نشده است ⚠️';
+  }
+  return await priceLine(env);
 }
 
 export async function priceLine(env) {
@@ -250,9 +338,11 @@ export async function computeDynamicPrice(env, o = {}) {
     (Number(locMult[location]) || 1) *
     (Number(tierMult[tier]) || 1);
 
-  const rate = await getUsdRate(env);
+  const rate = await pegRate(env, o.peg);
   const margin = await getNum(env.DB, 'margin', 1.3);
   let toman = rate ? rawUsd * rate * margin : 0;
+  const floor = Math.max(Number(o.min_toman) || 0, await getNum(env.DB, 'price_floor_toman', 0));
+  if (floor && toman) toman = Math.max(toman, floor);
 
   // تخفیف پلکانی حجم/مدت
   const tiers = await discountTiers(env);

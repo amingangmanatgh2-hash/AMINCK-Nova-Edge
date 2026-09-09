@@ -143,9 +143,120 @@ export const DEFAULT_SETTINGS = {
   discount_tiers: '[{"days":90,"percent":5},{"days":180,"percent":10},{"days":365,"percent":15},{"gb":100,"percent":5}]',
   loyalty_discount_percent: '0',
   loyalty_min_paid: '500000',
+  // ─── بخش ۳۲: داشبورد/مینی‌اپ و دکمه‌ها ───
+  dashboard_enabled: '1',
+  dashboard_label: '🪟 داشبورد',
+  dashboard_url: '',
+  custom_menu_enabled: '1',
+  // ─── بخش ۱۲: حالت Inline ───
+  inline_enabled: '1',
+  inline_limit: '8',
+  inline_show_rate: '1',
+  // ─── بخش ۳.۱: ساب و ضدسانسور ───
+  sub_min_configs: '10',
+  sub_ips_per_server: '3',
+  variant_fail_limit: '3',
+  variant_check_enabled: '0',   // پروب از بیرون ایران (اختیاری)
+  // ─── بخش ۷: طلا و کف قیمت ───
+  gold_rate_manual: '0',
+  gold_margin: '1.08',           // ضریب اضافی قیمت محصولات لنگرطلا (پیش‌فرض ۸٪)
+  gold_rate_url: '',
+  gold_rate_path: 'price',
+  price_floor_toman: '0',
+  // ─── بخش ۸: محدودیت خرید با سکه ───
+  coin_max_usd: '3',            // فقط محصولات تا این قیمت دلار با سکه فروخته می‌شوند
+  coin_allow_premium: '0',      // ۱ = پریمیوم هم با سکه فروش برود
+  // ─── بخش ۵: درگاه بانکی ───
+  gateway_enabled: '0',
+  gateway_provider: 'none',
+  gateway_api_base: '',
+  gateway_merchant_id: '',
+  gateway_api_key: '',
+  gateway_currency: 'IRT',
+  gateway_fee_mode: 'none',
+  gateway_fee_percent: '0',
+  gateway_callback_path: '/pay',
+  gateway_ttl_minutes: '30',
+  gateway_timeout_ms: '12000',
+  gateway_auto_reconcile: '1',
+  gateway_custom_request: '',
+  gateway_custom_verify: '',
+  // ─── بخش ۲۰: پنل کانفیگ‌ساز ───
+  creator_enabled: '1',
+  creator_default_plan: 'pro',
+  // ─── بخش ۲۳: موجودی ───
+  low_stock_threshold: '3',      // از این تعداد به پایین، به ادمین هشدار داده می‌شود
+  // ─── بخش ۲۴: اعلان‌ها ───
+  notify_throttle_seconds: '120',
+  notify_purchase: '1',
+  notify_payment: '1',
+  notify_receipt: '1',
+  notify_suspicious: '1',
+  notify_newUser: '1',
+  notify_referral: '1',
+  notify_serviceError: '1',
+  notify_outOfStock: '1',
+  notify_deadConfig: '1',
+  notify_gateway: '1',
+  notify_aiFlag: '1',
+  // ─── بخش ۱۷: قفل مالک ───
+  owner_claim: '0',
+  // ─── 🌐 زبان کاربر ───
+  lang_default: 'fa',            // زبان پیش‌فرض (کاربر در اولین /start می‌تواند عوض کند)
+  lang_ask: '1',                 // ۰ = از کاربر زبان نپرس و lang_default را اجبار کن
+  // ─── 🧪 پست/متن شیشه‌ای ───
+  glass_enabled: '1',
+  glass_menu_enabled: '1',
+  glass_public: '1',             // ۰ = فقط خریداران/ادمین پست بسازند
+  glass_max_buttons: '6',        // سقف دکمه شیشه‌ای هر پست (۱..۱۰)
+  glass_daily_limit: '0',        // سقف ساخت پست در روز برای هر کاربر (۰ = نامحدود)
+  glass_auto_post: '0',          // ۱ = بعد از انتخاب نتیجهٔ inline، نسخهٔ دکمه‌دار هم منتشر شود
+  glass_show_ref: '0',           // ۱ = دکمهٔ دعوت سازنده به همه پست‌ها اضافه شود
+  glass_web_enabled: '1',        // صفحه/استودیوی وب پست شیشه‌ای
+  glass_public_publish: '0',     // ۱ = هر کسی بتواند پست دیگران را با ربات در گروهش منتشر کند
+  // ─── 🛍 خرید داخل گروه ───
+  group_buy_enabled: '1',
+  group_discount_percent: '0',
+  group_coupon_code: '',
+  group_pay_methods: 'card,gateway,wallet,coin',
+  group_show_rating: '1',
+  group_review_need_buy: '0',
+  group_receipt_require_reply: '1',
+  // ─── 🎁 باشگاه جوایز کاربر ───
+  perks_enabled: '1',
+  perks_menu_enabled: '1',
+  scratch_enabled: '1',
+  scratch_prizes: '[{"kind":"coins","value":20,"weight":42},{"kind":"coins","value":60,"weight":22},{"kind":"amount","value":15000,"weight":12},{"kind":"days","value":1,"weight":8},{"kind":"coins","value":200,"weight":4},{"kind":"none","value":0,"weight":12}]',
+  scratch_extend_floor_toman: '0',   // حداقل کل خرید برای اینکه جایزهٔ «روز» اعمال شود
+  checkin_enabled: '1',
+  checkin_coins: '15',
+  checkin_step: '5',
+  checkin_day7_bonus: '120',
+  personal_coupon_enabled: '1',
+  personal_coupon_percent: '7',
+  personal_coupon_days: '30',
+  // ─── 🛡 محدودیت و ضدسوءاستفاده ───
+  user_daily_orders: '0',        // سقف سفارش روزانه هر کاربر (۰ = نامحدود)
+  user_daily_toman: '0',         // سقف مبلغ خرید روزانه هر کاربر
+  ref_anti_abuse: '1',
+  ref_min_account_days: '0',     // ۰ = سن حساب بررسی نشود (پیش‌فرض محافظه‌کارانه برای اینکه دعوت فوری کاربر را نکشد)
+  ref_min_first_buy: '0',
+  ref_max_same_name: '3',
+  referral_coins: '25',
+  // ─── 📊 گزارش و صف ارسال ───
+  report_daily_enabled: '1',
+  report_daily_hour: '2',        // ساعت UTC ارسال گزارش روزانه
+  report_weekly_enabled: '1',
+  report_notify_zero: '0',
+  broadcast_batch: '25',         // تعداد پیام در هر اجرا (کرون هر ۵ دقیقه)
+  audit_log_enabled: '1',
 };
 
-export async function getText(db, key) {
+export async function getText(db, key, lang = '') {
+  if (lang && lang !== 'fa') {
+    const tl = await getSetting(db, `text:${key}:${lang}`, '');
+    if (tl) return tl;
+  }
   const v = await getSetting(db, `text:${key}`, '');
   return v || DEFAULT_TEXTS[key] || '';
 }
