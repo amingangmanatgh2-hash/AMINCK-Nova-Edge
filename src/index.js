@@ -16,6 +16,13 @@ import { gameHtml, handleGameApi } from './game.js';
 import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
 import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
 import { probeTargets, probeReport, applyConnectionFeedback } from './cleanip.js';
+import { handleInlineQuery } from './inline.js';
+import { handleGatewayCallback } from './gateway.js';
+import { creatorPageHtml, creatorSubResponse, handleCreatorApi } from './creator.js';
+import { setDashboardMenuButton } from './menu.js';
+import { reportVariantResult } from './antiblock.js';
+import { notifyAdmins } from './notify.js';
+import { getNum, getSettingValue } from './texts.js';
 import {
   handleStart, handleUserText, handleUserCallback, setState, showMainMenu, openProduct, openShop, handleReceiptPhoto,
 } from './user.js';
@@ -53,6 +60,20 @@ export default {
         return json({ ok: true, targets });
       }
       if (path === '/api/probe/report') return await probeReport(env, request);
+      if (path.startsWith('/pay/')) return await handleGatewayCallback(env, request, url);
+      if (path.startsWith('/api/creator/')) return await handleCreatorApi(env, request, path);
+      if (path.startsWith('/creator/')) {
+        const t = path.slice(9);
+        if (t.endsWith('/sub')) return await creatorSubResponse(env, t.slice(0, -4));
+        const lic = await env.DB.prepare('SELECT * FROM creator_licenses WHERE token=?').bind(t).first();
+        if (!lic) return html('<h3 style=\"font-family:sans-serif\">⛔ لایسنس معتبر نیست</h3>', 404);
+        return html(creatorPageHtml(lic, url.origin));
+      }
+      if (path === '/api/sub/variant') {
+        let body = {};
+        try { body = await request.json(); } catch {}
+        return await handleVariantFeedback(env, body);
+      }
       if (path === '/api/sub/success') {
         let body = {};
         try {
@@ -127,6 +148,12 @@ async function dispatch(update, env, token) {
     return;
   }
 
+  // 📎 حالت Inline — ویترین محصولات در هر چت
+  if (update.inline_query) {
+    return handleInlineQuery(env, token, update.inline_query, await getBotUsername(env, token));
+  }
+  if (update.chosen_inline_result) return; // انتخاب شد؛ ثبت لازم نیست
+
   const msg = update.message;
   const cb = update.callback_query;
 
@@ -181,6 +208,21 @@ async function dispatch(update, env, token) {
 
     if (isNew) {
       await postFirstRunSetup(env, token);
+      try {
+        await notifyAdmins(
+          env,
+          'newUser',
+          `🆕 <b>کاربر جدید</b>\n👤 ${tgUser.first_name || ''}${tgUser.username ? ' · @' + tgUser.username : ''}\n🆔 <code>${tgUser.id}</code>` +
+            (user.referrer_id ? `\n👥 زیرمجموعهٔ <code>${user.referrer_id}</code>` : ''),
+          null,
+          { dedupe: 'u:' + tgUser.id }
+        );
+        if (user.referrer_id) {
+          await send(token, user.referrer_id, `👥 <b>زیرمجموعه جدید!</b>\n\n${tgUser.first_name || 'کاربر'} با لینک شما وارد شد.\nبعد از اولین خریدش، پاداش نقدی به کیف پولتان می‌رسد 💸`);
+        }
+      } catch (e) {
+        console.error('new user notify failed', e);
+      }
       if (user.role === 'super') {
         await send(token, tgUser.id, '👑 <b>شما به عنوان سوپرادمین ثبت شدید!</b>\nدکمه «📊 پنل مدیریت» همیشه در منوی شماست.\nحالا پروفایل بات به‌صورت خودکار تنظیم می‌شود... ⏳');
       }
@@ -243,6 +285,15 @@ async function postFirstRunSetup(env, token) {
       console.error('photo upload failed', e);
     }
     await ensurePanelPassword(env.DB);
+    // 🪟 دکمهٔ مربعی «داشبورد» در منوی پیوست تلگرام (WebApp)
+    if ((await getSettingValue(env.DB, 'dashboard_enabled')) !== '0') {
+      try {
+        await setDashboardMenuButton(env, token);
+        await setSetting(env.DB, 'menu_button_done', '1');
+      } catch (e) {
+        console.error('menu button failed', e);
+      }
+    }
     await setSetting(env.DB, 'profile_done', '1');
   } catch (e) {
     console.error('setup failed', e);
@@ -261,6 +312,40 @@ async function getBotUsername(env, token) {
     }
   }
   return u || '';
+}
+
+/**
+ * بازخورد کاربر روی هر کانفیگ صفحهٔ ساب (بخش ۳.۱):
+ * تنها سیگنال واقعیِ «روی نت ملی کار می‌کند / فیلتر شده است».
+ * بعد از variant_fail_limit شکست پیاپی → واریانت خودکار از فروش خارج می‌شود.
+ */
+async function handleVariantFeedback(env, body = {}) {
+  const token = String(body.token || '').slice(0, 64);
+  const variantId = Number(body.variantId || 0);
+  const ok = !!body.ok;
+  if (!token || !variantId) return json({ ok: false, reason: 'bad_request' }, 400);
+  const sub = await env.DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind(token).first();
+  if (!sub) return json({ ok: false, reason: 'invalid_token' }, 403);
+  const rateKey = `vf:${token}:${variantId}:${ok ? 'ok' : 'no'}`;
+  try {
+    if (await env.KV.get(rateKey)) return json({ ok: true, throttled: true });
+    await env.KV.put(rateKey, '1', { expirationTtl: 3600 });
+  } catch {}
+  const res = await reportVariantResult(env.DB, {
+    variantId,
+    ok,
+    limit: await getNum(env.DB, 'variant_fail_limit', 3),
+  });
+  if (res.disabled) {
+    await notifyAdmins(
+      env,
+      'deadConfig',
+      `💀 <b>واریانت کانفیگ از دسترس خارج شد</b>\n🆔 واریانت #${variantId} روی سرور مربوطه\n📉 ${ok ? '' : 'چند بار پیاپی وصل نشد (بازخورد کاربران داخل ایران)'}\n🛠 از پنل «پروفایل ضدسانسور» بررسی/جایگزین کنید.`,
+      null,
+      { dedupe: 'v:' + variantId }
+    );
+  }
+  return json({ ok: true, ...res });
 }
 
 // ─────────────────────────── صفحه ساب ───────────────────────────

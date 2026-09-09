@@ -111,9 +111,9 @@ export async function setupBotProfile(token, texts, botUsername) {
   res.desc = await tg(token, 'setMyDescription', { description: texts.bot_description });
   res.short = await tg(token, 'setMyShortDescription', { short_description: texts.bot_short });
   res.cmds = await tg(token, 'setMyCommands', { commands: COMMANDS });
-  if (botUsername) {
-    res.name2 = await tg(token, 'setChatMenuButton', {}).catch?.(() => ({}));
-  }
+  // دکمهٔ «داشبورد» در منوی پیوست تلگرام (WebApp) از menu.js تنظیم می‌شود؛
+  // اینجا فقط menu_button را برای ربات برمی‌گردانیم تا لیست دستورات تمیز بماند.
+  if (botUsername) res.menu = await tg(token, 'getChatMenuButton', {});
   return res;
 }
 

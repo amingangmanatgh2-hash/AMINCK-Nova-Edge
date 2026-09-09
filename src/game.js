@@ -4,7 +4,11 @@
 import { verifyInitData, json, html, clamp } from './util.js';
 import { getUser, weekKey, todayStr, faDigits } from './db.js';
 import { getNum, getSettingValue } from './texts.js';
-import { payWithCoins, sendDelivery } from './pay.js';
+import { payWithCoins, sendDelivery, coinPurchaseGate } from './pay.js';
+import { productPriceToman } from './pricing.js';
+import { gatewayConfig, createPayment, gatewayFee } from './gateway.js';
+import { createOrder } from './pay.js';
+import { deepLink } from './util.js';
 import { getChatMember } from './tg.js';
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -53,6 +57,30 @@ async function statePayload(env, u) {
   const channelUrl = await getSettingValue(db, 'channel_url');
   const prize = await getNum(db, 'league_prize_coins', 10000);
   const shopItems = (await db.prepare("SELECT id, title, days, traffic_gb, coin_price FROM products WHERE category='coin' AND enabled=1 ORDER BY coin_price ASC LIMIT 20").all()).results;
+  // پروفایل کامل + داشبورد (بخش ۱۱ و ۱۴)
+  const nowTs = now();
+  const cashProducts = (await db.prepare("SELECT * FROM products WHERE enabled=1 AND category<>'coin' ORDER BY sort ASC, price_usd ASC LIMIT 24").all()).results;
+  const cashShop = [];
+  for (const p of cashProducts) {
+    cashShop.push({
+      id: p.id,
+      title: p.title,
+      days: p.days,
+      traffic_gb: p.traffic_gb,
+      category: p.category,
+      tier: p.tier || 'standard',
+      badge: p.badge || '',
+      price: await productPriceToman(env, p),
+      stock: Number(p.stock ?? -1),
+    });
+  }
+  const subs = (
+    await db.prepare('SELECT id, title, token, days, traffic_gb, expire_at, is_trial FROM subscriptions WHERE user_id=? ORDER BY id DESC LIMIT 10').bind(u.id).all()
+  ).results.map((x) => ({ ...x, expired: x.expire_at < nowTs }));
+  const purchases = (await db.prepare('SELECT COUNT(*) c FROM orders WHERE user_id=? AND status=\'paid\'').bind(u.id).first())?.c || 0;
+  const botUsername = await getSettingValue(db, 'bot_username');
+  const origin = (await env.KV.get('worker_origin')) || '';
+  const gw = await gatewayConfig(env);
   let missionsDone = [];
   try {
     if (u.missions_date === todayStr()) missionsDone = JSON.parse(u.missions_done || '[]');
@@ -78,9 +106,45 @@ async function statePayload(env, u) {
       channelUrl,
       invited: u.invited_count > 0,
     },
-    shopItems,
+    shopItems: await Promise.all(
+      shopItems.map(async (it) => ({ ...it, locked: !(await coinPurchaseGate(env, { ...it, category: 'coin', tier: 'standard' })).ok }))
+    ),
     leaguePrize: prize,
+    profile: {
+      id: u.id,
+      name: u.first_name || '',
+      username: u.username || '',
+      coins: u.coins,
+      balance: u.balance,
+      purchases,
+      refs: u.invited_count || 0,
+      level: Math.max(1, Math.floor(Math.log2(Math.max(1, (u.tap_level || 1) + (u.total_taps || 0) / 1000)) ) || 1),
+      tier: tierOf(u.total_taps),
+      status: u.banned ? '⛔ مسدود' : '✅ فعال',
+      joined: u.created_at || 0,
+      totalTaps: u.total_taps || 0,
+    },
+    cashShop,
+    subs,
+    referral: {
+      link: botUsername ? `https://t.me/${botUsername}?start=ref_${u.id}` : '',
+      percent: await getNum(db, 'referral_percent', 10),
+      goal: await getNum(db, 'referral_goal', 5),
+    },
+    gateway: { enabled: gw.enabled, provider: gw.enabled ? gw.provider : 'none', feePercent: gw.feePercent, feeMode: gw.feeMode },
+    botUsername,
+    origin,
+    dashboard: (await getSettingValue(db, 'dashboard_enabled')) !== '0',
+    cardNumber: await getSettingValue(db, 'card_number'),
+    cardHolder: await getSettingValue(db, 'card_holder'),
+    aiPrice: await getNum(db, 'ai_price_coins', 5),
   };
+}
+
+/** قیمت با کارمزد درگاه (اگر بر عهدهٔ کاربر باشد) */
+export function withGatewayFee(price, cfg) {
+  if (!cfg.enabled || cfg.feeMode !== 'payer') return price;
+  return price + gatewayFee(price, cfg);
 }
 
 async function authUser(env, body) {
@@ -210,6 +274,22 @@ export async function handleGameApi(env, request, path) {
     return json({ ok: true, token: res.sub.token });
   }
 
+  if (path === '/api/game/pay') {
+    const p = await db.prepare('SELECT * FROM products WHERE id=? AND enabled=1').bind(Number(body.productId)).first();
+    if (!p) return json({ ok: false, error: 'notfound' }, 404);
+    const price = await productPriceToman(env, p);
+    if (!price) return json({ ok: false, error: 'نرخ ارز در دسترس نیست؛ بعداً تلاش کنید.' }, 400);
+    const cfg = await gatewayConfig(env);
+    if (!cfg.enabled) {
+      const bu = await getSettingValue(db, 'bot_username');
+      return json({ ok: true, mode: 'bot', link: bu ? `https://t.me/${bu}?start=prod_${p.id}` : '', message: 'پرداخت از داخل ربات انجام می‌شود 👇' });
+    }
+    const order = await createOrder(env, u.id, p, price, 'gateway');
+    const res = await createPayment(env, order, u, { description: `مینی‌اپ — ${p.title}` });
+    if (!res.ok) return json({ ok: false, error: res.message || 'درگاه پاسخ نداد', order: order.id }, 400);
+    return json({ ok: true, mode: 'gateway', url: res.url, total: res.total, fee: res.fee, order: order.id });
+  }
+
   if (path === '/api/game/league') {
     const top = (await db.prepare('SELECT first_name, username, weekly_taps, total_taps FROM users WHERE weekly_taps>0 ORDER BY weekly_taps DESC LIMIT 10').all()).results;
     const rank = (await db.prepare('SELECT COUNT(*)+1 r FROM users WHERE weekly_taps>?').bind(u.weekly_taps).first())?.r || 0;
@@ -315,8 +395,27 @@ td{padding:8px 4px;border-bottom:1px solid #22314f}
  <div id="shoplist"></div>
 </div>
 
+<div class="page" id="pg-dash">
+ <div class="card"><h3>👤 پروفایل من</h3><div id="profrows"></div></div>
+ <div class="card"><h3>🧩 اشتراک‌های فعال</h3><div id="mysubs" class="mut">—</div></div>
+ <div class="card"><h3>💳 حساب و پرداخت</h3><div id="paybox" class="mut">—</div><div class="row"><button class="btn sec" id="goCash">🛍 فروشگاه نقدی</button><button class="btn sec" id="goInv">👥 دعوت</button></div></div>
+</div>
+
+<div class="page" id="pg-cash">
+ <div class="card"><h3>🛍 فروشگاه نقدی</h3><div class="mut">قیمت‌ها با نرخ لحظه‌ای دلار/طلا به‌روز می‌شوند — اگر نرخ در دسترس نباشد، خرید باز نمی‌شود.</div></div>
+ <div id="cashlist"></div>
+</div>
+
+<div class="page" id="pg-inv">
+ <div class="card"><h3>👥 دعوت دوستان</h3><div class="mut" id="refbox">—</div><button class="btn" id="copyref">📋 کپی لینک دعوت</button><div class="small" id="refshare"></div></div>
+ <div class="card"><h3>🎁 پاداش</h3><div class="mut" id="refrule">—</div></div>
+</div>
+
 <div class="tabs">
  <button class="on" data-pg="tap"><span class="ic">💰</span>تپ</button>
+ <button data-pg="dash" id="tabdash"><span class="ic">🪟</span>داشبورد</button>
+ <button data-pg="cash" id="tabcash"><span class="ic">🛍</span>فروشگاه</button>
+ <button data-pg="inv" id="tabinv"><span class="ic">👥</span>دعوت</button>
  <button data-pg="up"><span class="ic">📈</span>آپگرید</button>
  <button data-pg="spin"><span class="ic">🎡</span>شانس</button>
  <button data-pg="league"><span class="ic">🏆</span>لیگ</button>
@@ -332,7 +431,7 @@ const api=async(p,b)=>{const r=await fetch(p,{method:'POST',headers:{'Content-Ty
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200)}
 function paint(){if(!S)return;$('coins').textContent=S.coins.toLocaleString('fa-IR');$('tier').textContent=S.tier;$('tier2').textContent=S.tier;
  $('ecap').textContent=S.energyCap;$('elvl').textContent=S.energyLevel;$('slvl').textContent=S.speedLevel;
- $('streak').textContent=S.streak;$('buyE').textContent='ارتقا — '+S.energyCost.toLocaleString('fa-IR')+' 🪙';$('buyS').textContent='ارتقا — '+S.speedCost.toLocaleString('fa-IR')+' 🪙';
+ $('streak').textContent=S.streak;dash();cashShop();referral();$('buyE').textContent='ارتقا — '+S.energyCost.toLocaleString('fa-IR')+' 🪙';$('buyS').textContent='ارتقا — '+S.speedCost.toLocaleString('fa-IR')+' 🪙';
  if(!spinning){$('spinBtn').disabled=!!S.spinDone;$('spinBtn').textContent=S.spinDone?'امروز چرخاندی ✅':'بچرخون! 🎰';}
  $('prize').textContent=S.leaguePrize.toLocaleString('fa-IR');
  for(const[m,el]of[['channel','m-channel'],['invite','m-invite'],['streak','m-streak']]){const card=$(el);const done=S.missions.done.includes(m);
@@ -347,6 +446,51 @@ function paint(){if(!S)return;$('coins').textContent=S.coins.toLocaleString('fa-
   if(r&&r.ok){toast('✅ خرید شد! کانفیگ در پیوی بات ارسال شد');S.coins-=(it.coin_price||0);paint()}
   else toast('❌ '+((r&&(r.message||r.reason))||'خطا در ارتباط'))};
   sl.appendChild(d)}}
+function rowHtml(k,v){return '<div class="item"><span class="mut">'+k+'</span><b>'+v+'</b></div>'}
+function dash(){if(!S)return;const pr=S.profile||{};
+ const rows=[rowHtml('🆔 آیدی','<code>'+pr.id+'</code>'),rowHtml('👤 نام',pr.name||'—'),rowHtml('🔗 یوزرنیم',pr.username?'@'+pr.username:'—'),
+  rowHtml('🪙 سکه',Number(pr.coins||0).toLocaleString('fa-IR')),rowHtml('👛 کیف پول',Number(pr.balance||0).toLocaleString('fa-IR')+' تومان'),
+  rowHtml('🛒 خریدها',Number(pr.purchases||0).toLocaleString('fa-IR')),rowHtml('👥 زیرمجموعه',Number(pr.refs||0).toLocaleString('fa-IR')),
+  rowHtml('🏆 سطح',Number(pr.level||1).toLocaleString('fa-IR')+' · '+pr.tier),rowHtml('📊 وضعیت',pr.status||'—')];
+ $('profrows').innerHTML=rows.join('');
+ const sb=$('mysubs');const subs=S.subs||[];
+ if(!subs.length){sb.innerHTML='<div class="mut">هنوز اشتراکی ندارید — از فروشگاه نقدی یا تست رایگان بگیرید.</div>'}
+ else{sb.innerHTML='';subs.forEach(function(x){const d=document.createElement('div');d.className='item';
+  const left=x.expired?'⛔ منقضی':('🟢 '+Math.max(0,Math.ceil((x.expire_at-Date.now()/1000)/86400))+' روز مانده');
+  d.innerHTML='<div><b>'+(x.title||'اشتراک')+'</b><div class="mut">'+(x.days||0)+' روز · '+(x.traffic_gb?(x.traffic_gb+' گیگ'):'نامحدود')+' · '+left+'</div></div>';
+  const b=document.createElement('button');b.className='btn';b.style.cssText='width:auto;margin:0;padding:8px 14px';b.textContent='📱 کانفیگ‌ها';
+  b.onclick=function(){const u=(S.origin||'')+'/sub/'+x.token;if(!u)return;if(tg&&tg.openLink)tg.openLink(u);else window.open(u,'_blank')};
+  d.appendChild(b);sb.appendChild(d)})}
+ const gw=S.gateway||{};
+ $('paybox').innerHTML=[rowHtml('👛 موجودی',Number(pr.balance||0).toLocaleString('fa-IR')+' تومان'),
+  rowHtml('🏦 درگاه بانکی',gw.enabled?('🟢 '+(gw.provider||'')):'🔴 فعال نیست — پرداخت کارت‌به‌کارت با تایید فیش'),
+  (gw.enabled&&Number(gw.feePercent)>0)?rowHtml('🧮 کارمزد درگاه روی خریدار',(Math.round(gw.feePercent*10000)/100)+'٪'):'',
+  S.cardNumber?rowHtml('💳 شماره کارت',S.cardNumber+(S.cardHolder?(' — '+S.cardHolder):'')):''].filter(Boolean).join('')}
+function cashShop(){if(!S)return;const cl=$('cashlist');if(!cl)return;cl.innerHTML='';
+ const list=S.cashShop||[];
+ if(!list.length){cl.innerHTML='<div class="card mut">هنوز محصولی فعال نیست.</div>';return}
+ list.forEach(function(it){const d=document.createElement('div');d.className='item';
+  const soldOut=Number(it.stock)===0;const price=Number(it.price||0);
+  d.innerHTML='<div><b>'+((it.badge?it.badge+' ':'')+(it.title||''))+'</b><div class="mut">'+(it.days||0)+' روز · '+(it.traffic_gb?(it.traffic_gb+' گیگ'):'نامحدود')+' · '+(it.tier||'')+(soldOut?' · ⛔ تمام شده':'')+'</div></div>';
+  const b=document.createElement('button');b.className='btn';b.style.cssText='width:auto;margin:0;padding:8px 14px';
+  if(soldOut){b.textContent='⛔ تمام شد';b.disabled=true}
+  else if(!price){b.textContent='⛔ نرخ ندارد';b.disabled=true}
+  else b.textContent=Number(price).toLocaleString('fa-IR')+' تومان';
+  if(!soldOut&&price){b.onclick=function(){if(b.disabled)return;b.disabled=true;const old=b.textContent;b.textContent='⏳';
+   api('/api/game/pay',{productId:it.id}).then(function(r){b.disabled=false;b.textContent=old;
+    if(!r||!r.ok){toast('❌ '+((r&&(r.message||r.error))||'خطا در ارتباط'));return}
+    if(r.mode==='gateway'&&r.url){if(tg&&tg.openLink)tg.openLink(r.url);else window.location.href=r.url;return}
+    if(r.link){if(tg&&tg.openTelegramLink)tg.openTelegramLink(r.link);else window.open(r.link,'_blank')}
+    toast(r.message||'👉 ادامهٔ پرداخت در ربات')}).catch(function(){b.disabled=false;b.textContent=old;toast('⚠️ ارتباط برقرار نشد')})}}
+  d.appendChild(b);cl.appendChild(d)})}
+function referral(){if(!S)return;const r=S.referral||{};
+ const box=$('refbox');if(!box)return;
+ box.textContent=r.link?('لینک شما: '+r.link):'برای ساخت لینک دعوت، یک‌بار /start را در ربات بزنید.';
+ const share=$('refshare');
+ share.innerHTML=r.link?('<a href="https://t.me/share/url?url='+encodeURIComponent(r.link)+'&text='+encodeURIComponent('با لینک من ثبت‌نام کن و پاداش بگیر 🎁')+'" target="_blank" rel="noopener">📤 اشتراک‌گذاری در تلگرام</a>'):'—';
+ const rule=$('refrule');if(rule)rule.textContent='پاداش: '+Number(r.percent||0)+'٪ از خرید هر زیرمجموعه + هدف '+Number(r.goal||0)+' دعوت — اعداد را ادمین از پنل تنظیم می‌کند.';
+ const cp=$('copyref');if(cp)cp.onclick=function(){if(!r.link)return;navigator.clipboard.writeText(r.link).then(function(){toast('✅ لینک کپی شد')},function(){toast('⚠️ کپی ممکن نیست')})};
+ if(S.dashboard===false){['tabdash','tabcash'].forEach(function(id){const el=$(id);if(el)el.style.display='none'})}}
 function energyTick(){if(!S)return;const nowT=Date.now();const dt=(nowT-lastT)/1000;lastT=nowT;lastE=Math.min(S.energyCap,lastE+dt*S.regen);$('energy').textContent=Math.floor(lastE);$('efill').style.width=(lastE/S.energyCap*100)+'%'}
 setInterval(energyTick,500);
 function flushTaps(){if(tapBuf<=0)return;const n=tapBuf;tapBuf=0;api('/api/game/tap',{taps:n}).then(r=>{if(r.ok){S.coins=r.coins;lastE=r.energy;S.streak=r.streak;paint();if(r.bonus)toast('🔥 پاداش استریک +'+r.bonus)}else if(r.reason==='no_energy'){toast('⚡ انرژی تمام شد! صبر کن')}})}
@@ -354,9 +498,11 @@ $('coin').addEventListener('pointerdown',e=>{if(!S)return;if(lastE<1){toast('⚡
  lastE-=1;tapBuf++;S.energy=Math.floor(lastE);
  const f=document.createElement('div');f.className='float';f.textContent='+1';f.style.left=(e.clientX-8)+'px';f.style.top=(e.clientY-20)+'px';document.body.appendChild(f);setTimeout(()=>f.remove(),900);
  clearTimeout(flushTimer);flushTimer=setTimeout(flushTaps,400);});
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));b.classList.add('on');
- document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));$('pg-'+b.dataset.pg).classList.add('on');
- if(b.dataset.pg==='league')loadLeague();});
+function switchPg(name){document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x.dataset.pg===name));
+ document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));const el=$('pg-'+name);if(el)el.classList.add('on');
+ if(name==='league')loadLeague();}
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>switchPg(b.dataset.pg));
+$('goCash').onclick=()=>switchPg('cash');$('goInv').onclick=()=>switchPg('inv');
 $('buyE').onclick=async()=>{const r=await api('/api/game/upgrade',{type:'energy'});if(r.ok){Object.assign(S,r);paint();toast('✅ ارتقا یافت')}else toast('🪙 سکه کافی نیست')};
 $('buyS').onclick=async()=>{const r=await api('/api/game/upgrade',{type:'speed'});if(r.ok){Object.assign(S,r);paint();toast('✅ ارتقا یافت')}else toast('🪙 سکه کافی نیست')};
 /* ── چرخ شانس: یک درخواست، انیمیشن واقعی، بدون گیر کردن در حالت disabled ── */

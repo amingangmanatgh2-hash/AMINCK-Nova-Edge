@@ -13,6 +13,12 @@ import { makeBrandQR } from './qr.js';
 import { tmpl, deepLink, getBase, parseMoney } from './util.js';
 import { deliverOrder } from './pay.js';
 import { openAdminPanel, handleAdminCallback, handleAdminText } from './admin.js';
+import { mainKeyboard, handleCustomButton } from './menu.js';
+import { needsOwnerClaim, startOwnerClaim, handleOwnerClaimText } from './owner.js';
+import { coinPurchaseGate, issueFor } from './pay.js';
+import { priceModeLine, getGoldRate } from './pricing.js';
+import { gatewayConfig } from './gateway.js';
+import { protocolHealth } from './subs.js';
 import { aiChatComplete, SHOP_SYSTEM_PROMPT, aiErrorMessage, AI_ERRORS } from './ai.js';
 
 export const CATS = [
@@ -29,17 +35,55 @@ export const CATS = [
 // ─────────────────────────── منوی اصلی ───────────────────────────
 export async function showMainMenu(ctx, extraText) {
   const text = extraText || (await getText(ctx.db, 'start_welcome')).replace('{name}', ctx.user.first_name || 'دوست');
-  await send(ctx.token, ctx.user.id, text, userMainKb(ctx.user.role !== 'user'));
+  await send(ctx.token, ctx.user.id, text, await mainKeyboard(ctx.db, ctx.user.role !== 'user', { env: ctx.env }));
+}
+
+/** دکمهٔ داشبورد (WebApp) — پیام شیشه‌ای با دکمه مربعی منو */
+export async function openDashboard(ctx) {
+  const base = await getBase(ctx.env);
+  if (!base) return send(ctx.token, ctx.user.id, '⚠️ آدرس Worker هنوز ثبت نشده است؛ کمی بعد دوباره تلاش کنید.');
+  const label = (await getText(ctx.db, 'dashboard_label')) || '🪟 داشبورد کاربری';
+  const u = ctx.user;
+  const kb = ikb([[{ text: label, web_app: { url: `${base}/app` } }]]);
+  const text =
+    `🪟 <b>داشبورد من</b>\n\n` +
+    `👤 ${u.first_name || 'کاربر'}${u.username ? ' · @' + u.username : ''}\n` +
+    `🆔 <code>${u.id}</code>\n` +
+    `👛 موجودی: <b>${fmtToman(u.balance)}</b> · 🪙 سکه: <b>${faDigits(Number(u.coins || 0).toLocaleString('en-US'))}</b>\n\n` +
+    `با دکمهٔ زیر، فروشگاه + سکه + ماموریت + رفرال + پروفایل را داخل همین تلگرام باز کنید 👇`;
+  await send(ctx.token, ctx.user.id, text, { reply_markup: kb });
 }
 
 export async function handleStart(ctx, payload) {
+  // 🔐 بخش ۱۷: تا مالک تایید نشود، به اولین کاربر «پنل» داده نمی‌شود
+  if (await needsOwnerClaim(ctx.db, ctx.user.id)) {
+    await startOwnerClaim(ctx);
+    return;
+  }
+  // 🏦 بازگشت از درگاه بعد از پرداخت موفق
+  if (payload?.startsWith('pay_')) {
+    const orderId = Number(payload.slice(4));
+    const order = await ctx.db.prepare('SELECT * FROM orders WHERE id=? AND user_id=?').bind(orderId, ctx.user.id).first();
+    if (order && order.status === 'pending') {
+      await showMainMenu(ctx, `🧾 سفارش #${faDigits(order.id)} هنوز در انتظار تایید پرداخت است.\n\nاگر پرداخت کردید، چند لحظه صبر کنید؛ به‌محض وریفای شدن از سوی درگاه، سرویس برایتان ارسال می‌شود. ⏳`);
+      return;
+    }
+    if (order && order.status === 'paid') {
+      await showMainMenu(ctx, '✅ پرداخت شما ثبت شده است. سرویس در «اشتراک‌های من» در دسترس است.');
+      return;
+    }
+  }
   if (payload?.startsWith('ref_') && ctx.isNew && ctx.user.referrer_id) {
     await send(ctx.token, ctx.user.id, '🎉 خوش اومدی! شما با لینک دوستت وارد شدی؛ بعد از اولین خریدت، به او پاداش نقدی تعلق می‌گیرد. 🤝');
   }
   if (payload === 'shop_home') return openShop(ctx);
-  if (payload?.startsWith('shop_')) {
+  if (payload?.startsWith('shop_') || payload?.startsWith('prod_')) {
     await showMainMenu(ctx);
     return openProduct(ctx, Number(payload.slice(5)));
+  }
+  if (payload === 'trial') {
+    await showMainMenu(ctx);
+    return giveTrial(ctx);
   }
   return showMainMenu(ctx);
 }
@@ -89,19 +133,41 @@ export async function openProduct(ctx, id, editMsg) {
   const p = await ctx.db.prepare('SELECT * FROM products WHERE id=?').bind(id).first();
   if (!p || !p.enabled) return send(ctx.token, ctx.user.id, '❌ محصول یافت نشد.');
   const price = await productPriceToman(ctx.env, p);
+  const health = await protocolHealth(ctx.db, p.protocol || 'vless');
+  const statusLine = health.ok
+    ? `🟢 وضعیت: آماده تحویل (${faDigits(health.healthyCount)} مسیر سالم)`
+    : '🔴 وضعیت: فعلاً مسیر سالمی ندارد (تحویل متوقف شده است)';
+  const isCreator = String(p.category || '') === 'creator';
   let text = (await getText(ctx.db, 'product_info'))
     .replace('{title}', p.title)
     .replace('{days}', faDigits(p.days))
     .replace('{traffic}', p.traffic_gb ? faDigits(p.traffic_gb) + ' گیگابایت' : 'نامحدود 🌊')
     .replace('{count}', faDigits(p.server_count));
-  text += `\n\n💰 قیمت: <b>${fmtToman(price)}</b>\n` + (await priceLine(ctx.env));
-  const rows = [
-    [btn('💳 پرداخت کارت به کارت', `buy:c:${p.id}`)],
-    [btn('👛 خرید از کیف پول', `buy:w:${p.id}`)],
-    [btn('🛒 بازگشت به فروشگاه', 'shop')],
-  ];
+  if (p.description) text += `\n\n📝 ${p.description}`;
+  if (!isCreator) text += `\n${statusLine}`;
+  const soldOut = Number(p.stock) === 0;
+  if (Number(p.stock) >= 0) text += `\n📦 موجودی: <b>${faDigits(p.stock)}</b>${soldOut ? ' — ⛔ تمام شده' : ''}`;
+  text += `\n🧩 نوع سرویس: <b>${p.category || p.protocol}</b>${p.tier ? ' · ' + tierLabel(p.tier) : ''}`;
+  text += `\n\n💰 قیمت: <b>${price ? fmtToman(price) : '—'}</b>\n` + (await priceModeLine(ctx.env, p));
+
+  const rows = [];
+  const gw = await gatewayConfig(ctx.env);
+  if (soldOut) {
+    rows.push([btn('📞 خبر بده وقتی شارژ شد', 'sup:open')]);
+  } else {
+    rows.push([btn('💳 پرداخت کارت به کارت', `buy:c:${p.id}`)]);
+    if (gw.enabled) rows.push([btn('🏦 پرداخت آنی با درگاه بانکی', `buy:g:${p.id}`)]);
+    rows.push([btn('👛 خرید از کیف پول', `buy:w:${p.id}`)]);
+    const coinGate = await coinPurchaseGate(ctx.env, p);
+    if (coinGate.ok && Number(p.coin_price) > 0) rows.push([btn(`🪙 پرداخت با ${faDigits(Number(p.coin_price).toLocaleString('en-US'))} سکه`, `buy:coin:${p.id}`)]);
+  }
+  rows.push([btn('🎁 دریافت تست رایگان', 'trial'), btn('🛒 بازگشت به فروشگاه', 'shop')]);
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: ikb(rows) });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: ikb(rows) });
+}
+
+export function tierLabel(t) {
+  return { economy: '🪙 اقتصادی', standard: '⚖️ متوسط', premium: '💎 پریمیوم' }[String(t || '').toLowerCase()] || String(t || '');
 }
 
 async function startBuy(ctx, productId, method) {
@@ -109,8 +175,46 @@ async function startBuy(ctx, productId, method) {
   if (!p) return send(ctx.token, ctx.user.id, '❌ محصول یافت نشد.');
   const price = await productPriceToman(ctx.env, p);
 
-  // ⛔ بدون نرخ معتبر، خرید با قیمت صفر انجام نمی‌شود
+  // ⛔ بدون نرخ معتبر، خرید با قیمت صفر انجام نمی‌شود (مگر قیمت ثابت)
   if (!price) return send(ctx.token, ctx.user.id, RATE_UNAVAILABLE_MESSAGE, { reply_markup: ikb([[btn('📞 پشتیبانی', 'sup:open')]]) });
+
+  if (method === 'coin') {
+    const gate = await coinPurchaseGate(ctx.env, p);
+    if (!gate.ok) return send(ctx.token, ctx.user.id, gate.message, { reply_markup: ikb([[btn('↩️ بازگشت', `prod:${p.id}`)]]) });
+    const res = await payWithCoins(ctx.env, ctx.user, p);
+    if (!res.ok) return send(ctx.token, ctx.user.id, `😕 ${res.message || res.reason}`);
+    await sendDelivery(ctx.env, ctx.user, p.title, res.sub, { protocol: p.protocol });
+    return;
+  }
+
+  if (method === 'g') {
+    if (!(await gatewayConfig(ctx.env)).enabled) return send(ctx.token, ctx.user.id, '🚫 درگاه بانکی فعال نیست.');
+    const can = await assertDeliverable(ctx.env, p);
+    if (!can.ok) return send(ctx.token, ctx.user.id, can.message || SERVICE_UNAVAILABLE_MESSAGE);
+    const order = await createOrder(ctx.env, ctx.user.id, p, price, 'gateway');
+    const { createPayment } = await import('./gateway.js');
+    const res = await createPayment(ctx.env, order, ctx.user, { description: `سفارش ${order.id} - ${p.title}` });
+    if (!res.ok) {
+      await ctx.db.prepare("UPDATE orders SET status='rejected', note=? WHERE id=?").bind('gateway: ' + res.message, order.id).run();
+      return send(
+        ctx.token,
+        ctx.user.id,
+        `⛔ <b>ساخت فاکتور درگاه ناموفق بود</b>\n\n${res.message}\n\nمی‌توانید با کارت‌به‌کارت پرداخت کنید.`,
+        { reply_markup: ikb([[btn('💳 کارت به کارت', `buy:c:${p.id}`), btn('↩️ بازگشت', `prod:${p.id}`)]]) }
+      );
+    }
+    const lines = [
+      '🏦 <b>فاکتور درگاه بانکی آماده است</b>\n',
+      `🧾 سفارش #${faDigits(order.id)} — ${p.title}`,
+      `💰 مبلغ: <b>${fmtToman(res.total)}</b>${res.fee ? ` (کارمزد ${fmtToman(res.fee)} بر عهدهٔ شما)` : ''}`,
+      '',
+      'با دکمهٔ زیر به درگاه_bankی بانک می‌روید؛ بعد از پرداخت، سرویس به‌صورت خودکار و آنی فعال می‌شود ✨',
+      '',
+      '⏱ اگر پرداخت انجام شد اما فعال نشد، چند دقیقه صبر کنید (کرون، تراکنش‌های معلق را واریز/تسویه می‌کند).',
+    ];
+    const rows = [[{ text: '💳 پرداخت ' + fmtToman(res.total), url: res.url }], [btn('❌ انصراف', `cancel:${order.id}`), btn('↩️ بازگشت', `prod:${p.id}`)]];
+    return send(ctx.token, ctx.user.id, lines.join('\n'), { reply_markup: ikb(rows) });
+  }
 
   if (method === 'w') {
     if (!(await isEnabled(ctx.db, 'wallet_enabled'))) return send(ctx.token, ctx.user.id, '🚫 پرداخت کیف پولی موقتاً غیرفعال است.');
@@ -191,7 +295,7 @@ export async function handleReceiptPhoto(ctx, photo) {
     await setState(ctx, '');
     if (res?.error === 'no_real_server') {
       await send(ctx.token, ctx.user.id, `🧾 فیش شما تایید شد اما ${NO_REAL_SERVER_MESSAGE}\nپشتیبانی پیگیری می‌کند. 🙏`);
-      await notifyAdmins(ctx, `⛔ فیش سفارش #${faDigits(orderId)} تایید شد ولی سرور واقعی برای تحویل وجود ندارد.`);
+      await notifyAdmins(ctx, `⛔ فیش سفارش #${faDigits(orderId)} تایید شد ولی سرور واقعی برای تحویل وجود ندارد.`, null, 'serviceError');
       return;
     }
     if (res?.charge) {
@@ -202,7 +306,7 @@ export async function handleReceiptPhoto(ctx, photo) {
       await send(ctx.token, ctx.user.id, `✅ <b>پرداخت تایید شد</b>\n\n🧾 سفارش #${faDigits(orderId)} — ${fmtToman(order.amount_toman)}\n🤖 تایید خودکار هوش مصنوعی\n⏳ در حال آماده‌سازی تحویل…`);
       await sendDelivery(ctx.env, res.user, res.order.title || order.title, res.sub, { protocol: res.product?.protocol });
     }
-    await notifyAdmins(ctx, `🤖✅ فیش سفارش #${faDigits(orderId)} از ${userTag(ctx.user)} به‌صورت خودکار تایید و تحویل شد.\n${report}`);
+    await notifyAdmins(ctx, `🤖✅ فیش سفارش #${faDigits(orderId)} از ${userTag(ctx.user)} به‌صورت خودکار تایید و تحویل شد.\n${report}`, null, 'receipt');
     return;
   }
 
@@ -215,15 +319,15 @@ export async function handleReceiptPhoto(ctx, photo) {
     ikb([
       [btn('✅ تایید', `rcpt:a:${rec.id}`), btn('❌ رد', `rcpt:r:${rec.id}`)],
       [btn('👤 پروفایل کاربر', `adm:u:${ctx.user.id}`)],
-    ])
+    ]),
+    verdict.verdict === 'reject' ? 'suspicious' : 'receipt'
   );
 }
 
-async function notifyAdmins(ctx, text, kb) {
-  const admins = (await ctx.db.prepare("SELECT id FROM users WHERE role IN ('super','admin')").all()).results;
-  for (const a of admins) {
-    await send(ctx.token, a.id, text, kb ? { reply_markup: kb } : {});
-  }
+/** اعلان به ادمین‌ها — از طریق مرکز اعلان‌ها (قابل خاموش‌کردن و ضداسپم) */
+async function notifyAdmins(ctx, text, kb, type = 'receipt') {
+  const { notifyAdmins: shared } = await import('./notify.js');
+  return shared(ctx.env, type, text, kb);
 }
 
 export function userTag(u) {
@@ -281,6 +385,18 @@ export async function myOrders(ctx) {
 }
 
 export async function showQR(ctx, token) {
+  if (token.startsWith('lic:')) {
+    const lic = await ctx.db.prepare('SELECT * FROM creator_licenses WHERE token=?').bind(token.slice(4)).first();
+    if (!lic || lic.user_id !== ctx.user.id) return answerCb(ctx.token, ctx.cbId, 'یافت نشد');
+    const base = await getBase(ctx.env);
+    const png = await makeBrandQR(`${base}/creator/${lic.token}`, 'AMINCK Creator');
+    const form = new FormData();
+    form.append('chat_id', String(ctx.user.id));
+    form.append('caption', `🔳 QR پنل کانفیگ‌ساز\n🛠 با اسکن، پنل شما در هر دستگاهی باز می‌شود.`);
+    form.append('photo', new Blob([png], { type: 'image/png' }), 'qr.png');
+    await tg(ctx.token, 'sendPhoto', {}, form);
+    return answerCb(ctx.token, ctx.cbId);
+  }
   const sub = await ctx.db.prepare('SELECT * FROM subscriptions WHERE token=?').bind(token).first();
   if (!sub || sub.user_id !== ctx.user.id) return answerCb(ctx.token, ctx.cbId, 'یافت نشد');
   const base = await getBase(ctx.env);
@@ -615,12 +731,13 @@ const now = () => Math.floor(Date.now() / 1000);
 // ─────────────────────────── روتر متن ───────────────────────────
 export async function handleUserText(ctx, text) {
   const st = ctx.user.state || '';
+  if (st === 'owner:claim') return handleOwnerClaimText(ctx, text);
   if (text === '/cancel' && st) {
     if (st.startsWith('receipt:')) {
       await ctx.db.prepare("UPDATE orders SET status='rejected' WHERE id=? AND status='pending'").bind(Number(st.split(':')[1])).run();
     }
     await setState(ctx, '');
-    return send(ctx.token, ctx.user.id, '❌ عملیات لغو شد.', userMainKb(ctx.user.role !== 'user'));
+    return send(ctx.token, ctx.user.id, '❌ عملیات لغو شد.', await mainKeyboard(ctx.db, ctx.user.role !== 'user'));
   }
   if (st.startsWith('receipt:')) {
     return send(ctx.token, ctx.user.id, '🧾 لطفاً تصویر فیش را به‌صورت عکس ارسال کنید. برای انصراف: /cancel');
@@ -644,6 +761,10 @@ export async function handleUserText(ctx, text) {
   if (st === 'support') return handleSupportMsg(ctx, ctx.update.message);
 
   switch (text) {
+    case '🪟 داشبورد من':
+      return openDashboard(ctx);
+    case '🧩 اشتراک‌های من':
+      return mySubs(ctx, 0);
     case '🛍 فروشگاه':
       return openShop(ctx);
     case '🎁 پروکسی و تست رایگان':
@@ -664,6 +785,8 @@ export async function handleUserText(ctx, text) {
       if (ctx.user.role !== 'user') return openAdminPanel(ctx);
       return;
   }
+  // 🔘 دکمه‌های سفارشی که ادمین از پنل تعریف کرده
+  if (await handleCustomButton(ctx, text)) return;
   const cmd = (text.match(/^\/([a-zA-Z_]+)/) || [])[1];
   if (cmd) {
     switch (cmd) {
@@ -715,6 +838,10 @@ export async function handleUserCallback(ctx, data) {
   const edit = msg && !msg.via_bot ? msg : null;
 
   if (data === 'shop') return openShop(ctx, edit);
+  if (data === 'dashboard') return openDashboard(ctx);
+  if (data === 'subs') return mySubs(ctx, 0, edit);
+  if (data.startsWith('buy:coin:')) return answerAndRun(ctx, () => startBuy(ctx, Number(data.slice(9)), 'coin'));
+  if (data.startsWith('buy:g:')) return answerAndRun(ctx, () => startBuy(ctx, Number(data.slice(6)), 'g'));
   if (data === 'account') return openAccount(ctx, edit);
   if (data === 'ref') return openReferral(ctx, edit);
   if (data === 'trial') return openTrial(ctx, edit);
@@ -744,12 +871,12 @@ export async function handleUserCallback(ctx, data) {
   if (data === 'help') return answerAndRun(ctx, () => showHelp(ctx));
   if (data === 'sup:exit') {
     await setState(ctx, '');
-    return send(ctx.token, ctx.user.id, '👌 از حالت پشتیبانی خارج شدید.', userMainKb(ctx.user.role !== 'user'));
+    return send(ctx.token, ctx.user.id, '👌 از حالت پشتیبانی خارج شدید.', await mainKeyboard(ctx.db, ctx.user.role !== 'user'));
   }
   if (data.startsWith('cancel:')) {
     await ctx.db.prepare("UPDATE orders SET status='rejected' WHERE id=? AND status='pending'").bind(Number(data.slice(7))).run();
     await setState(ctx, '');
-    return send(ctx.token, ctx.user.id, '❌ سفارش لغو شد.', userMainKb(ctx.user.role !== 'user'));
+    return send(ctx.token, ctx.user.id, '❌ سفارش لغو شد.', await mainKeyboard(ctx.db, ctx.user.role !== 'user'));
   }
   if (data === 'ai:clear') {
     await ctx.db.prepare('DELETE FROM ai_history WHERE user_id=?').bind(ctx.user.id).run();

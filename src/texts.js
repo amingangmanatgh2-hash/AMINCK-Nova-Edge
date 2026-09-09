@@ -143,6 +143,64 @@ export const DEFAULT_SETTINGS = {
   discount_tiers: '[{"days":90,"percent":5},{"days":180,"percent":10},{"days":365,"percent":15},{"gb":100,"percent":5}]',
   loyalty_discount_percent: '0',
   loyalty_min_paid: '500000',
+  // ─── بخش ۳۲: داشبورد/مینی‌اپ و دکمه‌ها ───
+  dashboard_enabled: '1',
+  dashboard_label: '🪟 داشبورد',
+  dashboard_url: '',
+  custom_menu_enabled: '1',
+  // ─── بخش ۱۲: حالت Inline ───
+  inline_enabled: '1',
+  inline_limit: '8',
+  inline_show_rate: '1',
+  // ─── بخش ۳.۱: ساب و ضدسانسور ───
+  sub_min_configs: '10',
+  sub_ips_per_server: '3',
+  variant_fail_limit: '3',
+  variant_check_enabled: '0',   // پروب از بیرون ایران (اختیاری)
+  // ─── بخش ۷: طلا و کف قیمت ───
+  gold_rate_manual: '0',
+  gold_margin: '1.08',           // ضریب اضافی قیمت محصولات لنگرطلا (پیش‌فرض ۸٪)
+  gold_rate_url: '',
+  gold_rate_path: 'price',
+  price_floor_toman: '0',
+  // ─── بخش ۸: محدودیت خرید با سکه ───
+  coin_max_usd: '3',            // فقط محصولات تا این قیمت دلار با سکه فروخته می‌شوند
+  coin_allow_premium: '0',      // ۱ = پریمیوم هم با سکه فروش برود
+  // ─── بخش ۵: درگاه بانکی ───
+  gateway_enabled: '0',
+  gateway_provider: 'none',
+  gateway_api_base: '',
+  gateway_merchant_id: '',
+  gateway_api_key: '',
+  gateway_currency: 'IRT',
+  gateway_fee_mode: 'none',
+  gateway_fee_percent: '0',
+  gateway_callback_path: '/pay',
+  gateway_ttl_minutes: '30',
+  gateway_timeout_ms: '12000',
+  gateway_auto_reconcile: '1',
+  gateway_custom_request: '',
+  gateway_custom_verify: '',
+  // ─── بخش ۲۰: پنل کانفیگ‌ساز ───
+  creator_enabled: '1',
+  creator_default_plan: 'pro',
+  // ─── بخش ۲۳: موجودی ───
+  low_stock_threshold: '3',      // از این تعداد به پایین، به ادمین هشدار داده می‌شود
+  // ─── بخش ۲۴: اعلان‌ها ───
+  notify_throttle_seconds: '120',
+  notify_purchase: '1',
+  notify_payment: '1',
+  notify_receipt: '1',
+  notify_suspicious: '1',
+  notify_newUser: '1',
+  notify_referral: '1',
+  notify_serviceError: '1',
+  notify_outOfStock: '1',
+  notify_deadConfig: '1',
+  notify_gateway: '1',
+  notify_aiFlag: '1',
+  // ─── بخش ۱۷: قفل مالک ───
+  owner_claim: '0',
 };
 
 export async function getText(db, key) {

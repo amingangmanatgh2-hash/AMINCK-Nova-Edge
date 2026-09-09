@@ -2,6 +2,7 @@
 //  راه‌اندازی اولیه — دریافت توکن، ذخیره در Durable Object و ثبت webhook
 // ═══════════════════════════════════════════════════════════════════
 import { getSetting, setSetting } from './db.js';
+import { isValidPanelPassword, randomPanelPassword } from './util.js';
 import { BOT_TOKEN_SETTING } from './config.js';
 import { getMe, tg } from './tg.js';
 import { html, json, text } from './util.js';
@@ -15,20 +16,31 @@ function esc(value) {
     .replaceAll("'", '&#039;');
 }
 
-function setupPage({ configured = false, message = '', error = false, username = '' } = {}) {
+/** رمز پنل: اگر ادمین خودش نسازد، همین‌جا تصادفی ساخته می‌شود (util.randomPanelPassword) */
+function setupPage({ configured = false, message = '', error = false, username = '', panelUrl = '', password = '', generated = false, ownerId = '' } = {}) {
   const notice = message
     ? `<div class="notice ${error ? 'error' : 'ok'}">${esc(message)}</div>`
     : '';
-  const form = configured
-    ? `<div class="okbox"><b>✅ ربات قبلاً راه‌اندازی شده است.</b>
-<p>توکن در دیتابیس Durable Object ذخیره شده و وب‌هوک ثبت شده است.</p>
+  const done = `<div class="okbox"><b>✅ ربات راه‌اندازی شد.</b>
+<p>توکن در دیتابیس Durable Object ذخیره شد و وب‌هوک ثبت شده است.</p>
+${password ? `<p>🔐 رمز پنل مدیریت: <code>${esc(password)}</code><br><span class="hint">${generated ? 'این رمز به‌صورت تصادفی ساخته شد و فقط همین یک‌بار نمایش داده می‌شود — آن را ذخیره کنید.' : 'همان رمزی که خودتان تعیین کردید.'}</span></p>` : ''}
+${panelUrl ? `<p>🖥 پنل تحت وب: <a href="${esc(panelUrl)}" target="_blank" rel="noopener">${esc(panelUrl)}</a></p>` : ''}
+${ownerId ? `<p>👑 مالک: <code>${esc(ownerId)}</code> — این کاربر بدون مرحلهٔ تایید، سوپرادمین می‌شود.</p>` : `<p>👑 برای امنیت بیشتر، اولین کاربری که <code>/start</code> بزند باید همین رمز پنل را وارد کند تا به‌عنوان <b>مالک/سوپرادمین</b> ثبت شود. تا آن لحظه نقش ادمینی به کسی داده نمی‌شود.</p>`}
 <p>حالا در تلگرام به ربات پیام <code>/start</code> بدهید.</p>
 ${username ? `<a class="button" href="https://t.me/${encodeURIComponent(username)}">🤖 باز کردن ربات</a>` : ''}
-<a class="secondary" href="/">بازگشت به صفحه اصلی</a></div>`
+<a class="secondary" href="/">بازگشت به صفحه اصلی</a></div>`;
+  const form = configured
+    ? `${done}
+<a class="secondary" href="/setup">صفحهٔ راه‌اندازی</a>`
     : `<form method="post" action="/setup" autocomplete="off">
 <label for="token">توکن ربات تلگرام</label>
 <input id="token" name="token" type="password" required spellcheck="false" autocomplete="new-password" placeholder="توکن دریافتی از BotFather">
 <p class="hint">توکن فقط در Durable Object همین Worker ذخیره می‌شود و در پاسخ صفحه نمایش داده نمی‌شود.</p>
+<label for="panel_password">رمز پنل مدیریت — ۱۰ رقم عددی (اختیاری)</label>
+<input id="panel_password" name="panel_password" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" placeholder="اگر خالی بگذارید، خودش تصادفی ساخته می‌شود">
+<label for="owner_id">آیدی عددی تلگرام مالک (اختیاری)</label>
+<input id="owner_id" name="owner_id" type="text" inputmode="numeric" placeholder="مثلاً 123456789 — فقط همین کاربر بدون تایید رمز ادمین می‌شود">
+<p class="hint">همهٔ رمزها و توکن‌ها به‌صورت تصادفی/محلی ساخته و فقط در D1 همین ورکر نگه داشته می‌شوند؛ چیزی در کد پروژه ذخیره نمی‌شود.</p>
 <button type="submit">ذخیره و فعال‌سازی وب‌هوک</button>
 </form>
 <a class="secondary" href="/">بازگشت به صفحه اصلی</a>`;
@@ -65,17 +77,25 @@ function reply(request, payload, status = 200) {
   return html(setupPage(payload), status);
 }
 
-async function readToken(request) {
+async function readForm(request) {
   const type = request.headers.get('content-type') || '';
   try {
     if (type.includes('application/json')) {
       const body = await request.json();
-      return String(body?.token || '').trim();
+      return {
+        token: String(body?.token || '').trim(),
+        panel_password: String(body?.panel_password ?? body?.password ?? '').trim(),
+        owner_id: String(body?.owner_id ?? body?.owner ?? '').trim(),
+      };
     }
     const body = new URLSearchParams(await request.text());
-    return String(body.get('token') || '').trim();
+    return {
+      token: String(body.get('token') || '').trim(),
+      panel_password: String(body.get('panel_password') || '').trim(),
+      owner_id: String(body.get('owner_id') || '').trim(),
+    };
   } catch {
-    return '';
+    return { token: '', panel_password: '', owner_id: '' };
   }
 }
 
@@ -84,17 +104,29 @@ export async function handleSetup(env, request, url = new URL(request.url)) {
   const stored = await getSetting(env.DB, BOT_TOKEN_SETTING, '');
 
   if (request.method === 'GET') {
-    return html(setupPage({ configured: !!stored }));
+    return html(setupPage({ configured: !!stored, panelUrl: `${url.origin}/panel` }));
   }
   if (request.method !== 'POST') return text('Method not allowed', 405);
   if (stored) {
-    return reply(request, { configured: true, message: 'ربات قبلاً راه‌اندازی شده است.', error: true, username: '' }, 409);
+    return reply(request, { configured: true, message: 'ربات قبلاً راه‌اندازی شده است.', error: true, username: '', panelUrl: `${url.origin}/panel` }, 409);
   }
 
-  const token = await readToken(request);
+  const form = await readForm(request);
+  const token = form.token;
   if (!token || token.length > 256) {
     return reply(request, { configured: false, message: 'توکن واردشده معتبر نیست.', error: true }, 400);
   }
+  // رمز پنل: اگر داده شد باید دقیقاً ۱۰ رقم باشد، اگر نشد تصادفی ساخته می‌شود
+  let panelPassword = form.panel_password;
+  let generated = false;
+  if (panelPassword && !isValidPanelPassword(panelPassword)) {
+    return reply(request, { configured: false, message: 'رمز پنل باید دقیقاً ۱۰ رقم عددی باشد (بدون حرف و فاصله).', error: true }, 400);
+  }
+  if (!panelPassword) {
+    panelPassword = randomPanelPassword();
+    generated = true;
+  }
+  const ownerId = String(form.owner_id || '').replace(/[^\d]/g, '');
 
   // قبل از ذخیره، هم توکن و هم دسترسی Bot API بررسی می‌شود؛ خود توکن هرگز به UI برنمی‌گردد.
   const bot = await getMe(token);
@@ -115,6 +147,11 @@ export async function handleSetup(env, request, url = new URL(request.url)) {
   await env.KV.put('worker_origin', origin);
   await setSetting(env.DB, BOT_TOKEN_SETTING, token);
   await setSetting(env.DB, 'setup_done', '1');
+  await setSetting(env.DB, 'panel_password', panelPassword);
+  // قفل مالک: اولین /start باید رمز را بزند؛ اگر آیدی مالک داده شده، همان کاربر میان‌بر می‌رود
+  await setSetting(env.DB, 'owner_claim', '1');
+  if (ownerId) await setSetting(env.DB, 'owner_id', ownerId);
+  if (bot.username) await setSetting(env.DB, 'bot_username', bot.username);
 
   return reply(
     request,
@@ -123,6 +160,10 @@ export async function handleSetup(env, request, url = new URL(request.url)) {
       message: 'راه‌اندازی با موفقیت انجام شد.',
       error: false,
       username: bot.username || '',
+      panelUrl: `${origin}/panel`,
+      password: panelPassword,
+      generated,
+      ownerId,
     },
     200
   );

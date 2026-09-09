@@ -42,6 +42,11 @@ export async function openAdminPanel(ctx, editMsg) {
     { perm: 'users', label: '👥 کاربران', cb: 'adm:users' },
     { perm: 'admins', label: '👮 ادمین‌ها', cb: 'adm:admins' },
     { perm: 'groups', label: '📢 گروه‌های تبلیغاتی', cb: 'adm:groups' },
+    { perm: 'payments', label: '🏦 درگاه بانکی', cb: 'adm:gw' },
+    { perm: 'products', label: '🛡 ضدسانسور', cb: 'adm:anti' },
+    { perm: 'creator', label: '🔑 لایسنس کانفیگ‌ساز', cb: 'adm:lic' },
+    { perm: 'settings', label: '🔘 دکمه‌های منو', cb: 'adm:btns' },
+    { perm: 'settings', label: '🔔 اعلان‌ها', cb: 'adm:ntf' },
     { perm: 'settings', label: '⚙️ تنظیمات', cb: 'adm:set' },
     { perm: 'export', label: '📤 خروجی دیتابیس', cb: 'adm:export' },
     { perm: null, label: '📣 ارسال همگانی', cb: 'adm:bc' },
@@ -187,12 +192,22 @@ async function productView(ctx, id, editMsg) {
     `🗂 دسته: ${p.category} | پروتکل: ${p.protocol}`,
     `⏱ ${faDigits(p.days)} روز | 📊 ${p.traffic_gb ? faDigits(p.traffic_gb) + ' گیگ' : 'نامحدود'}`,
     `💵 قیمت دلاری: $${faDigits(p.price_usd)} → ${fmtToman(price)}`,
+    p.price_mode === 'fixed' ? `📌 حالت قیمت: ثابت (${fmtToman(p.price_toman || 0)})` : '📌 حالت قیمت: خودکار با نرخ دلار',
+    p.peg ? `⚖️ پگ: قیمت از ${fmtToman(p.price_toman || 0)} پایین‌تر نمی‌آید` : '',
+    `🪙 سطح سکه‌ای: ${tierLabel(p.tier)}${p.min_toman ? ` | کف تومان: ${fmtToman(p.min_toman)}` : ''}`,
+    p.description ? `📝 ${String(p.description).slice(0, 200)}` : '',
+    p.stock === null || p.stock === undefined ? '📦 موجودی: نامحدود' : `📦 موجودی: ${faDigits(p.stock)} عدد`,
+    `⛔ کف قیمت سکه‌ای: حداکثر $${faDigits((await getSettingValue(ctx.db, 'coin_max_usd')) || 1)}${Number(p.coin_lock_premium) ? ' | 🔒 قفل پریمیوم با سکه روشن' : ''}`,
     p.category === 'coin' ? `🪙 قیمت سکه‌ای: ${faDigits(p.coin_price)}` : '',
     `وضعیت: ${p.enabled ? '🟢 فعال' : '🔴 غیرفعال'}`,
   ].join('\n');
   const rows = [
     [btn('✏️ عنوان', `adm:pf:${id}:title`), btn('💵 قیمت دلار', `adm:pf:${id}:price`)],
     [btn('⏱ روز', `adm:pf:${id}:days`), btn('📊 گیگ', `adm:pf:${id}:traffic`)],
+    [btn(p.price_mode === 'fixed' ? `💵 ثابت: ${fmtToman(p.price_toman || 0)}` : '💱 نرخ خودکار (دلار)', `adm:pm:${id}`), btn(`🪙 سطح: ${tierLabel(p.tier)}`, `adm:tr:${id}`)],
+    [btn('📦 موجودی', `adm:pf:${id}:stock`), btn('🎷 بج', `adm:pf:${id}:badge`)],
+    [btn('📝 توضیح', `adm:pf:${id}:desc`), btn('🪙 قیمت سکه‌ای', `adm:pf:${id}:coin`)],
+    [btn('🖥 تعداد سرور', `adm:pf:${id}:servers`), btn(Number(p.coin_lock_premium) ? '🔒 قفل سکه‌ای: روشن' : '🔓 قفل سکه‌ای: خاموش', `adm:cl:${id}`)],
     [btn(p.enabled ? '🔴 غیرفعال کن' : '🟢 فعال کن', `adm:pt:${id}`), btn('🗑 حذف', `adm:pd:${id}`)],
     [btn('📋 لیست محصولات', 'adm:prods')],
   ];
@@ -385,6 +400,13 @@ async function settingsMenu(ctx, editMsg) {
     ['group_ai_enabled', '🤖 هوش مصنوعی در گروه'],
     ['panel_enabled', '🖥 پنل تحت وب'],
     ['auto_verify', '🤖 تایید خودکار فیش'],
+    ['gateway_enabled', '🏦 درگاه بانکی آنلاین'],
+    ['gateway_auto_reconcile', '♻️ تطبیق خودکار پرداخت'],
+    ['dashboard_enabled', '🪟 داشبورد در مینی‌اپ'],
+    ['inline_enabled', '🔎 حالت Inline'],
+    ['variant_check_enabled', '🩺 بررسی خودکار واریانت'],
+    ['coin_allow_premium', '🪙 خرید پرمیوم با سکه'],
+    ['creator_enabled', '🛠 فروش پنل کانفیگ‌ساز'],
   ];
   const states = {};
   for (const [k] of toggles) states[k] = (await getSettingValue(ctx.db, k)) === '1';
@@ -396,6 +418,13 @@ async function settingsMenu(ctx, editMsg) {
     [btn('📢 متن تبلیغ', 'adm:setv:ad_text'), btn('🖼 آدرس بنر تبلیغ', 'adm:setv:ad_photo_url')],
     [btn('⏳ فاصله پاسخ AI در گروه (ثانیه)', 'adm:setv:group_ai_cooldown')],
     [btn('🔐 رمز پنل وب (۱۰ رقم)', 'adm:setv:panel_password')],
+    [btn('💰 نرخ طلای دستی', 'adm:setv:gold_rate_manual'), btn('🔗 API نرخ طلا', 'adm:setv:gold_rate_url')],
+    [btn('🪙 سقف دلار سکه', 'adm:setv:coin_max_usd'), btn('📦 آستانهٔ هشدار موجودی', 'adm:setv:low_stock_threshold')],
+    [btn('🧮 مارجین طلا', 'adm:setv:gold_margin'), btn('🧱 کف قیمت تومان', 'adm:setv:price_floor_toman')],
+    [btn('⏱ تایم‌اوت درگاه (ms)', 'adm:setv:gateway_timeout_ms'), btn('🧾 اعتبار لینک پرداخت (دقیقه)', 'adm:setv:gateway_ttl_minutes')],
+    [btn('🔢 حداقل کانفیگ هر ساب', 'adm:setv:sub_min_configs'), btn('🚨 آستانهٔ مرگ واریانت', 'adm:setv:variant_fail_limit')],
+    [btn('🪟 آدرس داشبورد (اختیاری)', 'adm:setv:dashboard_url'), btn('🏷 متن دکّهٔ داشبورد', 'adm:setv:dashboard_label')],
+    [btn('🤖 مدل AI', 'adm:setv:ai_model'), btn('🧾 مسیر callback درگاه', 'adm:setv:gateway_callback_path')],
     [btn('✍️ متن‌های بات', 'adm:texts')],
   ];
   for (let i = 0; i < toggles.length; i += 2) {
@@ -429,6 +458,204 @@ async function textsMenu(ctx, editMsg) {
     rows.push(row);
   }
   const text = '✍️ <b>تغییر متن‌های بات</b>\n\nمتن مورد نظر را انتخاب کنید؛ متن فعلی نمایش داده و متن جدید را ارسال می‌کنید:';
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows, 'panel') });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows, 'panel') });
+}
+
+// ─────────────────── 🏦 درگاه بانکی (بخش ۵) ───────────────────
+const GW_KEYS = [
+  'gateway_provider', 'gateway_merchant_id', 'gateway_api_key', 'gateway_api_base', 'gateway_currency', 'gateway_fee_mode', 'gateway_fee_percent',
+  'gateway_timeout_ms', 'gateway_ttl_minutes', 'gateway_callback_path', 'gateway_custom_request', 'gateway_custom_verify',
+];
+const GW_LABELS = {
+  gateway_provider: ['🧪 ارائه‌دهنده درگاه', 'یکی از این‌ها را بفرستید: <code>none</code> (فقط کارت‌به‌کارت) | <code>zarinpal</code> | <code>idpay</code> | <code>custom</code> (قالب آزاد JSON).'],
+  gateway_merchant_id: ['🧾 مرچنت‌آیدی / ID فروشندگان', 'از پنل کارگزاری پرداخت بگیرید و همین‌جا بفرستید. (در zarinpal همان merchant_id است؛ در idpay: token درگاه.)'],
+  gateway_api_key: ['🔑 کلید API درگاه', 'این مقدار فقط در settings ذخیره می‌شود، در پنل وب ماسک نمایش داده می‌شود و از /api/panel/state خارج است.'],
+  gateway_api_base: ['🌐 آدرس پایهٔ API', 'برای zarinpal خالی بگذارید (خودکار: <code>https://api.zarinpal.com</code>). برای custom آدرس کامل سرور درگاه خودتان را بفرستید.'],
+  gateway_currency: ['💱 واحد مبلغ به درگاه', '<code>IRT</code> = ریال | <code>ITP</code> = تومان | <code>IRR</code> = دینام ریال قدیمی. zarinpal ریال می‌خواهد.'],
+  gateway_fee_mode: ['🧮 کارمزد درگاه', '<code>none</code> | <code>payer</code> (بر عهدهٔ کاربر) | <code>merchant</code> (از سهم شما کم می‌شود و روی قیمت کشیده می‌شود).'],
+  gateway_fee_percent: ['📊 درصد کارمزد', 'عدد اعشاری؛ مثلاً <code>0.005</code> یعنی نیم‌درصد (فقط وقتی «مدل کارمزد» روی merchant باشد اثر دارد).'],
+  gateway_timeout_ms: ['⏱ تایم‌اوت (میلی‌ثانیه)', 'عدد، مثلاً <code>12000</code>.'],
+  gateway_ttl_minutes: ['⏳ اعتبار لینک پرداخت (دقیقه)', 'بعد از این زمان، لینک درگاه در سمت ما منقضی محسوب می‌شود.'],
+  gateway_callback_path: ['↩️ مسیر بازگشت', 'مسیر روی همین ورکر که کاربر بعد از پرداخت به آن برمی‌گردد. پیش‌فرض <code>/pay</code> — اگر تغییرش دادید، آدرس callback را در پنل درگاه هم به‌روز کنید.'],
+  gateway_custom_request: ['🧬 قالب ساخت پرداخت (custom)', 'JSON کامل، با placeholderها: <code>{amount} {toman} {orderId} {callback} {desc} {merchant} {apiKey} {base}</code>.\nمثال:\n<code>{"url":"{base}/pay","method":"POST","headers":{"X-Key":"{apiKey}"},"body":{"amount":"{amount}","redirect":"{callback}","order_id":"{orderId}"},"authority_path":"data.token","pay_path":"data.url"}</code>'],
+  gateway_custom_verify: ['🔎 قالب استعلام (custom)', 'JSON: <code>{"url":"{base}/verify","method":"POST","headers":{"X-Key":"{apiKey}"},"body":{"token":"{authority}"},"paid_path":"data.paid"}</code> — با این، تایید پرداخت سرور‌به‌سرور انجام می‌شود.'],
+};
+
+async function gatewayAdmin(ctx, editMsg, note = '') {
+  const g = await gatewayConfig(ctx.env);
+  const pend = await ctx.db.prepare("SELECT COUNT(*) v FROM gateway_tx WHERE status='redirected' AND created_at>?").bind(now() - 86400).first().then((r) => r?.v || 0).catch(() => 0);
+  const txs = await gatewayTxList(ctx.env, 5).catch(() => []);
+  const lines = [
+    '🏦 <b>درگاه پرداخت بانکی</b>\n',
+    `وضعیت: ${g.enabled ? '🟢 فعال' : '🔴 غیرفعال'} | ارائه‌دهنده: <code>${g.provider}</code>`,
+    `🌐 پایه: <code>${String(g.base || '(خودکار)').slice(0, 50)}</code> | مسیر بازگشت: <code>${g.invoiceUri}</code>`,
+    `🧾 merchant: ${g.merchantId ? '✅ تنظیم شده' : '⛔ تنظیم نشده'} | 🔑 api key: ${g.apiKey ? '✅ تنظیم شده' : '⛔ تنظیم نشده'}`,
+    `💱 واحد: ${g.currency} | کارمزد: ${g.feeMode} ${g.feePercent ? `${faDigits(Math.round(Number(g.feePercent) * 10000) / 100)}٪` : ''} | تایم‌اوت: ${faDigits(g.timeoutMs)}ms`,
+    `♻️ تسویهٔ خودکار تراکنش‌های معلق: ${(await getSettingValue(ctx.db, 'gateway_auto_reconcile')) === '1' ? '🟢 روشن' : '🔴 خاموش'} | معلق ۲۴ ساعت اخیر: ${faDigits(pend)}`,
+    '',
+    '🧾 آخرین تراکنش‌ها:',
+    ...(txs.length ? txs.map((t) => `• ${t.status === 'settled' ? '✅' : t.status === 'redirected' ? '⏳' : '⛔'} سفارش ${faDigits(t.order || 0)} — ${fmtToman(t.amount || 0)} (<code>${t.status}</code>)`) : ['—']),
+    note ? `\n${note}` : '',
+    '',
+    '⚠️ <b>صادقانه:</b> ربات فقط درایور درگاه است؛ برای پرداخت آنلاین باید اکانت/مرچنت‌آیدی خودتان را از یک کارگزاری داشته باشید. تا وقتی درگاه فعال نیست، خرید با کارت‌به‌کارت و تایید فیش (با هوش مصنوعی) کار می‌کند.',
+    '✅ هیچ پرداختی بدون استعلام سرور‌به‌سرور تایید نمی‌شود؛ دکمهٔ «تست اتصال» را بعد از هر تغییر بزنید.',
+  ];
+  const rows = [
+    [btn('🔌 تست اتصال', 'adm:gw:test'), btn(g.enabled ? '🔴 غیرفعال کن' : '🟢 فعال کن', 'adm:gw:tg')],
+    ...(() => {
+      const out = [];
+      for (let i = 0; i < GW_KEYS.length; i += 2) {
+        const row = [btn(GW_LABELS[GW_KEYS[i]][0], `adm:gwv:${GW_KEYS[i]}`)];
+        if (GW_KEYS[i + 1]) row.push(btn(GW_LABELS[GW_KEYS[i + 1]][0], `adm:gwv:${GW_KEYS[i + 1]}`));
+        out.push(row);
+      }
+      return out;
+    })(),
+    [btn('♻️ تطبیق دستی تراکنش‌ها', 'adm:gw:rec'), btn('🧾 صف فیش‌ها', 'adm:rcpts')],
+    [btn(`♻️ تسویهٔ خودکار: ${(await getSettingValue(ctx.db, 'gateway_auto_reconcile')) === '1' ? '🟢 روشن' : '🔴 خاموش'}`, 'adm:tog:gateway_auto_reconcile')],
+  ];
+  const text = lines.join('\n');
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows, 'panel') });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows, 'panel') });
+}
+
+// ─────────────────── 🔘 دکمه‌های منو (بخش ۱۵) ───────────────────
+async function buttonsAdmin(ctx, editMsg) {
+  const bs = await listButtons(ctx.db, { activeOnly: false, forAdmin: true });
+  const rows = [];
+  for (const b of bs.slice(0, 24)) rows.push([btn(`${b.active ? '🟢' : '🔴'} ${b.label}`, `adm:btn:${b.id}`)]);
+  rows.push([btn('➕ دکمهٔ جدید', 'adm:btn:new')]);
+  const kb = await listButtons(ctx.db, { forAdmin: ctx.user.role !== 'user' });
+  const text = `🔘 <b>دکمه‌های منوی اصلی</b>\n\nدکمه‌های فعال در کیبورد: ${faDigits(kb.length)} از ${faDigits(bs.length)}\n\nنکته: متن دکمه‌ها همان چیزی است که کاربر پایین صفحهٔ چت می‌بیند. برای «داشبورد»، دکمهٔ مربعی تلگرام از پنل وب (تب مینی‌اپ) هم قابل تنظیم است.`;
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows, 'panel') });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows, 'panel') });
+}
+
+async function buttonView(ctx, id, editMsg) {
+  const b = await ctx.db.prepare('SELECT * FROM menu_buttons WHERE id=?').bind(Number(id)).first();
+  if (!b) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+  const text = [
+    `🔘 <b>${b.label}</b>\n`,
+    `نوع: ${ACTIONS[b.action] || b.action}`,
+    `هدف: <code>${String(b.value || '—').replace(/</g, '&lt;')}</code>`,
+    `ردیف: ${faDigits(b.row_no || 0)} | ستون: ${faDigits(b.col_no || 0)} | ترتیب: ${faDigits(b.sort || 0)}`,
+    `وضعیت: ${b.active ? '🟢 نمایش داده می‌شود' : '🔴 مخفی'} | ${b.admins_only ? '👮 فقط ادمین‌ها' : '👥 همه کاربران'}`,
+  ].join('\n');
+  const rows = [
+    [btn('✏️ متن', `adm:btn:${id}:label`), btn(`🎯 نوع`, `adm:btn:${id}:action`)],
+    [btn('🔗 هدف', `adm:btn:${id}:value`), btn('📐 ردیف', `adm:btn:${id}:row`)],
+    [btn('📏 ستون', `adm:btn:${id}:col`), btn(b.active ? '🔴 مخفی کن' : '🟢 نمایش بده', `adm:btn:t${id}`)],
+    [btn('🗑 حذف دکمه', `adm:btn:d${id}`), btn('⬅️ لیست دکمه‌ها', 'adm:btns')],
+  ];
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
+}
+
+// ─────────────────── 🔑 لایسنس کانفیگ‌ساز (بخش ۲۰) ───────────────────
+async function licensesAdmin(ctx, editMsg) {
+  const rows = (await ctx.db.prepare('SELECT * FROM creator_licenses ORDER BY id DESC LIMIT 20').all()).results || [];
+  const kb = rows.map((l) => {
+    const live = l.active && (!l.expire_at || l.expire_at > now());
+    return [btn(`${live ? '🟢' : '🔴'} کاربر ${faDigits(l.user_id)} — ${faDigits(l.used || 0)}/${faDigits(l.quota || 0)}`, `adm:lic:${l.id}:v`)];
+  });
+  kb.push([btn('➕ اعطای دستی لایسنس', 'adm:lic:new')]);
+  const tot = await ctx.db.prepare('SELECT COUNT(*) v FROM creator_licenses WHERE active=1').first().then((r) => r?.v || 0).catch(() => 0);
+  const text = `🔑 <b>لایسنس‌های پنل کانفیگ‌ساز</b>\n\nفعال: ${faDigits(tot)} | نمایش ۲۰ مورد آخر\n\nلایسنس = دسترسی کاربر به پنل ساخت کانفیگ (بخش ۱۸/۲۰). با خرید محصول «کانفیگ‌ساز» خودکار صادر می‌شود؛ اینجا فقط مدیریت دستی است.`;
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(kb, 'panel') });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(kb, 'panel') });
+}
+
+async function licenseView(ctx, id, editMsg) {
+  const l = await ctx.db.prepare('SELECT * FROM creator_licenses WHERE id=?').bind(Number(id)).first();
+  if (!l) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+  const u = await ctx.db.prepare('SELECT id, username, first_name FROM users WHERE id=?').bind(l.user_id).first();
+  const base = (await getBase(ctx.env)) || '';
+  const cfgs = (await ctx.db.prepare('SELECT name, protocol, created_at FROM creator_configs WHERE license_id=? ORDER BY id DESC LIMIT 12').bind(l.id).all()).results || [];
+  const text = [
+    `🔑 <b>لایسنس #${faDigits(l.id)}</b>\n`,
+    `👤 ${u ? userTag(u) : 'کاربر حذف‌شده'} (${faDigits(l.user_id)})`,
+    `🧾 نام: ${l.name || '—'} | یادداشت: ${l.note || '—'}`,
+    `📊 استفاده: ${faDigits(l.used || 0)} از ${l.quota ? faDigits(l.quota) : 'نامحدود'} | سقف سرور: ${faDigits(l.servers || 0)}`,
+    `⏳ انقضا: ${l.expire_at ? fmtDate(l.expire_at) : 'ندارد'} | وضعیت: ${l.active ? '🟢 فعال' : '🔴 غیرفعال'}`,
+    `🔗 پنل کاربر:\n<code>${base}/creator/${l.token}</code>`,
+    `🔑 API key:\n<code>${l.api_key}</code>`,
+    cfgs.length ? `\n🧩 آخرین کانفیگ‌های کاربر:\n${cfgs.map((c) => `• ${c.name || c.protocol} (${fmtDate(c.created_at || now())})`).join('\n')}` : '',
+  ].join('\n');
+  const rows = [
+    [btn(l.active ? '🔴 غیرفعال کن' : '🟢 فعال کن', `adm:lic:${l.id}:${l.active ? 'off' : 'on'}`), btn('🧩 تغییر پلن', `adm:lic:${l.id}:plan`)],
+    [btn('🔢 سهمیهٔ کانفیگ', `adm:lic:${l.id}:q`), btn('⬅️ لیست', 'adm:lic')],
+  ];
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
+}
+
+// ─────────────────── 🛡 ضدسانسور (بخش ۳.۱) ───────────────────
+async function antiAdmin(ctx, editMsg, note = '') {
+  const cov = await coverageStats(ctx.db);
+  const lines = ['🛡 <b>مهندسی ضدسانسور — واریانت‌های هر سرور</b>\n'];
+  for (const d of cov.detail.slice(0, 20)) {
+    lines.push(`${d.healthy >= 3 ? '🟢' : d.healthy > 0 ? '🟡' : '🔴'} <b>${d.name}</b> (${d.protocol}) — ${faDigits(d.healthy)} سالم از ${faDigits(d.total)} | ترنسپورت: ${d.transports.length ? d.transports.map((x) => `<code>${x}</code>`).join('، ') : '⛔ ندارد'} | پورت: ${d.ports.length ? d.ports.map((x) => faDigits(x)).join('، ') : '—'}`);
+  }
+  if (!cov.servers) lines.push('⚠️ هنوز سرور فعالی ثبت نشده است.');
+  if (cov.servers > cov.withVariants) lines.push(`\n⛔ ${faDigits(cov.servers - cov.withVariants)} سرور هیچ واریانتی ندارد؛ کاربر فقط یک مسیر دریافت می‌کند و با فیلتر شدن آن مسیر، سرویس «مرده» به نظر می‌رسد.`);
+  if (cov.disabledVariants) lines.push(`🔴 ${faDigits(cov.disabledVariants)} واریانت به‌دلیل خرابی از تحویل حذف شده است.`);
+  if (note) lines.push('\n' + note);
+  const srvs = (await ctx.db.prepare('SELECT id, name FROM servers WHERE active=1 ORDER BY id').all()).results || [];
+  const rows = srvs.slice(0, 20).map((s) => [btn(`🧩 واریانت‌های ${s.name}`, `adm:anti:s${s.id}`)]);
+  rows.push([btn('🩺 بررسی سلامت همین حالا', 'adm:anti:chk'), btn('🖥 سرورها', 'adm:servers')]);
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, lines.join('\n'), { reply_markup: menuKb(rows, 'panel') });
+  else await send(ctx.token, ctx.user.id, lines.join('\n'), { reply_markup: menuKb(rows, 'panel') });
+}
+
+async function variantsAdmin(ctx, serverId, editMsg) {
+  const vs = await listVariants(ctx.db, serverId, { includeDisabled: true });
+  const srv = await ctx.db.prepare('SELECT name FROM servers WHERE id=?').bind(Number(serverId)).first();
+  const rows = vs.slice(0, 24).map((v) => [btn(`${v.active ? (v.healthy ? '🟢' : '🟡') : '🔴'} ${v.label || v.transport}:${v.port}`, `adm:var:v:${v.id}`)]);
+  rows.push([btn('➕ واریانت جدید', `adm:var:add:${serverId}`), btn('🩺 بررسی همه', 'adm:anti:chk')]);
+  rows.push([btn('⬅️ پوشش ضدسانسور', 'adm:anti')]);
+  const text = `🧩 <b>واریانت‌های ${srv?.name || '—'}</b>\n\n${faDigits(vs.filter((v) => v.active && v.healthy).length)} مسیر سالم از ${faDigits(vs.length)}\n\nهر واریانت = یک ترکیب ترنسپورت/پورت/SNI. اشتراک‌ها تا ${faDigits(Number(await getSettingValue(ctx.db, 'sub_min_configs')) || 10)} مسیر سالم دارند و اگر کاربر مسیری را خراب گزارش دهد، خودش با مسیر بعدی جایگزین می‌شود.`;
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
+}
+
+async function variantView(ctx, id, editMsg) {
+  const v = await ctx.db.prepare('SELECT * FROM config_variants WHERE id=?').bind(Number(id)).first();
+  if (!v) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+  const srv = await ctx.db.prepare('SELECT name FROM servers WHERE id=?').bind(v.server_id).first();
+  const text = [
+    `🧩 <b>${v.label || v.transport}</b> — ${srv?.name || ''}\n`,
+    `ترنسپورت: <code>${v.transport}</code> | پورت: <code>${v.port}</code> | امنیت: <code>${v.security}</code>`,
+    `SNI: <code>${v.sni || '—'}</code>`,
+    `Host: <code>${v.host || '—'}</code> | path: <code>${v.path || '—'}</code>`,
+    v.security === 'reality' ? `pbk: <code>${v.pbk || '⛔ تنظیم نشده'}</code> | sid: <code>${v.sid || '—'}</code>` : '',
+    `🩺 پروب: ${v.check_url ? `<code>${v.check_url}</code>` : 'تنظیم نشده (خودکار بررسی نمی‌شود)'}`,
+    `وضعیت: ${v.active ? '🟢 در تحویل' : '🔴 از تحویل حذف شده'} | سالم: ${v.healthy ? '✅' : '⛔'} | شکست متوالی: ${faDigits(v.fail_count || 0)} | موفق: ${faDigits(v.ok_count || 0)}`,
+    v.last_check ? `آخرین بررسی: ${fmtDate(v.last_check)}` : '',
+  ].filter(Boolean).join('\n');
+  const rows = [
+    [btn('🏷 برچسب', `adm:var:f:${id}:label`), btn('🔌 پورت', `adm:var:f:${id}:port`)],
+    [btn('🌙 SNI', `adm:var:f:${id}:sni`), btn('🌐 Host', `adm:var:f:${id}:host`)],
+    [btn('🛤 path', `adm:var:f:${id}:path`), btn('🔑 pbk', `adm:var:f:${id}:pbk`)],
+    [btn('🎯 sid', `adm:var:f:${id}:sid`), btn('🩺 آدرس پروب', `adm:var:f:${id}:check_url`)],
+    [btn(v.active ? '🔴 حذف از تحویل' : '🟢 برگردان به تحویل', `adm:var:tgl:${id}`), btn('🩺 بررسی سلامت', `adm:var:chk:${id}`)],
+    [btn('🗑 حذف واریانت', `adm:var:del:${id}`), btn('⬅️ لیست واریانت‌ها', `adm:anti:s${v.server_id}`)],
+  ];
+  if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows) });
+  else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows) });
+}
+
+// ─────────────────── 🔔 اعلان‌ها (بخش ۲۴) ───────────────────
+async function notifyAdmin(ctx, editMsg) {
+  const st = await notifyStates(ctx.db).catch(() => ({}));
+  const rows = Object.entries(NOTIFY_TYPES).map(([k, label]) => [btn(`${st[k] === false ? '🔴' : '🟢'} ${label}`, `adm:ntf:${k}`)]);
+  const alerts = await recentAlerts(ctx.env).catch(() => []);
+  const text = [
+    '🔔 <b>اعلان‌های ادمین</b>\n\nبا روشن/خاموش‌کردن هر مورد، دقیقاً همان دستهٔ رویداد برای همهٔ ادمین‌ها فعال/غیرفعال می‌شود.',
+    '',
+    '🧾 آخرین رویدادها:',
+    ...(alerts.length ? alerts.slice(0, 8).map((a) => `• ${fmtDate(a.t || now())} — ${String(a.text || '').slice(0, 120)}`) : ['—']),
+  ].join('\n');
   if (editMsg) await editText(ctx.token, ctx.user.id, editMsg.message_id, text, { reply_markup: menuKb(rows, 'panel') });
   else await send(ctx.token, ctx.user.id, text, { reply_markup: menuKb(rows, 'panel') });
 }
@@ -505,6 +732,38 @@ export async function handleAdminCallback(ctx, data) {
     const id = Number(data.slice(7));
     await ctx.db.prepare('DELETE FROM products WHERE id=?').bind(id).run();
     return productsList(ctx, edit);
+  }
+  if (data.startsWith('adm:pm:')) {
+    if (!need('products')) return;
+    const id = Number(data.slice(6));
+    const pr = await ctx.db.prepare('SELECT * FROM products WHERE id=?').bind(id).first();
+    if (pr) {
+      if (pr.price_mode === 'fixed') {
+        await ctx.db.prepare("UPDATE products SET price_mode='fx' WHERE id=?").bind(id).run();
+        await answerCb(ctx.token, ctx.cbId, '💱 قیمت خودکار با نرخ دلار شد');
+      } else {
+        await setState(ctx, `admin:pf:${id}:price_toman`);
+        return send(ctx.token, ctx.user.id, `💵 قیمت ثابت این محصول در تومان را بفرستید (عدد خالی = حذف قفل):\n\nنکته: قیمت‌گذاری پگ = قیمت ثابت + فیلد «کف تومان» در بخش قیمت‌گذاری پنل وب.`);
+      }
+    }
+    return productView(ctx, id, edit);
+  }
+  if (data.startsWith('adm:cl:')) {
+    if (!need('products')) return;
+    const id = Number(data.slice(7));
+    const cur = await ctx.db.prepare('SELECT coin_lock_premium FROM products WHERE id=?').bind(id).first();
+    await ctx.db.prepare('UPDATE products SET coin_lock_premium=? WHERE id=?').bind(Number(cur?.coin_lock_premium) ? 0 : 1, id).run();
+    return productView(ctx, id, edit);
+  }
+  if (data.startsWith('adm:tr:')) {
+    if (!need('products')) return;
+    const id = Number(data.slice(6));
+    const pr = await ctx.db.prepare('SELECT tier FROM products WHERE id=?').bind(id).first();
+    const order = ['economy', 'standard', 'premium'];
+    const next = order[(order.indexOf(String(pr?.tier || 'standard')) + 1) % 3];
+    await ctx.db.prepare('UPDATE products SET tier=? WHERE id=?').bind(next, id).run();
+    await answerCb(ctx.token, ctx.cbId, `سطح سکه‌ای: ${tierLabel(next)}`);
+    return productView(ctx, id, edit);
   }
   if (data.startsWith('adm:pf:')) {
     if (!need('products')) return;
@@ -697,6 +956,191 @@ export async function handleAdminCallback(ctx, data) {
     await setState(ctx, `admin:reply:${uid}`);
     return send(ctx.token, ctx.user.id, `✍️ پاسخ خود به کاربر <code>${uid}</code> را بفرستید:`);
   }
+
+  // ─── 🏦 درگاه بانکی (بخش ۵) ───
+  if (data === 'adm:gw') return need('payments') && gatewayAdmin(ctx, edit);
+  if (data === 'adm:gw:test') {
+    if (!need('payments')) return;
+    await answerCb(ctx.token, ctx.cbId, 'در حال اتصال آزمایشی…');
+    const r = await testGateway(ctx.env);
+    return send(ctx.token, ctx.user.id, r.ok ? `✅ ${r.message || 'اتصال برقرار شد'}` : `⛔ ${r.error || 'اتصال ناموفق'}`, { reply_markup: menuKb([[btn('⬅️ درگاه', 'adm:gw')]]) });
+  }
+  if (data === 'adm:gw:rec') {
+    if (!need('payments')) return;
+    const r = await reconcilePendingPayments(ctx.env);
+    return gatewayAdmin(ctx, edit, `♻️ از ${faDigits(r.checked || 0)} تراکنش معلق، ${faDigits(r.settled || 0)} مورد تسویه شد.`);
+  }
+  if (data === 'adm:gw:tg') {
+    if (ctx.user.role !== 'super') return answerCb(ctx.token, ctx.cbId, 'فقط سوپرادمین');
+    const cur = (await getSettingValue(ctx.db, 'gateway_enabled')) === '1';
+    await ctx.db.prepare("INSERT INTO settings (key,value) VALUES ('gateway_enabled',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(cur ? '0' : '1').run();
+    return gatewayAdmin(ctx, edit);
+  }
+  if (data.startsWith('adm:gwv:')) {
+    if (ctx.user.role !== 'super' && ['gateway_api_key', 'gateway_merchant_id'].includes(data.slice(8))) return answerCb(ctx.token, ctx.cbId, 'فقط سوپرادمین می‌تواند کلید درگاه را تغییر دهد');
+    if (!need('payments')) return;
+    const k = data.slice(8);
+    await setState(ctx, `admin:gwv:${k}`);
+    const hints = {
+      gateway_provider: 'ارائه‌دهنده را بفرستید: none | zarinpal | idpay | custom',
+      gateway_merchant_id: 'ID فروشندگان / merchant id را بفرستید (در zarinpal همان "uuid" درگاه است).',
+      gateway_api_key: 'کلید API (secret) درگاه را بفرستید. این مقدار فقط در settings می‌ماند و در پنل وب ماسک می‌شود.',
+      gateway_base_url: 'آدرس پایهٔ درگاه (برای custom) — مثال: https://gw.example.com/api',
+      gateway_auth_style: 'نوع احراز: none | bearer | x-api-key | basic',
+      gateway_fee_percent: 'کارمزد درگاه (عدد اعشاری، مثلاً 0.005 برای نیم‌درصد).',
+      gateway_callback_path: 'مسیر callback روی ورکر (مثلاً /pay) — تغییرش فقط اگر درگاه مسیر دیگری می‌خواهد لازم است.',
+      gateway_success_url: 'مسیر بازگشت موفق (نسبی به آدرس ورکر).',
+      gateway_fail_url: 'مسیر بازگشت ناموفق.',
+      gateway_label: 'نامی که کاربر در بانک می‌بیند (عنوان تراکنش).',
+      gateway_desc: 'توضیحی که کاربر در بانک می‌بیند.',
+      gateway_currency: 'واحد: toman | toman_x10 (idpay) | irr',
+      gateway_sandbox: '1 = حالت تست/شنبد (0 = واقعی)',
+      gateway_verify_path: 'مسیر استعلام/verify در درگاه custom',
+      gateway_create_body: 'قالب JSON بدنهٔ درخواست در درگاه custom (با placeholderهای {amount} {callback} {desc} {label})',
+    };
+    return send(ctx.token, ctx.user.id, `⚙️ ${hints[k] || `مقدار جدید «${k}» را بفرستید:`}\n\nبرای خالی‌کردن: <code>-</code>`, { reply_markup: menuKb([[btn('انصراف', 'adm:gw')]]) });
+  }
+
+  // ─── 🔘 دکمه‌های منو (بخش ۱۵) ───
+  if (data === 'adm:btns') return need('settings') && buttonsAdmin(ctx, edit);
+  if (data === 'adm:btn:new') {
+    if (!need('settings')) return;
+    await setState(ctx, 'admin:btn:new');
+    return send(ctx.token, ctx.user.id, '🔘 متن دکمهٔ جدید را بفرستید (با ایموجی، حداکثر ۳۲ کاراکتر):', { reply_markup: menuKb([[btn('انصراف', 'adm:btns')]]) });
+  }
+  if (data.startsWith('adm:btn:')) {
+    if (!need('settings')) return;
+    const rest = data.slice(8);
+    if (rest.startsWith('d')) {
+      const id = Number(rest.slice(1));
+      const r = await deleteButton(ctx.db, id);
+      await answerCb(ctx.token, ctx.cbId, r.ok ? '🗑 حذف شد' : 'حذف نشد');
+      return buttonsAdmin(ctx, edit);
+    }
+    if (rest.startsWith('t')) {
+      await toggleButton(ctx.db, Number(rest.slice(1)));
+      return buttonsAdmin(ctx, edit);
+    }
+    if (rest.includes(':')) {
+      const [idStr, field] = rest.split(':');
+      const id = Number(idStr);
+      if (field === 'action') {
+        const rows = Object.entries(ACTIONS).map(([k, v]) => [btn(v, `adm:btna:${id}:${k}`)]);
+        return editText(ctx.token, ctx.user.id, edit.message_id, 'نوع دکمه را انتخاب کنید:', { reply_markup: menuKb(rows) });
+      }
+      if (field === 'a') return buttonsAdmin(ctx, edit);
+      await setState(ctx, `admin:btnf:${id}:${field}`);
+      const hints = { label: 'متن جدید دکمه:', value: 'مقدار هدف (لینک کامل با https:// یا payload بدون فاصله):', row: 'شمارهٔ ردیف (عدد، ۹ = انتهای کیبورد):', col: 'شمارهٔ ستون (۰ تا ۲):' };
+      return send(ctx.token, ctx.user.id, `${hints[field] || 'مقدار جدید:'} (برای خالی: -)`, { reply_markup: menuKb([[btn('انصراف', `adm:btn:${id}`)]]) });
+    }
+    return need('settings') && buttonView(ctx, Number(rest), edit);
+  }
+  if (data.startsWith('adm:btna:')) {
+    const [, , id, action] = data.split(':');
+    const cur = await ctx.db.prepare('SELECT * FROM menu_buttons WHERE id=?').bind(Number(id)).first();
+    if (cur) await saveButton(ctx.db, { ...cur, action }, Number(id));
+    return buttonView(ctx, Number(id), edit);
+  }
+
+  // ─── 🔑 لایسنس کانفیگ‌ساز (بخش ۲۰) ───
+  if (data === 'adm:lic') return need('creator') && licensesAdmin(ctx, edit);
+  if (data === 'adm:lic:new') {
+    if (!need('creator')) return;
+    await setState(ctx, 'admin:lic:new');
+    return send(ctx.token, ctx.user.id, '🔑 آیدی عددی کاربری که می‌خواهید لایسنس کانفیگ‌ساز بگیرد را بفرستید:\n\nنکته: برای فروش معمولی، کاربر خودش از فروشگاه (محصول «پنل کانفیگ‌ساز») خریad می‌کند و لایسنس خودکار صادر می‌شود.', { reply_markup: menuKb([[btn('انصراف', 'adm:lic')]]) });
+  }
+  if (data.startsWith('adm:lic:')) {
+    if (!need('creator')) return;
+    const [, , idStr, act] = data.split(':');
+    const id = Number(idStr);
+    const l = await ctx.db.prepare('SELECT * FROM creator_licenses WHERE id=?').bind(id).first();
+    if (!l) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+    if (act === 'on' || act === 'off') {
+      await ctx.db.prepare('UPDATE creator_licenses SET active=? WHERE id=?').bind(act === 'on' ? 1 : 0, id).run();
+      return licensesAdmin(ctx, edit);
+    }
+    if (act === 'plan') {
+      const l0 = await ctx.db.prepare('SELECT * FROM creator_licenses WHERE id=?').bind(id).first();
+      if (!l0) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+      const rows = Object.entries(CREATOR_PLANS).map(([k, v]) => [btn(`${k} (${faDigits(v.configs)} کانفیگ / ${faDigits(v.days)} روز)`, `adm:licp:${id}:${k}`)]);
+      rows.push([btn('⬅️ بازگشت به لایسنس', `adm:lic:${id}:v`)]);
+      return editText(ctx.token, ctx.user.id, edit.message_id, 'پلن جدید:', { reply_markup: menuKb(rows) });
+    }
+    if (act === 'v') return licenseView(ctx, id, edit);
+    if (act === 'q') {
+      await setState(ctx, `admin:licq:${id}`);
+      return send(ctx.token, ctx.user.id, '🔢 سهمیهٔ جدید (تعداد کانفیگ مجاز) را بفرستید:', { reply_markup: menuKb([[btn('انصراف', `adm:lic`)]]) });
+    }
+    return licenseView(ctx, id, edit);
+  }
+  if (data.startsWith('adm:licp:')) {
+    const [, , id, plan] = data.split(':');
+    const pl = planOf(plan) || CREATOR_PLANS.pro;
+    await ctx.db.prepare('UPDATE creator_licenses SET servers=?, quota=?, note=? WHERE id=?').bind(pl.servers, pl.configs, `پلن: ${plan}`, Number(id)).run();
+    return licenseView(ctx, Number(id), edit);
+  }
+
+  // ─── 🛡 ضدسانسور / واریانت‌ها (بخش ۳.۱) ───
+  if (data === 'adm:anti') return need('products') && antiAdmin(ctx, edit);
+  if (data === 'adm:anti:chk') {
+    if (!need('products')) return;
+    await answerCb(ctx.token, ctx.cbId, 'بررسی سلامت…');
+    const r = await checkVariants(ctx.env);
+    return antiAdmin(ctx, edit, `🩺 ${faDigits(r.checked || 0)} واریانت با آدرس پروب بررسی شد — ${faDigits(r.died || 0)} مسیر از تحویل حذف شد.`);
+  }
+  if (data.startsWith('adm:anti:s')) {
+    return need('products') && variantsAdmin(ctx, Number(data.slice(10)), edit);
+  }
+  if (data.startsWith('adm:var:add:')) {
+    if (!need('products')) return;
+    const sid = Number(data.slice(12));
+    await setState(ctx, `admin:vari:${sid}`);
+    const fmt = `➕ برای سرور <code>#${faDigits(sid)}</code> یک واریانت بسازید.\n\nمقادیر را در <b>یک خط</b> و با <code>|</code> بفرستید:\n<code>نام | ترنسپورت | پورت | sni | security | host | path | pbk | sid</code>\n\nترنسپورت: ${TRANSPORTS.join(' | ')}\nsecurity: ${SECURITIES.join(' | ')}\n\nمثال (ws روی CDN):\n<code>CDN-1 | ws | 443 | www.speedtest.net | tls | cdn.example.com | /vless | - | -</code>\n\nهر مقدار اضافه را <code>-</code> بگذارید.`;
+    return send(ctx.token, ctx.user.id, fmt, { reply_markup: menuKb([[btn('انصراف', `adm:anti:s${sid}`)]]) });
+  }
+  if (data.startsWith('adm:var:f:')) {
+    if (!need('products')) return;
+    const [, , , idStr, field] = data.split(':');
+    const v = await ctx.db.prepare('SELECT * FROM config_variants WHERE id=?').bind(Number(idStr)).first();
+    if (!v) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+    await setState(ctx, `admin:varf:${v.id}:${field}`);
+    const labels = { label: 'برچسب', sni: 'SNI / دامنهٔ فیک', host: 'هدر Host', path: 'مسیر (path)', pbk: 'کلید عمومی (reality)', sid: 'short id (reality)', alpn: 'ALPN', fp: 'fingerprint', check_url: 'آدرس پروب اختیاری' };
+    return send(ctx.token, ctx.user.id, `مقدار جدید «${labels[field] || field}» را بفرستید (برای خالی: -):\n\nمقدار فعلی: <code>${String(v[field] || '—').replace(/</g, '&lt;')}</code>`, { reply_markup: menuKb([[btn('انصراف', `adm:var:v:${v.id}`)]]) });
+  }
+  if (data.startsWith('adm:var:v:')) {
+    if (!need('products')) return;
+    return variantView(ctx, Number(data.slice(10)), edit);
+  }
+  if (data.startsWith('adm:var:')) {
+    if (!need('products')) return;
+    const [, , act, idStr] = data.split(':');
+    const id = Number(idStr);
+    const v = await ctx.db.prepare('SELECT * FROM config_variants WHERE id=?').bind(id).first();
+    if (!v) return answerCb(ctx.token, ctx.cbId, 'پیدا نشد');
+    if (act === 'chk') {
+      const r = await checkVariants(ctx.env);
+      return answerCb(ctx.token, ctx.cbId, `🩺 ${faDigits(r.checked || 0)} واریانت با آدرس پروب بررسی شد / ${faDigits(r.died || 0)} مورد از تحویل حذف شد`);
+    }
+    if (act === 'tgl') {
+      await saveVariant(ctx.db, v.server_id, { ...v, active: !v.active }, id);
+      return variantsAdmin(ctx, Number(v.server_id), edit);
+    }
+    if (act === 'del') {
+      await deleteVariant(ctx.db, id);
+      await answerCb(ctx.token, ctx.cbId, '🗑 حذف شد');
+      return variantsAdmin(ctx, Number(v.server_id), edit);
+    }
+    return variantView(ctx, id, edit);
+  }
+
+  // ─── 🔔 اعلان‌ها (بخش ۲۴) ───
+  if (data === 'adm:ntf') return notifyAdmin(ctx, edit);
+  if (data.startsWith('adm:ntf:')) {
+    const k = data.slice(8);
+    const cur = (await getSettingValue(ctx.db, `notify_${k}`)) !== '0';
+    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(`notify_${k}`, cur ? '0' : '1').run();
+    return notifyAdmin(ctx, edit);
+  }
   return answerCb(ctx.token, ctx.cbId);
 }
 
@@ -801,7 +1245,106 @@ export async function handleAdminText(ctx, text) {
     if (field === 'price') await ctx.db.prepare('UPDATE products SET price_usd=? WHERE id=?').bind(Number(text) || 0, Number(id)).run();
     if (field === 'days') await ctx.db.prepare('UPDATE products SET days=? WHERE id=?').bind(Number(text) || 30, Number(id)).run();
     if (field === 'traffic') await ctx.db.prepare('UPDATE products SET traffic_gb=? WHERE id=?').bind(Number(text) || 0, Number(id)).run();
+    if (field === 'desc') await ctx.db.prepare('UPDATE products SET description=? WHERE id=?').bind(String(text).slice(0, 900), Number(id)).run();
+    if (field === 'badge') await ctx.db.prepare('UPDATE products SET badge=? WHERE id=?').bind(String(text).slice(0, 40), Number(id)).run();
+    if (field === 'servers') await ctx.db.prepare('UPDATE products SET server_count=? WHERE id=?').bind(Math.min(50, Math.max(1, Number(text) || 10)), Number(id)).run();
+    if (field === 'coin') await ctx.db.prepare('UPDATE products SET coin_price=? WHERE id=?').bind(Math.max(0, Number(text) || 0), Number(id)).run();
+    if (field === 'stock') {
+      const v = String(text).trim();
+      await ctx.db.prepare('UPDATE products SET stock=? WHERE id=?').bind(v === '-' || v === '∞' ? null : Math.max(0, Number(v) || 0), Number(id)).run();
+    }
+    if (field === 'price_toman') {
+      const v = Number(String(text).replace(/[^\d.]/g, '')) || 0;
+      await ctx.db.prepare("UPDATE products SET price_toman=?, price_mode='fixed' WHERE id=?").bind(v, Number(id)).run();
+    }
     return productView(ctx, Number(id));
+  }
+  if (st === 'admin:btn:new') {
+    await setState(ctx, '');
+    const r = await saveButton(ctx.db, { label: text.trim() });
+    if (!r.ok) return send(ctx.token, ctx.user.id, `⛔ ${r.error}`);
+    return buttonView(ctx, r.id);
+  }
+  if (st.startsWith('admin:btnf:')) {
+    const [, , id, field] = st.split(':');
+    await setState(ctx, '');
+    const cur = await ctx.db.prepare('SELECT * FROM menu_buttons WHERE id=?').bind(Number(id)).first();
+    if (cur) {
+      const patch = { ...cur };
+      const raw = text.trim();
+      if (field === 'label') patch.label = raw;
+      else if (field === 'row') patch.row_no = Math.max(0, Math.min(20, Number(raw) || 9));
+      else if (field === 'col') patch.col_no = Math.max(0, Math.min(3, Number(raw) || 0));
+      else patch.value = raw === '-' ? '' : raw;
+      const r = await saveButton(ctx.db, patch, Number(id));
+      if (!r.ok) return send(ctx.token, ctx.user.id, `⛔ ${r.error}`, { reply_markup: menuKb([[btn('⬅️ دکمه', `adm:btn:${id}`)]]) });
+    }
+    return buttonView(ctx, Number(id));
+  }
+  if (st.startsWith('admin:gwv:')) {
+    const k = st.split(':')[2];
+    await setState(ctx, '');
+    const val = text.trim() === '-' ? '' : text.trim();
+    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, val).run();
+    return gatewayAdmin(ctx, null, '✅ ذخیره شد. (یادتان نرود: «تست اتصال» را بزنید.)');
+  }
+  if (st === 'admin:lic:new') {
+    await setState(ctx, '');
+    const uid = Number(text.replace(/[^\d]/g, ''));
+    const target = uid ? await ctx.db.prepare('SELECT * FROM users WHERE id=?').bind(uid).first() : null;
+    if (!target) return send(ctx.token, ctx.user.id, '⛔ چنین کاربری پیدا نشد. آیدی عددی صحیح را بفرستید.');
+    const plan = CREATOR_PLANS.pro || Object.values(CREATOR_PLANS)[0];
+    const planName = Object.keys(CREATOR_PLANS)[0];
+    const r = await grantCreatorLicense(ctx.env, target, { title: 'لایسنس دستی (اعطای ادمین)', days: 30 }, { plan: planName });
+    if (!r) return send(ctx.token, ctx.user.id, '⛔ صادر نشد (خطای دیتابیس).');
+    const base = (await getBase(ctx.env)) || '';
+    return send(ctx.token, ctx.user.id, `✅ لایسنس برای ${userTag(target)} صادر شد.\n🪪 پلن: ${planName} | سقف کانفیگ: ${faDigits(r.quota || 0)} | سرور هم‌زمان: ${faDigits(r.servers || 0)}\n🔗 آدرس پنل کاربر:\n<code>${base}/creator/${r.token}</code>\n🔑 API key:\n<code>${r.api_key}</code>\n\n⚠️ این لینک را فقط برای همان کاربر بفرستید.`, { reply_markup: menuKb([[btn('⬅️ لایسنس‌ها', 'adm:lic')]]) });
+  }
+  if (st.startsWith('admin:licq:')) {
+    const id = Number(st.split(':')[2]);
+    await setState(ctx, '');
+    const q = Math.max(1, Number(text.replace(/[^\d]/g, '')) || 0);
+    await ctx.db.prepare('UPDATE creator_licenses SET quota=? WHERE id=?').bind(q, id).run();
+    const l = await ctx.db.prepare('SELECT * FROM creator_licenses WHERE id=?').bind(id).first();
+    return licenseView(ctx, id);
+  }
+  if (st.startsWith('admin:vari:')) {
+    const sid = Number(st.split(':')[2]);
+    await setState(ctx, '');
+    const parts = String(text).split('|').map((x) => x.trim());
+    const val = (i, d = '') => (parts[i] === undefined || !parts[i] || parts[i] === '-' ? d : parts[i]);
+    const v = {
+      label: val(0, `واریانت ${Date.now() % 1000}`),
+      transport: String(val(1, 'ws')).toLowerCase(),
+      port: Number(String(val(2, '443')).replace(/[^\d]/g, '')) || 443,
+      sni: val(3),
+      security: String(val(4, 'tls')).toLowerCase(),
+      host: val(5),
+      path: val(6),
+      pbk: val(7),
+      sid: val(8),
+      alpn: val(9, 'h2,http/1.1'),
+      fp: val(10, 'chrome'),
+    };
+    const r = await saveVariant(ctx.db, sid, v);
+    if (!r || !r.ok) {
+      const err = Array.isArray(r?.errors) ? r.errors.join(' / ') : 'ذخیره نشد';
+      return send(ctx.token, ctx.user.id, `⛔ ${err}\n\n${v.security === 'reality' ? 'برای reality باید pbk (کلید عمومی) و sid در همان خط بفرستید.' : ''}`, { reply_markup: menuKb([[btn('⬅️ واریانت‌ها', `adm:anti:s${sid}`)]]) });
+    }
+    return variantsAdmin(ctx, sid);
+  }
+  if (st.startsWith('admin:varf:')) {
+    const [, , id, field] = st.split(':');
+    await setState(ctx, '');
+    const v = await ctx.db.prepare('SELECT * FROM config_variants WHERE id=?').bind(Number(id)).first();
+    if (v) {
+      const patch = { ...v };
+      const raw = text.trim();
+      if (field === 'port') patch[field] = Number(raw.replace(/[^\d]/g, '')) || v[field];
+      else patch[field] = raw === '-' ? '' : raw;
+      await saveVariant(ctx.db, v.server_id, patch, Number(id));
+    }
+    return variantsAdmin(ctx, Number(v?.server_id || 0));
   }
   if (st.startsWith('admin:sf:')) {
     const [, , id, field] = st.split(':');

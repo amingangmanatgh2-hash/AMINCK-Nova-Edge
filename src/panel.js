@@ -24,13 +24,24 @@ import {
   applyBestCleanIps, cleanIpDto,
 } from './cleanip.js';
 import { generateSecretFor } from './secrets.js';
+import { gatewayDto, gatewayTxList, gatewayConfig, saveGatewaySettings, testGateway, reconcilePendingPayments } from './gateway.js';
+import { listButtons, saveButton, deleteButton, toggleButton, ACTIONS, setDashboardMenuButton } from './menu.js';
+import { CREATOR_PLANS, planOf, grantCreatorLicense, creatorDeliveryText } from './creator.js';
+import { coverageStats, saveVariant, deleteVariant, saveAntiBlockProfile, checkVariants, TRANSPORTS, SECURITIES } from './antiblock.js';
+import { getGoldRateInfo } from './pricing.js';
+import { recentAlerts } from './notify.js';
+import { getUser, lowStockProducts } from './db.js';
+import { getBase } from './util.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 const SESSION_TTL = 6 * 3600;
 const PAGE_SIZE = 20;
 
 /** کلیدهایی که هرگز از طریق پنل قابل خواندن/نوشتن نیستند */
-const FORBIDDEN_SETTINGS = new Set(['telegram_bot_token', 'panel_password']);
+const FORBIDDEN_SETTINGS = new Set([
+  'telegram_bot_token', 'panel_password', 'owner_id',
+  'gateway_api_key', 'gateway_merchant_id', 'gateway_custom_request', 'gateway_custom_verify',
+]);
 
 /** تنظیمات قابل ویرایش از پنل وب */
 const EDITABLE_SETTINGS = [
@@ -48,6 +59,17 @@ const EDITABLE_SETTINGS = [
   // بخش ۱: پروب IP تمیز
   'probe_enabled', 'probe_reward_coins', 'probe_daily_cap', 'probe_min_samples',
   'clean_ip_auto_manage', 'clean_ip_min_healthy',
+  // بخش ۳۲-۳۵: داشبورد، سکه، ضدسانسور، طلا و کف قیمت
+  'dashboard_enabled', 'dashboard_label', 'dashboard_url', 'custom_menu_enabled',
+  'inline_enabled', 'inline_limit', 'inline_show_rate',
+  'sub_min_configs', 'sub_ips_per_server', 'variant_fail_limit', 'variant_check_enabled',
+  'gold_rate_manual', 'gold_rate_url', 'gold_rate_path', 'gold_margin', 'price_floor_toman',
+  'low_stock_threshold', 'gateway_enabled', 'gateway_provider', 'gateway_api_base', 'gateway_currency',
+  'gateway_fee_mode', 'gateway_fee_percent', 'gateway_callback_path', 'gateway_ttl_minutes', 'gateway_timeout_ms', 'gateway_auto_reconcile',
+  'coin_max_usd', 'coin_allow_premium', 'creator_enabled', 'creator_default_plan',
+  'notify_throttle_seconds',
+  'notify_purchase', 'notify_payment', 'notify_receipt', 'notify_suspicious', 'notify_newUser',
+  'notify_referral', 'notify_serviceError', 'notify_outOfStock', 'notify_deadConfig', 'notify_gateway', 'notify_aiFlag',
 ];
 
 /** متن‌های قابل ویرایش از پنل وب */
@@ -199,6 +221,24 @@ export async function handlePanelApi(env, request, path) {
     const placeholders = allServers.filter((s) => serverIssues(s).length && s.active).length;
     if (placeholders) warnings.push(`⚠️ ${placeholders} سرور فعال پیکربندی ناقص دارد و نادیده گرفته می‌شود.`);
     if (stats.receiptsPending) warnings.push(`🧾 ${stats.receiptsPending} فیش در صف بررسی است.`);
+    // ── آژان‌های قابلیت‌های جدید ──
+    const gwCfg = await gatewayConfig(env);
+    stats.gatewayEnabled = gwCfg.enabled ? 1 : 0;
+    stats.gatewayProvider = gwCfg.enabled ? gwCfg.provider : 'none';
+    stats.licenses = await num('SELECT COUNT(*) v FROM creator_licenses WHERE active=1');
+    stats.variants = await num('SELECT COUNT(*) v FROM config_variants WHERE active=1');
+    stats.variantsDead = await num('SELECT COUNT(*) v FROM config_variants WHERE active=0');
+    stats.gwPending = await num("SELECT COUNT(*) v FROM gateway_tx WHERE status='redirected'");
+    stats.gwVerified = await num("SELECT COUNT(*) v FROM gateway_tx WHERE status='verified'");
+    stats.menuButtons = await num('SELECT COUNT(*) v FROM menu_buttons WHERE active=1');
+    const lowStock = await lowStockProducts(DB, 3);
+    if (lowStock.length) warnings.push(`📦 ${lowStock.length} محصول موجودی کم/تمام‌شده دارد: ${lowStock.map((p) => p.title).join('، ')}`);
+    if (gwCfg.enabled && gwCfg.provider === 'none') warnings.push('⚠️ درگاه فعال است اما ارائه‌دهنده انتخاب نشده.');
+    if (stats.gwPending) warnings.push(`🏦 ${stats.gwPending} تراکنش درگاهی در انتظار وریفای است (کرون خودش تسویه می‌کند؛ دکمهٔ «تسویه حالا» در تب درگاه).`);
+    const cov = await coverageStats(DB);
+    if (cov.servers && !cov.withVariants) warnings.push('🛡 هیچ واریانت ضدسانسوری تعریف نشده؛ هر سرور فقط یک مسیر دارد (پیشنهاد: تب «ضدسانسور»).');
+    const goldInfo = await getGoldRateInfo(env);
+    if (goldInfo.unavailable) warnings.push('💛 نرخ طلا تنظیم نشده است؛ محصولاتی که لنگر «طلا» دارند قیمت‌گذاری نمی‌شوند (تب تنظیمات → gold_rate_url یا gold_rate_manual).');
 
     return json({
       ok: true,
@@ -206,6 +246,10 @@ export async function handlePanelApi(env, request, path) {
       warnings,
       models: TEXT_MODELS,
       settings: await readSettings(DB),
+      alerts: await recentAlerts(env),
+      coverage: cov,
+      gold: { rate: goldInfo.rate, source: goldInfo.source, manual: goldInfo.manual, unavailable: goldInfo.unavailable },
+      gateway: await gatewayDto(env),
       groups: groups.map((g) => ({
         chat_id: String(g.chat_id),
         title: g.title || String(g.chat_id),
@@ -240,13 +284,31 @@ export async function handlePanelApi(env, request, path) {
       server_count: clamp(Number(body.server_count) || 10, 1, 50),
       enabled: body.enabled ? 1 : 0,
       sort: Number(body.sort) || 0,
+      // ── بخش ۷ و ۸: حالت قیمت، لنگر ارز، سطح، کف قیمت، موجودی ──
+      price_mode: ['fx', 'fixed'].includes(String(body.price_mode)) ? String(body.price_mode) : 'fx',
+      price_toman: Math.max(0, Math.round(Number(body.price_toman) || 0)),
+      peg: ['usdt', 'gold'].includes(String(body.peg)) ? String(body.peg) : 'usdt',
+      tier: ['economy', 'standard', 'premium'].includes(String(body.tier)) ? String(body.tier) : 'standard',
+      min_toman: Math.max(0, Math.round(Number(body.min_toman) || 0)),
+      stock: body.stock === '' || body.stock === undefined || body.stock === null ? -1 : Math.max(-1, Math.round(Number(body.stock))),
+      description: String(body.description || '').slice(0, 300),
+      badge: String(body.badge || '').slice(0, 24),
     };
+    const stockSql = Number.isFinite(f.stock) ? f.stock : -1;
     if (id) {
-      await DB.prepare('UPDATE products SET title=?, category=?, protocol=?, days=?, traffic_gb=?, price_usd=?, coin_price=?, server_count=?, enabled=?, sort=? WHERE id=?')
-        .bind(f.title, f.category, f.protocol, f.days, f.traffic_gb, f.price_usd, f.coin_price, f.server_count, f.enabled, f.sort, id).run();
+      await DB.prepare(
+        `UPDATE products SET title=?, category=?, protocol=?, days=?, traffic_gb=?, price_usd=?, coin_price=?, server_count=?, enabled=?, sort=?,
+         price_mode=?, price_toman=?, peg=?, tier=?, min_toman=?, stock=?, description=?, badge=? WHERE id=?`
+      )
+        .bind(f.title, f.category, f.protocol, f.days, f.traffic_gb, f.price_usd, f.coin_price, f.server_count, f.enabled, f.sort,
+              f.price_mode, f.price_toman, f.peg, f.tier, f.min_toman, stockSql, f.description, f.badge, id).run();
     } else {
-      await DB.prepare('INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, server_count, enabled, sort) VALUES (?,?,?,?,?,?,?,?,?,?)')
-        .bind(f.title, f.category, f.protocol, f.days, f.traffic_gb, f.price_usd, f.coin_price, f.server_count, f.enabled, f.sort).run();
+      await DB.prepare(
+        `INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, server_count, enabled, sort,
+           price_mode, price_toman, peg, tier, min_toman, stock, description, badge) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+      )
+        .bind(f.title, f.category, f.protocol, f.days, f.traffic_gb, f.price_usd, f.coin_price, f.server_count, f.enabled, f.sort,
+              f.price_mode, f.price_toman, f.peg, f.tier, f.min_toman, stockSql, f.description, f.badge).run();
     }
     return json({ ok: true });
   }
@@ -711,7 +773,170 @@ export async function handlePanelApi(env, request, path) {
     return json({ ok: true, status: await killSwitchStatus(DB) });
   }
 
+  // ═══════════ درگاه بانکی (بخش ۵) ═══════════
+  if (path === '/api/panel/gateway/get') {
+    return json({ ok: true, gateway: await gatewayDto(env), txs: await gatewayTxList(env, 15) });
+  }
+  if (path === '/api/panel/gateway/save') {
+    const res = await saveGatewaySettings(DB, body);
+    if (!res.ok) return json(res, 400);
+    return json({ ok: true, gateway: await gatewayDto(env) });
+  }
+  if (path === '/api/panel/gateway/test') {
+    const r = await testGateway(env);
+    return json(r, r.ok ? 200 : 400);
+  }
+
+  // ═══════════ دکمه‌های منو (بخش ۱۵) ═══════════
+  if (path === '/api/panel/buttons/list') {
+    const rows = (await DB.prepare('SELECT * FROM menu_buttons ORDER BY row_no, col_no, id').all()).results;
+    return json({ ok: true, items: rows, actions: ACTIONS });
+  }
+  if (path === '/api/panel/buttons/save') {
+    const res = await saveButton(DB, body, Number(body.id) || 0);
+    return json(res, res.ok ? 200 : 400);
+  }
+  if (path === '/api/panel/buttons/toggle') {
+    return json(await toggleButton(DB, Number(body.id)));
+  }
+  if (path === '/api/panel/buttons/delete') {
+    if (body.confirm !== true) return json({ ok: false, error: 'تایید حذف لازم است.' }, 400);
+    return json(await deleteButton(DB, Number(body.id)));
+  }
+
+  // ═══════════ لایسنس پنل کانفیگ‌ساز (بخش ۲۰) ═══════════
+  if (path === '/api/panel/licenses/list') {
+    const rows = (
+      await DB.prepare(
+        `SELECT l.*, u.username FROM creator_licenses l LEFT JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT 50`
+      ).all()
+    ).results;
+    return json({
+      ok: true,
+      items: rows.map((l) => ({
+        id: l.id,
+        user: l.user_id,
+        username: l.username || '',
+        name: l.name,
+        servers: l.servers,
+        quota: l.quota,
+        used: l.used,
+        expire: l.expire_at ? fmtDate(l.expire_at) : '—',
+        active: !!l.active,
+        token: l.token,
+        order: l.order_id,
+        note: l.note || '',
+      })),
+      plans: CREATOR_PLANS,
+    });
+  }
+  if (path === '/api/panel/licenses/save') {
+    const id = Number(body.id) || 0;
+    if (id) {
+      const cur = await DB.prepare('SELECT * FROM creator_licenses WHERE id=?').bind(id).first();
+      if (!cur) return json({ ok: false, error: 'لایسنس یافت نشد.' }, 404);
+      const active = body.active === undefined ? cur.active : body.active ? 1 : 0;
+      await DB.prepare('UPDATE creator_licenses SET servers=?, quota=?, expire_at=?, active=?, note=? WHERE id=?')
+        .bind(Math.max(0, Number(body.servers) || 0), Math.max(0, Number(body.quota) || 0),
+              Math.max(0, Number(body.expire_at) || cur.expire_at), active, String(body.note ?? cur.note).slice(0, 200), id).run();
+      return json({ ok: true, id });
+    }
+    const userId = Number(body.user_id) || 0;
+    if (!userId) return json({ ok: false, error: 'آیدی کاربر لازم است.' }, 400);
+    const plan = planOf(body.plan) || CREATOR_PLANS.pro;
+    const lic = await grantCreatorLicense(env, { id: userId }, { title: String(body.name || 'لایسنس از پنل'), days: Number(body.days) || 30, protocol_plan: body.plan }, { orderId: 0 });
+    await DB.prepare('UPDATE creator_licenses SET servers=?, quota=? WHERE id=?').bind(Number(body.servers) || plan.servers, Number(body.quota) || plan.configs, lic.id).run();
+    return json({ ok: true, token: lic.token, id: lic.id });
+  }
+  if (path === '/api/panel/licenses/grant') {
+    // هدیهٔ لایسنس به کاربر + پیام در تلگرام
+    const userId = Number(body.user_id) || 0;
+    const u = await getUser(DB, userId);
+    if (!u) return json({ ok: false, error: 'کاربر یافت نشد.' }, 404);
+    const lic = await grantCreatorLicense(env, u, { title: '🎁 لایسنس هدیه', days: Number(body.days) || 30, protocol_plan: body.plan || 'pro' }, { orderId: 0 });
+    const base = (await getBase(env)) || '';
+    await send(env.TELEGRAM_BOT_TOKEN, userId, await creatorDeliveryText(env, lic, base));
+    return json({ ok: true, token: lic.token });
+  }
+
+  // ═══════════ واریانت‌های ضدسانسور (بخش ۳.۱) ═══════════
+  if (path === '/api/panel/variants/list') {
+    const sid = Number(body.server_id) || 0;
+    const rows = sid
+      ? (await DB.prepare('SELECT * FROM config_variants WHERE server_id=? ORDER BY sort, id').bind(sid).all()).results
+      : (await DB.prepare('SELECT * FROM config_variants ORDER BY server_id, sort, id LIMIT 200').all()).results;
+    return json({ ok: true, items: rows.map(variantDto), coverage: await coverageStats(DB), transports: TRANSPORTS, securities: SECURITIES });
+  }
+  if (path === '/api/panel/variants/save') {
+    const res = await saveVariant(DB, Number(body.server_id), body, Number(body.id) || 0);
+    return json(res, res.ok ? 200 : 400);
+  }
+  if (path === '/api/panel/variants/toggle') {
+    await DB.prepare('UPDATE config_variants SET active = 1 - active WHERE id=?').bind(Number(body.id)).run();
+    return json({ ok: true });
+  }
+  if (path === '/api/panel/variants/delete') {
+    if (body.confirm !== true) return json({ ok: false, error: 'تایید حذف لازم است.' }, 400);
+    return json(await deleteVariant(DB, Number(body.id)));
+  }
+  if (path === '/api/panel/variants/profile') {
+    const res = await saveAntiBlockProfile(DB, Number(body.server_id), body.profile || body);
+    return json(res, res.ok ? 200 : 400);
+  }
+  if (path === '/api/panel/variants/check') {
+    return json(await checkVariants(env));
+  }
+
+  // ═══════════ کف قیمت/طلا/دکمه داشبورد — میان‌بُر سریع ═══════════
+  if (path === '/api/panel/gold') {
+    const info = await getGoldRateInfo(env, true);
+    return json({ ok: !info.unavailable, ...info });
+  }
+  if (path === '/api/panel/alerts') {
+    return json({ ok: true, alerts: await recentAlerts(env) });
+  }
+  if (path === '/api/panel/reconcile') {
+    return json({ ok: true, ...(await reconcilePendingPayments(env)) });
+  }
+  if (path === '/api/panel/menu-button') {
+    const chatId = Number(body.chat_id) || null;
+    if (String(body.action || 'set') === 'remove') {
+      const r = await tg(env.TELEGRAM_BOT_TOKEN, 'setChatMenuButton', { ...(chatId ? { chat_id: chatId } : {}), button: { type: 'default' } });
+      return json({ ok: !!r?.ok, removed: true });
+    }
+    const r = await setDashboardMenuButton(env, env.TELEGRAM_BOT_TOKEN, { chatId, url: String(body.url || ''), label: String(body.label || '') });
+    return json({ ok: !!r?.ok, ...(r && r.ok ? {} : { error: r?.reason === 'no_url' ? 'آدرس ورکر مشخص نیست (ابتدا یک بار ربات را باز کنید).' : 'ثبت دکمه ناموفق بود.' }) });
+  }
+
   return json({ ok: false, error: 'not found' }, 404);
+}
+
+/** نمایش امن واریانت برای پنل */
+function variantDto(v) {
+  return {
+    id: v.id,
+    server_id: v.server_id,
+    label: v.label || '',
+    transport: v.transport,
+    port: v.port,
+    security: v.security,
+    sni: v.sni || '',
+    host: v.host || '',
+    path: v.path || '',
+    service_name: v.service_name || '',
+    alpn: v.alpn || '',
+    fp: v.fp || '',
+    pbk: v.pbk || '',
+    sid: v.sid || '',
+    spx: v.spx || '',
+    check_url: v.check_url || '',
+    healthy: !!v.healthy,
+    active: !!v.active,
+    fail_count: v.fail_count || 0,
+    ok_count: v.ok_count || 0,
+    last_check: v.last_check ? fmtDate(v.last_check) : '—',
+    note: v.note || '',
+  };
 }
 
 /** تنظیمات قابل نمایش — هیچ کلید حساسی برنمی‌گردد */
@@ -801,6 +1026,10 @@ table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:7px 4px;b
   <button data-p="grp">📢 گروه‌ها</button>
   <button data-p="ips">🌐 IP تمیز</button>
   <button data-p="cfg">🎛 کانفیگ‌ساز</button>
+  <button data-p="gw">🏦 درگاه</button>
+  <button data-p="anti">🛡 ضدسانسور</button>
+  <button data-p="btns">🔘 دکمه‌ها</button>
+  <button data-p="lic">🛠 لایسنس</button>
   <button data-p="set">⚙️ تنظیمات</button>
 </div>
 
@@ -853,6 +1082,10 @@ async function render(){
   if(CUR==='grp')return pgGroups();
   if(CUR==='ips')return pgIps();
   if(CUR==='cfg')return pgCfg();
+  if(CUR==='gw')return pgGateway();
+  if(CUR==='anti')return pgAnti();
+  if(CUR==='btns')return pgButtons();
+  if(CUR==='lic')return pgLicenses();
   if(CUR==='set')return pgSettings();
 }
 
@@ -911,8 +1144,8 @@ function pager(r,fn,q){
    '<button class="gh" '+(r.page+1>=pages?'disabled':'')+' onclick="'+fn+'('+(r.page+1)+',\\''+esc(q)+'\\')">بعدی</button></div>';
 }
 function prodForm(id){
-  var p=(window.__prods||[]).filter(function(x){return x.id===id})[0]||{title:'',category:'vless',protocol:'vless',days:30,traffic_gb:0,price_usd:1,coin_price:0,server_count:10,enabled:1,sort:0};
-  var cats=['vless','vmess','trojan','ss','openvpn','mtproto','socks5','coin'];
+  var p=(window.__prods||[]).filter(function(x){return x.id===id})[0]||{title:'',category:'vless',protocol:'vless',days:30,traffic_gb:0,price_usd:1,coin_price:0,server_count:10,enabled:1,sort:0,price_mode:'fx',price_toman:0,peg:'usdt',tier:'standard',min_toman:0,stock:-1,description:'',badge:''};
+  var cats=['vless','vmess','trojan','ss','openvpn','mtproto','socks5','custom','creator','coin'];
   var opts=cats.map(function(c){return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'}).join('');
   modal('<h2>'+(id?'✏️ ویرایش محصول':'➕ محصول جدید')+'</h2>'+
    '<label>عنوان</label><input id="f_title" value="'+esc(p.title)+'">'+
@@ -922,22 +1155,193 @@ function prodForm(id){
    '<div><label>قیمت دلاری</label><input id="f_usd" type="number" step="0.1" value="'+p.price_usd+'"></div></div>'+
    '<div class="grid2"><div><label>قیمت سکه‌ای</label><input id="f_coin" type="number" value="'+p.coin_price+'"></div>'+
    '<div><label>تعداد سرور</label><input id="f_sc" type="number" value="'+p.server_count+'"></div></div>'+
+   '<div class="grid2"><div><label>حالت قیمت</label><select id="f_mode">'+
+     '<option value="fx"'+(p.price_mode!=='fixed'?' selected':'')+'>وابسته به نرخ ارز (دلار × نرخ)</option>'+
+     '<option value="fixed"'+(p.price_mode==='fixed'?' selected':'')+'>قیمت ثابت تومانی</option></select></div>'+
+   '<div><label>لنگر نرخ</label><select id="f_peg"><option value="usdt"'+(p.peg!=='gold'?' selected':'')+'>💵 تتر/دلار</option><option value="gold"'+(p.peg==='gold'?' selected':'')+'>💛 طلا (۱۸k)</option></select></div></div>'+
+   '<div class="grid2"><div><label>قیمت ثابت (تومان)</label><input id="f_fix" type="number" value="'+(p.price_toman||0)+'"></div>'+
+   '<div><label>کف قیمت (تومان، ۰=بدون کف)</label><input id="f_floor" type="number" value="'+(p.min_toman||0)+'"></div></div>'+
+   '<div class="grid2"><div><label>سطح محصول</label><select id="f_tier">'+
+     '<option value="economy"'+(p.tier==='economy'?' selected':'')+'>🪙 اقتصادی</option>'+
+     '<option value="standard"'+((p.tier||'standard')==='standard'?' selected':'')+'>⚖️ متوسط (با سکه)</option>'+
+     '<option value="premium"'+(p.tier==='premium'?' selected':'')+'>💎 پریمیوم (فقط نقدی)</option></select></div>'+
+   '<div><label>موجودی (-1 = نامحدود)</label><input id="f_stock" type="number" value="'+(p.stock===undefined?-1:p.stock)+'"></div></div>'+
+   '<label>برچسب (کوتاه، مثل «پرفروش»)</label><input id="f_badge" value="'+esc(p.badge||'')+'">'+
+   '<label>توضیح کوتاه محصول</label><textarea id="f_desc" rows="2">'+esc(p.description||'')+'</textarea>'+
    '<label><input type="checkbox" id="f_en" '+(p.enabled?'checked':'')+' style="width:auto"> فعال باشد</label>'+
+   '<div class="mut">💡 کف قیمت: سیستم اجازه نمی‌دهد قیمت محاسبه‌شده از این عدد پایین‌تر برود (ساختار قیمت رقابتی و منطقی). قیمت بازار دیگران قابل کنترل نیست.</div>'+
    '<div class="err" id="f_err"></div>'+
    '<div class="row" style="margin-top:10px"><button id="f_save" onclick="prodSave('+(id||0)+')">💾 ذخیره</button><button class="gh" onclick="closeModal()">انصراف</button></div>');
 }
 async function prodSave(id){
   var b=$('f_save');b.disabled=true;$('f_err').textContent='';
   var cat=$('f_cat').value;
-  var r=await api('/api/panel/products/save',{id:id,title:$('f_title').value,category:cat,protocol:cat==='coin'?'vless':cat,
+  var r=await api('/api/panel/products/save',{id:id,title:$('f_title').value,category:cat,protocol:(cat==='coin'||cat==='creator')?'vless':cat,
    days:$('f_days').value,traffic_gb:$('f_gb').value,price_usd:$('f_usd').value,coin_price:$('f_coin').value,
-   server_count:$('f_sc').value,enabled:$('f_en').checked});
+   server_count:$('f_sc').value,enabled:$('f_en').checked,price_mode:$('f_mode').value,price_toman:$('f_fix').value,peg:$('f_peg').value,
+   tier:$('f_tier').value,min_toman:$('f_floor').value,stock:$('f_stock').value,description:$('f_desc').value,badge:$('f_badge').value});
   b.disabled=false;
   if(!r.ok){$('f_err').textContent='⛔ '+(r.error||'خطا');return}
   closeModal();flash('✅ ذخیره شد');pgProducts(0);
 }
 async function prodToggle(id){var r=await api('/api/panel/products/toggle',{id:id});if(!r.ok)return flash(r.error||'خطا',1);pgProducts(0)}
 async function prodDel(id,t){if(!confirmAsk('حذف محصول «'+t+'»؟ این کار برگشت‌پذیر نیست.'))return;var r=await api('/api/panel/products/delete',{id:id,confirm:true});if(!r.ok)return flash(r.error||'خطا',1);flash('🗑 حذف شد');pgProducts(0)}
+
+
+/* ═════ درگاه بانکی ═════ */
+async function pgGateway(){
+  var r=await api('/api/panel/gateway/get',{});
+  if(!r.ok){$('pages').innerHTML=errBox(r.error||'خطا');return}
+  var g=r.gateway||{};
+  var h='<div class="card"><h2>🏦 درگاه پرداخت بانکی</h2>'+\n
+   '<div class="row"><span class="pill '+(g.gateway_enabled==='1'?'ok':'')+'">'+(g.gateway_enabled==='1'?'🟢 فعال':'🔴 غیرفعال')+'</span>'+\n
+   '<span class="pill">'+esc(g.gateway_provider||'none')+'</span>'+\n
+   '<button class="gh" onclick="gwTest()">🔌 تست اتصال</button>'+\n
+   '<button class="gh" onclick="gwReconcile()">🔄 تسویه تراکنش‌های معلق</button></div>'+\n
+   '<div class="mut" id="gwOut" style="margin-top:8px">'+esc(g.note||'')+'</div></div>';
+  h+='<div class="card"><h2>⚙️ تنظیمات درگاه</h2>'+\n
+   '<label><input type="checkbox" id="g_en" '+(g.gateway_enabled==='1'?'checked':'')+' style="width:auto"> درگاه فعال باشد (در غیر این صورت فقط کارت‌به‌کارت)</label>'+\n
+   '<div class="grid2"><div><label>ارائه‌دهنده</label><select id="g_pv">'+\n
+   ['none','zarinpal','idpay','custom'].map(function(x){return '<option value="'+x+'"'+(g.gateway_provider===x?' selected':'')+'>'+x+'</option>'}).join('')+'</select></div>'+\n
+   '<div><label>واحد پول</label><select id="g_cur"><option value="IRT"'+(g.gateway_currency!=='ITP'?' selected':'')+'>IRT (ریال)</option><option value="ITP"'+(g.gateway_currency==='ITP'?' selected':'')+'>ITP (تومان)</option></select></div></div>'+\n
+   '<label>آدرس API (base)</label><input id="g_base" value="'+esc(g.gateway_api_base||'')+'" placeholder="https://api.zarinpal.com">'+\n   '<label>Merchant ID / کلید</label><input id="g_mer" value="" placeholder="'+(g.has_merchant?'ذخیره شده ('+esc(g.merchant_masked)+') — برای تغییر بنویسید':'merchant id')+'">'+\n   '<label>API Key (اختیاری)</label><input id="g_key" value="" placeholder="'+(g.has_key?'ذخیره شده ('+esc(g.key_masked)+')':'')+'">'+\n
+   '<div class="grid2"><div><label>حالت کارمزد</label><select id="g_fm"><option value="none">بدون کارمزد</option><option value="payer"'+(g.gateway_fee_mode==='payer'?' selected':'')+'>با کاربر</option><option value="merchant"'+(g.gateway_fee_mode==='merchant'?' selected':'')+'>با فروشنده</option></select></div>'+\n
+   '<div><label>درصد کارمزد</label><input id="g_fp" type="number" step="0.1" value="'+(g.gateway_fee_percent||0)+'"></div></div>'+\n
+   '<div class="grid2"><div><label>مسیر بازگشت (callback)</label><input id="g_cb" value="'+esc(g.gateway_callback_path||'/pay')+'"></div>'+\n
+   '<div><label>تایم‌اوت (ms)</label><input id="g_to" type="number" value="'+(g.gateway_timeout_ms||12000)+'"></div></div>'+\n
+   '<label>قالب درخواست (حالت custom — JSON)</label><textarea id="g_rq" rows="5">'+esc(g.custom_request||'')+'</textarea>'+\n
+   '<label>قالب وریفای (حالت custom — JSON)</label><textarea id="g_vf" rows="5">'+esc(g.custom_verify||'')+'</textarea>'+\n
+   '<div class="mut">قالب custom: متغیرهای {{base}} {{merchant}} {{apiKey}} {{amount}} {{toman}} {{orderId}} {{callback}} {{description}} {{authority}} و مسیرهای authority_path / url_path / success_path / success_value / ref_path</div>'+\n
+   '<div class="row" style="margin-top:10px"><button onclick="gwSave()">💾 ذخیره تنظیمات</button></div>'+\n
+   '<div class="err" id="g_err"></div></div>';
+  h+='<div class="card"><h2>🧾 آخرین تراکنش‌های درگاه</h2>';\n
+  if(!r.txs||!r.txs.length)h+='<div class="mut">هنوز تراکنشی ثبت نشده است.</div>';\n
+  else{h+='<table><tr><th>#</th><th>سفارش</th><th>مبلغ</th><th>وضعیت</th><th>کد رهگیری</th></tr>';\n
+   for(var i=0;i<r.txs.length;i++){var t=r.txs[i];\n
+     h+='<tr><td>'+fa(t.id)+'</td><td>'+fa(t.order)+'</td><td>'+toman(t.total)+'</td><td><span class="pill '+(t.status==='verified'?'ok':(t.status==='failed'?'bad':'warn'))+'">'+esc(t.status)+'</span></td><td>'+esc(t.ref||'—')+'</td></tr>';}
+   h+='</table>';}
+  h+='</div>';$('pages').innerHTML=h;
+}
+async function gwSave(){
+  var b={gateway_enabled:$('g_en').checked?'1':'0',gateway_provider:$('g_pv').value,gateway_currency:$('g_cur').value,gateway_api_base:$('g_base').value,
+   gateway_fee_mode:$('g_fm').value,gateway_fee_percent:$('g_fp').value,gateway_callback_path:$('g_cb').value,gateway_timeout_ms:$('g_to').value,
+   gateway_custom_request:$('g_rq').value||'',gateway_custom_verify:$('g_vf').value||''};
+  if($('g_mer').value.trim())b.gateway_merchant_id=$('g_mer').value.trim();
+  if($('g_key').value.trim())b.gateway_api_key=$('g_key').value.trim();
+  var r=await api('/api/panel/gateway/save',b);$('g_err').textContent=r.ok?'':'⛔ '+(r.error||'خطا');
+  if(r.ok){flash('✅ ذخیره شد');pgGateway()}
+}
+async function gwTest(){var o=$('gwOut');o.textContent='⏳ در حال تست…';var r=await api('/api/panel/gateway/test',{});o.textContent=(r.ok?'✅ ':'⚠️ ')+(r.message||'خطا');}
+async function gwReconcile(){var r=await api('/api/panel/reconcile',{});flash(r.ok?('🔄 بررسی '+fa(r.checked)+' تراکنش، تسویه '+fa(r.settled)):'خطا');pgGateway()}
+
+/* ═════ ضدسانسور / واریانت‌ها ═════ */
+async function pgAnti(){
+  var r=await api('/api/panel/variants/list',{});
+  var sl=await api('/api/panel/servers/list',{page:0,q:''});
+  if(!r.ok){$('pages').innerHTML=errBox(r.error||'خطا');return}
+  var cov=r.coverage||{};
+  var h='<div class="card"><h2>🛡 پروفایل ضدسانسور و واریانت‌ها</h2>'+\n
+   '<div class="st"><div><b>'+fa(cov.servers)+'</b><span class="mut">سرور فعال</span></div>'+\n
+   '<div><b>'+fa(cov.withVariants)+'</b><span class="mut">سرور با واریانت</span></div>'+\n
+   '<div><b>'+fa(cov.disabledVariants)+'</b><span class="mut">خروج‌شده (مدارشکن)</span></div>'+\n
+   '<div><b>'+(STATE&&STATE.settings?fa(STATE.settings.sub_min_configs):'10')+'</b><span class="mut">حداقل کانفیگ هر ساب</span></div></div>'+\n
+   '<div class="mut" style="margin-top:8px">هر واریانت = یک (ترنسپورت، پورت، SNI) مستقل. اگر یکی فیلتر شود، بقیه کار می‌کنند. سلامت واریانت از بازخورد کاربران داخل ایران و (اختیاری) check_url به‌روز می‌شود.</div>'+\n
+   '<div class="row" style="margin-top:10px"><button class="gh" onclick="vCheck()">📡 چک سلامت (از خارج ایران)</button></div>'+\n
+   '<div id="vOut" class="mut"></div></div>';
+  h+='<div class="card"><h2>➕ واریانت جدید</h2>'+\n
+   '<div class="grid2"><div><label>سرور</label><select id="v_srv">'+\n
+   ((sl.items||[]).map(function(x){return '<option value="'+x.id+'">'+esc(x.name)+' ('+esc(x.protocol)+')</option>'}).join(''))+'</select></div>'+\n
+   '<div><label>برچسب</label><input id="v_lab" placeholder="WS 443 — CDN"></div></div>'+\n
+   '<div class="grid2"><div><label>ترنسپورت</label><select id="v_t">'+r.transports.map(function(x){return '<option>'+x+'</option>'}).join('')+'</select></div>'+\n
+   '<div><label>پورت</label><input id="v_port" type="number" value="443"></div></div>'+\n
+   '<div class="grid2"><div><label>امنیت</label><select id="v_sec">'+r.securities.map(function(x){return '<option>'+x+'</option>'}).join('')+'</select></div>'+\n
+   '<div><label>SNI / Fake Domain</label><input id="v_sni" placeholder="speedtest.net"></div></div>'+\n
+   '<div class="grid2"><div><label>Host (CDN)</label><input id="v_host"></div><div><label>Path</label><input id="v_path" placeholder="/vless"></div></div>'+\n
+   '<div class="grid2"><div><label>pbk (Reality)</label><input id="v_pbk"></div><div><label>sid (Reality)</label><input id="v_sid"></div></div>'+\n
+   '<div class="grid2"><div><label>fp</label><input id="v_fp" value="chrome"></div><div><label>alpn</label><input id="v_alpn" value="h2,http/1.1"></div></div>'+\n
+   '<label>check_url (اختیاری)</label><input id="v_chk" placeholder="https://domain:port/health">'
+   '<div class="row" style="margin-top:10px"><button onclick="vSave()">💾 افزودن واریانت</button></div><div class="err" id="v_err"></div></div>';
+  h+='<div class="card"><h2>📋 واریانت‌های ثبت‌شده ('+fa(r.items.length)+')</h2>';\n
+  if(!r.items.length)h+='<div class="mut">هنوز واریانتی نساخته‌اید — سیستم فعلاً از همان قالب تک‌مسیرهٔ هر سرور استفاده می‌کند.</div>';\n
+  else{h+='<table><tr><th>#</th><th>سرور</th><th>ترنسپورت</th><th>پورت</th><th>SNI</th><th>سلامت</th><th>شکست</th><th></th></tr>';\n
+   for(var i=0;i<r.items.length;i++){var v=r.items[i];\n
+     h+='<tr><td>'+fa(v.id)+'</td><td>'+fa(v.server_id)+'</td><td>'+esc(v.transport)+'</td><td>'+fa(v.port)+'</td><td>'+esc(v.sni||'—')+'</td>'+\n
+       '<td><span class="pill '+(v.active&&v.healthy?'ok':'bad')+'">'+(v.active?(v.healthy?'🟢 سالم':'🟡 ناسالم'):'⛔ خارج')+'</span></td><td>'+fa(v.fail_count)+'</td>'+\n
+       '<td><button class="gh" onclick="vToggle('+v.id+')">↔️</button> <button class="rd" onclick="vDel('+v.id+')">🗑</button></td></tr>';}
+   h+='</table>';}
+  h+='</div>';$('pages').innerHTML=h;
+}
+async function vSave(){
+  var r=await api('/api/panel/variants/save',{server_id:Number($('v_srv').value),label:$('v_lab').value,transport:$('v_t').value,port:$('v_port').value,
+   security:$('v_sec').value,sni:$('v_sni').value,host:$('v_host').value,path:$('v_path').value,pbk:$('v_pbk').value,sid:$('v_sid').value,fp:$('v_fp').value,alpn:$('v_alpn').value,check_url:$('v_chk').value,active:true});
+  if(!r.ok){$('v_err').textContent='⛔ '+(r.errors?r.errors.join(' / '):r.error||'خطا');return}
+  $('v_err').textContent='';flash('✅ ثبت شد');pgAnti();
+}
+async function vToggle(id){await api('/api/panel/variants/toggle',{id:id});pgAnti()}
+async function vDel(id){if(!confirmAsk('حذف این واریانت؟'))return;await api('/api/panel/variants/delete',{id:id,confirm:true});pgAnti()}
+async function vCheck(){var o=$('vOut');o.innerHTML='<span class="spin"></span> در حال بررسی…';var r=await api('/api/panel/variants/check',{});\n
+  o.textContent=r.ok?('بررسی '+fa(r.checked)+' واریانت؛ '+fa(r.died)+' مورد خارج شد. (یادآوری: این تست از دیتاسنتر خارج از ایران است و فیلترینگ نت ملی را ثابت نمی‌کند)'):'خطا';}
+
+/* ═════ دکمه‌های منو ═════ */
+async function pgButtons(){
+  var r=await api('/api/panel/buttons/list',{});
+  if(!r.ok){$('pages').innerHTML=errBox(r.error);return}
+  var acts=r.actions||{};
+  var h='<div class="card"><h2>🔘 دکمه‌های منوی پایین ربات</h2><div class="mut">این دکمه‌ها کنار دکمه‌های اصلی در صفحه‌کلید همهٔ کاربران ظاهر می‌شوند. برای «مینی‌اپ/داشبورد» نوع miniapp را انتخاب کنید.</div>'+\n
+   '<div class="row" style="margin-top:8px"><button class="gn" onclick="btnForm(null)">➕ دکمه جدید</button><button class="gh" onclick="dashBtn()">🪟 تنظیم دکمهٔ مربعی داشبورد</button></div></div>';
+  h+='<div class="card">';\n
+  if(!r.items.length)h+='<div class="mut">هنوز دکمهٔ سفارشی‌ای نساخته‌اید.</div>';\n
+  else{for(var i=0;i<r.items.length;i++){var b=r.items[i];\n
+    h+='<div class="g"><div class="row" style="justify-content:space-between"><b>'+(b.active?'🟢':'🔴')+' '+esc(b.label)+'</b><span class="pill">'+esc(b.action)+'</span></div>'+\n
+     '<div class="mut">'+esc(b.value||'—')+' · ردیف '+fa(b.row_no)+' · '+(b.admins_only?'فقط ادمین':'همه کاربران')+'</div>'+\n
+     '<div class="row" style="margin-top:8px"><button class="gh" onclick="btnForm('+b.id+')">✏️ ویرایش</button>'+\n
+     '<button class="gh" onclick="btnToggle('+b.id+')">'+(b.active?'🔴 غیرفعال':'🟢 فعال')+'</button>'+\n
+     '<button class="rd" onclick="btnDel('+b.id+')">🗑 حذف</button></div></div>';}
+  }
+  h+='</div>';$('pages').innerHTML=h;window.__btns=r.items;
+}
+function btnForm(id){
+  var b=(window.__btns||[]).filter(function(x){return x.id===id})[0]||{label:'',action:'url',value:'',row_no:9,col_no:0,active:1,admins_only:0};
+  var acts=['url','miniapp','callback','start'];\n
+  modal('<h2>'+(id?'✏️ ویرایش دکمه':'➕ دکمه جدید')+'</h2>'+\n
+   '<label>متن دکمه (با ایموجی)</label><input id="b_lab" value="'+esc(b.label)+'" placeholder="🎯 تخفیف‌های امروز">'+\n   '<label>نوع</label><select id="b_act">'+acts.map(function(x){return '<option value="'+x+'"'+(b.action===x?' selected':'')+'>'+x+'</option>'}).join('')+'</select>'+\n
+   '<label>مقدار (لینک / مسیر مینی‌اپ / payload)</label><input id="b_val" value="'+esc(b.value||'')+'" placeholder="https://… یا /app یا shop">'+\n   '<div class="grid2"><div><label>ردیف (۹=خودکار)</label><input id="b_row" type="number" value="'+(b.row_no||9)+'"></div>'+\n   '<div><label>ستون</label><input id="b_col" type="number" value="'+(b.col_no||0)+'"></div></div>'+\n
+   '<label><input type="checkbox" id="b_adm" '+(b.admins_only?'checked':'')+' style="width:auto"> فقط برای ادمین‌ها</label>'+\n
+   '<label><input type="checkbox" id="b_act2" '+(b.active!==0?'checked':'')+' style="width:auto"> فعال</label>'+\n
+   '<div class="err" id="b_err"></div><div class="row" style="margin-top:10px"><button onclick="btnSave('+(id||0)+')">💾 ذخیره</button><button class="gh" onclick="closeModal()">انصراف</button></div>');
+}
+async function btnSave(id){
+  var r=await api('/api/panel/buttons/save',{id:id,label:$('b_lab').value,action:$('b_act').value,value:$('b_val').value,row_no:$('b_row').value,col_no:$('b_col').value,admins_only:$('b_adm').checked?'1':'0',active:$('b_act2').checked?'1':'0'});
+  if(!r.ok){$('b_err').textContent='⛔ '+(r.error||'خطا');return}
+  closeModal();flash('✅ ذخیره شد');pgButtons();
+}
+async function btnToggle(id){await api('/api/panel/buttons/toggle',{id:id});pgButtons()}
+async function btnDel(id){if(!confirmAsk('حذف این دکمه؟'))return;await api('/api/panel/buttons/delete',{id:id,confirm:true});pgButtons()}
+async function dashBtn(){var r=await api('/api/panel/menu-button',{});flash(r.ok?'✅ دکمهٔ داشبورد در منوی تلگرام تنظیم شد':'⚠️ ناموفق — آدرس Worker ثبت نشده؟',!r.ok)}
+
+/* ═════ لایسنس کانفیگ‌ساز ═════ */
+async function pgLicenses(){
+  var r=await api('/api/panel/licenses/list',{});
+  if(!r.ok){$('pages').innerHTML=errBox(r.error);return}
+  var h='<div class="card"><h2>🛠 لایسنس‌های پنل کانفیگ‌ساز</h2>'+\n
+   '<div class="mut">این محصول قابل خرید است (دستهٔ «creator» در فروشگاه). خریدار لینک اختصاصی /creator/&lt;token&gt; و یک لینک اشتراک برای سرورهای خودش می‌گیرد.</div>'+\n
+   '<div class="row" style="margin-top:8px"><input id="l_uid" placeholder="آیدی تلگرام کاربر" style="flex:1"><input id="l_days" type="number" value="30" style="width:110px"><button class="gn" onclick="licGrant()">🎁 هدیه لایسنس</button></div>'+\n
+   '<div class="mut" id="l_out"></div></div>';
+  h+='<div class="card">';\n
+  if(!r.items.length)h+='<div class="mut">هنوز لایسنسی صادر نشده است.</div>';\n
+  else{h+='<table><tr><th>#</th><th>کاربر</th><th>سقف</th><th>مصرف</th><th>انقضا</th><th>وضعیت</th><th></th></tr>';\n
+   for(var i=0;i<r.items.length;i++){var l=r.items[i];\n
+     h+='<tr><td>'+fa(l.id)+'</td><td>'+(l.username?'@'+esc(l.username):fa(l.user))+'</td>'+\n
+       '<td>'+fa(l.servers)+' سرور / '+fa(l.quota)+' کانفیگ</td><td>'+fa(l.used)+'</td><td>'+esc(l.expire)+'</td>'+\n
+       '<td><span class="pill '+(l.active?'ok':'bad')+'">'+(l.active?'🟢 فعال':'⛔ غیرفعال')+'</span></td>'+\n
+       '<td><button class="gh" onclick="licTok(\\''+esc(l.token)+'\\')">🔗</button> <button class="rd" onclick="licOff('+l.id+')">⛔</button></td></tr>';}
+   h+='</table>';}
+  h+='</div>';$('pages').innerHTML=h;
+}
+function licTok(t){navigator.clipboard&&navigator.clipboard.writeText((location.origin||'')+'/creator/'+t);flash('🔗 لینک پنل کپی شد')}
+async function licOff(id){if(!confirmAsk(' غیرفعال‌سازی این لایسنس؟'))return;await api('/api/panel/licenses/save',{id:id,active:false});pgLicenses()}
+async function licGrant(){var r=await api('/api/panel/licenses/grant',{user_id:Number($('l_uid').value),days:Number($('l_days').value)});\n
+  $('l_out').textContent=r.ok?('✅ صادر شد: '+(r.token||'')):('⛔ '+(r.error||'خطا'));if(r.ok)pgLicenses()}
 
 /* ═════ سرورها ═════ */
 async function pgServers(page,q){
@@ -1178,8 +1582,8 @@ async function pgCfg(){
    '<div class="grid2"><div><label>پروتکل</label><select id="cfg_p">'+
    '<option value="vless">VLESS</option><option value="vmess">VMess</option><option value="trojan">Trojan</option><option value="ss">Shadowsocks</option></select></div>'+
    '<div><label>کیفیت</label><select id="cfg_tier"><option value="economy">اقتصادی</option><option value="standard" selected>استاندارد</option><option value="premium">پرمیوم</option></select></div></div>'+
-   '<div class="grid2"><div><label>مدت: <b id="cfg_dv">30</b> روز</label><input id="cfg_d" type="range" min="7" max="365" value="30" oninput="$(\'cfg_dv\').textContent=this.value"></div>'+
-   '<div><label>حجم: <b id="cfg_gv">0</b> گیگ (۰=نامحدود)</label><input id="cfg_g" type="range" min="0" max="200" step="10" value="0" oninput="$(\'cfg_gv\').textContent=this.value"></div></div>'+
+   '<div class="grid2"><div><label>مدت: <b id="cfg_dv">30</b> روز</label><input id="cfg_d" type="range" min="7" max="365" value="30" oninput="$(\\'cfg_dv\\').textContent=this.value"></div>'+
+   '<div><label>حجم: <b id="cfg_gv">0</b> گیگ (۰=نامحدود)</label><input id="cfg_g" type="range" min="0" max="200" step="10" value="0" oninput="$(\\'cfg_gv\\').textContent=this.value"></div></div>'+
    '<div class="grid2"><div><label>کاربر همزمان</label><input id="cfg_dev" type="number" min="1" max="10" value="1"></div>'+
    '<div><label>لوکیشن (کلید)</label><input id="cfg_loc" value="default" placeholder="de/nl/us"></div></div>'+
    '<label>کد تخفیف (اختیاری)</label><input id="cfg_code" placeholder="مثل NOVA10" style="direction:ltr;text-align:left">'+
@@ -1201,8 +1605,8 @@ async function cfgPreview(){
    protocol:$('cfg_p').value,location:$('cfg_loc').value,tier:$('cfg_tier').value,code:$('cfg_code').value});
   if(!r.ok){$('cfg_res').textContent='⛔ '+(r.error||'خطا');return}
   var b=r.breakdown;
-  $('cfg_res').textContent='قیمت خام: $'+b.rawUsd+' | نرخ: '+fa(b.rate)+' تومان | مارجین: ×'+b.margin+'\n'+
-   'تخفیف پلکانی: '+fa(b.tierDiscountPercent)+'٪ | وفاداری: '+fa(b.loyaltyDiscountPercent)+'٪ | کد: '+(b.discountPercent?fa(b.discountPercent)+'٪':(b.discountAmount?fa(b.discountAmount)+' تومان':'—'))+'\n'+
+  $('cfg_res').textContent='قیمت خام: $'+b.rawUsd+' | نرخ: '+fa(b.rate)+' تومان | مارجین: ×'+b.margin+'\\n'+
+   'تخفیف پلکانی: '+fa(b.tierDiscountPercent)+'٪ | وفاداری: '+fa(b.loyaltyDiscountPercent)+'٪ | کد: '+(b.discountPercent?fa(b.discountPercent)+'٪':(b.discountAmount?fa(b.discountAmount)+' تومان':'—'))+'\\n'+
    '💰 قیمت نهایی: '+toman(r.toman);
 }
 async function loadDiscounts(){
@@ -1273,6 +1677,20 @@ async function pgSettings(){
    '</div></div>';
   h+='<div class="card"><h2>📢 تبلیغات گروه</h2>'+tog('group_welcome_enabled','خوش‌آمدگویی')+num('ad_interval_hours','فاصله پست (ساعت)')+
    '<label>متن تبلیغ</label><textarea id="c_ad_text" rows="3">'+esc(s.ad_text)+'</textarea></div>';
+  h+='<div class="card"><h2>🛡 ضدسانسور، ساب و موجودی</h2>'+
+   '<div class="grid2">'+num('sub_min_configs','حداقل کانفیگ هر اشتراک')+num('variant_fail_limit','آستانهٔ مرگ مسیر (پس از چند گزارش حذف شود)')+'</div>'+
+   '<div class="grid2">'+tog('variant_check_enabled','بررسی دوره‌ای مسیرها (کرون)')+tog('inline_enabled','حالت Inline')+'</div>'+
+   '<div class="grid2">'+num('low_stock_threshold','آستانهٔ هشدار موجودی (عدد)')+num('price_floor_toman','کف قیمت همه محصولات (تومان)')+'</div>'+
+   '<div class="hint">⚠️ «بررسی دوره‌ای مسیرها» از سرور Cloudflare و بیرون ایران انجام می‌شود؛ نتیجه فقط سیگنال نسبی است. تشخیص واقعیِ فیلترینگ روی نت ایران، از گزارش کاربران مینی‌اپ و دکمه‌های ✔/✖ صفحهٔ اشتراک می‌آید.</div></div>';
+  h+='<div class="card"><h2>🪙 سکه، طلا و لنگر قیمت</h2>'+
+   '<div class="grid2">'+num('coin_max_usd','سقف دلار محصولی که با سکه فروخته می‌شود')+tog('coin_allow_premium','اجازهٔ خرید پریمیوم با سکه')+'</div>'+
+   '<div class="grid2">'+num('gold_rate_manual','نرخ گرم طلای ۱۸k دستی (تومان، ۰ = خودکار)')+num('gold_margin','ضریب اضافی قیمت محصولات لنگرطلا')+'</div>'+
+   '<div class="grid2">'+num('gold_rate_url','آدرس API نرخ طلا (JSON)')+num('gold_rate_path','نام فیلد قیمت در JSON')+'</div>'+
+   '<div class="hint">اگر نرخ طلا از هیچ منبعی خوانده نشود، قیمت صفر می‌شود و خرید بسته می‌ماند — عدد ساختگی نمایش داده نمی‌شود. قیمت‌گذاری پگ = قیمت را به نرخ دلار/طلا قفل می‌کند و «کف تومان» اجازهٔ ارزانش نمی‌دهد.</div></div>';
+  h+='<div class="card"><h2>🪟 داشبورد، دکمه‌ها و کانفیگ‌ساز</h2>'+
+   '<div class="grid2">'+tog('dashboard_enabled','تب داشبورد در مینی‌اپ')+tog('custom_menu_enabled','دکمه‌های سفارشی کیبورد')+'</div>'+
+   '<div class="grid2">'+num('dashboard_label','متن دکمهٔ داشبورد (تلگرام)')+num('dashboard_url','آدرس داشبورد (خالی = خودکار)')+'</div>'+
+   '<div class="grid2">'+tog('creator_enabled','فروش پنل کانفیگ‌ساز')+tog('gateway_auto_reconcile','تطبیق خودکار پرداخت‌های معلق')+'</div></div>';
   h+='<div class="row"><button id="setSave" onclick="saveSettings()">💾 ذخیره تنظیمات</button></div>'+
    '<div class="okmsg" id="setOk"></div><div class="err" id="setErr"></div>';
   h+='<div class="card" style="margin-top:14px"><h2>✍️ متن‌های بات</h2><div id="textsBox" class="mut">در حال بارگذاری…</div></div>';
@@ -1286,7 +1704,10 @@ async function pgSettings(){
 }
 var SETTING_KEYS=['ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text',
  'price_base','price_per_gb','price_per_day','price_per_device','discount_tiers','loyalty_discount_percent','loyalty_min_paid',
- 'probe_enabled','probe_reward_coins','probe_daily_cap','probe_min_samples','clean_ip_auto_manage','clean_ip_min_healthy'];
+ 'probe_enabled','probe_reward_coins','probe_daily_cap','probe_min_samples','clean_ip_auto_manage','clean_ip_min_healthy',
+ 'sub_min_configs','variant_fail_limit','variant_check_enabled','inline_enabled','low_stock_threshold','price_floor_toman',
+ 'coin_max_usd','coin_allow_premium','gold_rate_manual','gold_margin','gold_rate_url','gold_rate_path',
+ 'dashboard_enabled','dashboard_label','dashboard_url','custom_menu_enabled','creator_enabled','gateway_auto_reconcile'];
 async function saveSettings(){
   var b=$('setSave');b.disabled=true;$('setErr').textContent='';$('setOk').textContent='';
   var payload={};
@@ -1330,7 +1751,7 @@ async function loadKillswitch(){
   box.innerHTML=KS_PROTOS.map(function(p){var x=st[p]||{manual:'auto',healthyCount:0};
    var opt=['auto','on','off'].map(function(m){return '<option value="'+m+'"'+(x.manual===m?' selected':'')+'>'+(m==='auto'?'خودکار':m==='on'?'روشن':'خاموش')+'</option>'}).join('');
    return '<div class="g"><div class="row" style="justify-content:space-between"><b>'+KS_LABEL[p]+'</b>'+(x.available?'<span class="pill ok">در دسترس ('+x.healthyCount+' مسیر سالم)</span>':'<span class="pill bad">متوقف</span>')+'</div>'+
-    '<div class="row" style="margin-top:6px"><select id="ks_'+p+'">'+opt+'</select><button onclick="ksSet(\''+p+'\')">ذخیره</button></div></div>';
+    '<div class="row" style="margin-top:6px"><select id="ks_'+p+'">'+opt+'</select><button onclick="ksSet(\\''+p+'\\')">ذخیره</button></div></div>';
   }).join('');
 }
 async function ksSet(p){var v=$('ks_'+p).value;var r=await api('/api/panel/killswitch',{set:true,protocol:p,mode:v});

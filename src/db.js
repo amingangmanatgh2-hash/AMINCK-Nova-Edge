@@ -184,6 +184,98 @@ export const SCHEMA = [
      created_at      INTEGER DEFAULT 0
    )`,
 
+  // ─── بخش ۳۲: دکمه‌های سفارشی منوی پایین (مدیریت کامل از پنل) ───
+  `CREATE TABLE IF NOT EXISTS menu_buttons (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     label       TEXT NOT NULL,               -- متن دکمه (با ایموجی)
+     action      TEXT DEFAULT 'url',          -- url | miniapp | callback | start
+     value       TEXT DEFAULT '',             -- لینک / url مینی‌اپ / payload
+     row_no      INTEGER DEFAULT 9,           -- ردیف در کیبورد
+     col_no      INTEGER DEFAULT 1,
+     admins_only INTEGER DEFAULT 0,
+     active      INTEGER DEFAULT 1,
+     sort        INTEGER DEFAULT 0,
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۳۳: تراکنش‌های درگاه بانکی ───
+  `CREATE TABLE IF NOT EXISTS gateway_tx (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     order_id      INTEGER NOT NULL,
+     user_id       INTEGER NOT NULL,
+     provider      TEXT DEFAULT '',
+     authority     TEXT DEFAULT '',           -- شناسه درگاه (authority / id)
+     signature     TEXT DEFAULT '',           -- امضای مسیر بازگشت (ضد جعل)
+     amount_toman  INTEGER DEFAULT 0,
+     fee_toman     INTEGER DEFAULT 0,
+     total_toman   INTEGER DEFAULT 0,
+     status        TEXT DEFAULT 'created',    -- created|redirected|verified|failed|error|refunded
+     ref_id        TEXT DEFAULT '',
+     card_masked   TEXT DEFAULT '',
+     payload       TEXT DEFAULT '{}',         -- پاسخ خام درگاه (JSON)
+     error         TEXT DEFAULT '',
+     created_at    INTEGER DEFAULT 0,
+     verified_at   INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۳۴: لایسنس «پنل کانفیگ‌ساز» (محصول قابل خرید) ───
+  `CREATE TABLE IF NOT EXISTS creator_licenses (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id     INTEGER NOT NULL,
+     token       TEXT UNIQUE,                 -- توکن آدرس /creator/<token>
+     api_key     TEXT DEFAULT '',             -- کلید API (خروجی/اتصال اسکریپت)
+     name        TEXT DEFAULT '',
+     servers     INTEGER DEFAULT 10,          -- سقف سرورهای هم‌زمان
+     quota       INTEGER DEFAULT 0,           -- سقف کانفیگ ساخته‌شده (۰ = نامحدود)
+     used        INTEGER DEFAULT 0,
+     expire_at   INTEGER DEFAULT 0,
+     active      INTEGER DEFAULT 1,
+     order_id    INTEGER DEFAULT 0,
+     note        TEXT DEFAULT '',
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۳۵: پروفایل ضدسانسور → هر کانفیگ چند ترنسپورت/پورت/SNI ───
+  `CREATE TABLE IF NOT EXISTS config_variants (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     server_id   INTEGER NOT NULL,
+     label       TEXT DEFAULT '',
+     transport   TEXT DEFAULT 'ws',           -- ws|grpc|xhttp|httpupgrade|tcp|ws-tls|reality
+     port        INTEGER DEFAULT 443,
+     security    TEXT DEFAULT 'tls',          -- tls | none | reality
+     sni         TEXT DEFAULT '',             -- SNI / fake domain
+     host        TEXT DEFAULT '',             -- Host header (CDN)
+     path        TEXT DEFAULT '',
+     service_name TEXT DEFAULT '',
+     alpn        TEXT DEFAULT 'h2,http/1.1',
+     fp          TEXT DEFAULT 'chrome',
+     pbk         TEXT DEFAULT '',
+     sid         TEXT DEFAULT '',
+     spx         TEXT DEFAULT 'udp,xdg,report',
+     public_key  TEXT DEFAULT '',             -- کلید عمومی پروتکل‌های need-pk (vmess/changeUserID)
+     check_url   TEXT DEFAULT '',             -- پروب اختیاری (از خارج ایران — سیگنال نسبی)
+     healthy     INTEGER DEFAULT 1,
+     fail_count  INTEGER DEFAULT 0,
+     ok_count    INTEGER DEFAULT 0,
+     last_check  INTEGER DEFAULT 0,
+     active      INTEGER DEFAULT 1,
+     note        TEXT DEFAULT '',              -- دلیل آخرین حذف/خرابی (برای ادمین)
+     sort        INTEGER DEFAULT 0,
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── بخش ۳۴: کانفیگ‌های ساخته‌شده در پنل کانفیگ‌ساز ───
+  `CREATE TABLE IF NOT EXISTS creator_configs (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     license_id  INTEGER NOT NULL,
+     name        TEXT DEFAULT '',
+     protocol    TEXT DEFAULT 'vless',
+     host        TEXT DEFAULT '',
+     port        INTEGER DEFAULT 443,
+     line        TEXT DEFAULT '',
+     created_at  INTEGER DEFAULT 0
+   )`,
+
   // ─── بخش ۵: کدهای تخفیف ───
   `CREATE TABLE IF NOT EXISTS discount_codes (
      id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -219,6 +311,30 @@ const COLUMN_MIGRATIONS = [
   ['users', 'spin_claim', "TEXT DEFAULT ''"],
   // بخش ۱: IP تمیز انتخابی برای یک سرور (فقط ستون جدید؛ ساختار قبلی دست‌نخورده)
   ['servers', 'clean_ip', "TEXT DEFAULT ''"],
+  // ── بخش ۳۲-۳۵: ستون‌های جدید قابلیت‌ها ──
+  // محصولات: حالت قیمت (ارزی/ثابت)، لنگر نرخ، سطح محصول (برای محدودیت سکه)،
+  //           موجودی، قیمت کف، توضیح و برچسب
+  ['products', 'price_mode', "TEXT DEFAULT 'fx'"],      // fx | fixed
+  ['products', 'price_toman', 'INTEGER DEFAULT 0'],      // قیمت ثابت (وقتی price_mode=fixed)
+  ['products', 'peg', "TEXT DEFAULT 'usdt'"],            // usdt | gold
+  ['products', 'tier', "TEXT DEFAULT 'standard'"],       // economy | standard | premium
+  ['products', 'min_toman', 'INTEGER DEFAULT 0'],        // کف قیمت (رقابتی/ضد دامپینگ)
+  ['products', 'stock', 'INTEGER DEFAULT -1'],           // موجودی؛ ۱- = نامحدود
+  ['products', 'sold', 'INTEGER DEFAULT 0'],
+  ['products', 'description', "TEXT DEFAULT ''"],
+  ['products', 'badge', "TEXT DEFAULT ''"],
+  ['products', 'coin_lock_premium', 'INTEGER DEFAULT 1'],// ۱ = با سکه قابل خرید نیست (premium)
+  ['orders', 'ref', "TEXT DEFAULT ''"],                   // ارجاع/کد رهگیری
+  ['orders', 'updated_at', 'INTEGER DEFAULT 0'],
+  ['orders', 'note', "TEXT DEFAULT ''"],
+  ['config_variants', 'note', "TEXT DEFAULT ''"],          // دلیل خرابی/حذف مسیر
+  ['users', 'owner_verified', 'INTEGER DEFAULT 0'],
+  ['users', 'bio', "TEXT DEFAULT ''"],
+  ['users', 'coins_spent', 'INTEGER DEFAULT 0'],
+  ['subscriptions', 'creator_license_id', 'INTEGER DEFAULT 0'],
+  ['servers', 'anti_block', "TEXT DEFAULT ''"],           // JSON پروفایل ضدسانسور سرور
+  ['receipts', 'ai_score', 'INTEGER DEFAULT 0'],
+  ['receipts', 'reviewed_by', 'INTEGER DEFAULT 0'],
 ];
 
 /** الگوهای SQL هاست‌های نمونه که هرگز نباید تحویل داده شوند */
@@ -288,13 +404,29 @@ async function seedIfEmpty(db) {
     ['🔐 OpenVPN — ۱ ماهه', 'openvpn', 'openvpn', 30, 0, 1.2, 8],
     ['📡 MTProto اختصاصی تلگرام — ۱ ماهه', 'mtproto', 'mtproto', 30, 0, 0.8, 9],
     ['🧦 SOCKS5 اختصاصی — ۱ ماهه', 'socks5', 'socks5', 30, 0, 0.8, 10],
+    // 🛠 محصول «پنل کانفیگ‌ساز» — تحویلش به سرور VPN نیاز ندارد (بخش ۲۰)
+    ['🛠 پنل کانفیگ‌ساز اختصاصی — ۳۰ روزه', 'creator', 'vless', 30, 0, 4.0, 11],
+    ['🛠 پنل کانفیگ‌ساز — ۱ ساله (ویژه)', 'creator', 'vless', 365, 0, 29.0, 12],
     ['🪙 کانفیگ اقتصادی — ۱۰ روزه', 'coin', 'vless', 10, 5, 0, 100],
     ['🪙 کانفیگ اقتصادی — ۳۰ روزه', 'coin', 'vless', 30, 20, 0, 101],
   ];
   const coinPrices = { 100: 3000, 101: 8000 };
+  // سطح محصول: economy|standard → با سکه قابل خرید؛ premium → فقط نقدی
+  const tiers = { 1: 'economy', 2: 'standard', 3: 'premium', 4: 'premium', 11: 'premium', 12: 'premium' };
   for (const [title, cat, proto, days, gb, usd, sort] of products) {
-    run('INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, sort) VALUES (?,?,?,?,?,?,?,?)',
-      title, cat, proto, days, gb, usd, coinPrices[sort] || 0, sort);
+    run(
+      'INSERT INTO products (title, category, protocol, days, traffic_gb, price_usd, coin_price, sort, tier, stock) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      title,
+      cat,
+      proto,
+      days,
+      gb,
+      usd,
+      coinPrices[sort] || 0,
+      sort,
+      tiers[sort] || 'standard',
+      -1
+    );
   }
   // ⚠️ سرورهای زیر فقط «نمونهٔ قالب» هستند: با active=0 و healthy=0 ثبت می‌شوند
   //    تا هرگز به کاربر تحویل داده نشوند. ادمین باید سرور واقعی خودش را
@@ -356,8 +488,29 @@ export const PERM_LABELS = {
   settings: '⚙️ تنظیمات',
   stats: '📊 آمار',
   export: '📤 خروجی دیتابیس',
+  payments: '💳 درگاه، پرداخت‌ها و فیش‌ها',
+  creator: '🛠 لایسنس پنل کانفیگ‌ساز',
+  buttons: '🔘 دکمه‌های منو و مینی‌اپ',
 };
 export const ALL_PERMS = Object.keys(PERM_LABELS);
+
+/**
+ * آیا قفل «تایید مالک با رمز پنل» فعال است؟
+ * true وقتی که /setup رمز گذاشته باشد (`owner_claim='1'`) و هنوز هیچ ادمینی ثبت نشده باشد.
+ * تا زمان این تایید، هیچ کاربری (حتی اولین کاربر) نقش ادمین نمی‌گیرد.
+ */
+export async function requiresOwnerClaim(db) {
+  if (String(await getSetting(db, 'owner_claim', '')) !== '1') return false;
+  const row = await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role IN ('super','admin')").first();
+  return !(Number(row?.c || 0) > 0);
+}
+
+/** ثبت مالک نهایی (بعد از وارد کردن درست رمز) */
+export async function bindOwner(db, userId) {
+  await db.prepare("UPDATE users SET role='super', owner_verified=1 WHERE id=?").bind(Number(userId)).run();
+  await setSetting(db, 'owner_id', String(userId));
+  await setSetting(db, 'owner_claim', '0'); // قفل باز شد
+}
 
 export async function ensureUser(db, tgUser, deep) {
   const now = Math.floor(Date.now() / 1000);
@@ -369,9 +522,13 @@ export async function ensureUser(db, tgUser, deep) {
       .run();
     return { user: existing, isNew: false };
   }
-  // اولین کاربر = سوپرادمین
+  // اولین کاربر = سوپرادمین — مگر اینکه قفل تایید مالک فعال باشد (بخش ۱۷)
   const count = await db.prepare('SELECT COUNT(*) AS c FROM users').first();
   const isFirst = (count?.c || 0) === 0;
+  const forcedOwner = Number((await getSetting(db, 'owner_id', '')) || 0);
+  const isForced = forcedOwner > 0 && forcedOwner === Number(tgUser.id);
+  const gate = await requiresOwnerClaim(db);
+  const role = isForced ? 'super' : isFirst && !gate ? 'super' : 'user';
   let referrer = null;
   if (deep && /^ref_(\d+)$/.test(deep)) {
     const rid = Number(RegExp.$1);
@@ -382,14 +539,15 @@ export async function ensureUser(db, tgUser, deep) {
   }
   await db
     .prepare(
-      `INSERT INTO users (id, username, first_name, role, referrer_id, created_at, last_seen, energy_left, energy_ts)
-       VALUES (?,?,?,?,?,?,?, ?, ?)`
+      `INSERT INTO users (id, username, first_name, role, owner_verified, referrer_id, created_at, last_seen, energy_left, energy_ts)
+       VALUES (?,?,?,?,?,?,?,?,?, ?)`
     )
     .bind(
       tgUser.id,
       tgUser.username || '',
       tgUser.first_name || '',
-      isFirst ? 'super' : 'user',
+      role,
+      isForced || (isFirst && !gate) ? 1 : 0,
       referrer,
       now,
       now,
@@ -398,7 +556,7 @@ export async function ensureUser(db, tgUser, deep) {
     )
     .run();
   const user = await db.prepare('SELECT * FROM users WHERE id=?').bind(tgUser.id).first();
-  return { user, isNew: true, isFirst, referrer };
+  return { user, isNew: true, isFirst, referrer, needsOwnerClaim: gate && isFirst && !isForced };
 }
 
 export async function getUser(db, id) {
@@ -425,6 +583,38 @@ export async function addBalance(db, userId, amount) {
 
 export async function addCoins(db, userId, amount) {
   await db.prepare('UPDATE users SET coins = coins + ? WHERE id=?').bind(Math.round(amount), userId).run();
+}
+
+// ─── موجودی و انبار محصولات (بخش ۲۳) ───
+
+/**
+ * کم‌کردن یک واحد از موجودی محصول. `stock = -1` یعنی نامحدود.
+ * اگر موجودی به صفر رسید، محصول خودکار از فروش خارج می‌شود (enabled=0).
+ * @returns {Promise<{ok:boolean, stock:number, soldOut:boolean}>}
+ */
+export async function consumeStock(db, productId) {
+  const id = Number(productId);
+  if (!id) return { ok: true, stock: -1, soldOut: false }; // محصول سفارشی/ساخته‌شده؛ موجودی ندارد
+  const row = await db.prepare('SELECT stock FROM products WHERE id=?').bind(id).first();
+  if (!row) return { ok: true, stock: -1, soldOut: false };
+  const stock = Number(row.stock ?? -1);
+  if (stock < 0) {
+    await db.prepare('UPDATE products SET sold = sold + 1 WHERE id=?').bind(id).run();
+    return { ok: true, stock: -1, soldOut: false };
+  }
+  if (stock === 0) return { ok: false, stock: 0, soldOut: true };
+  const left = stock - 1;
+  await db.prepare('UPDATE products SET stock=?, sold = sold + 1, enabled=? WHERE id=?').bind(left, left > 0 ? 1 : 0, id).run();
+  return { ok: true, stock: left, soldOut: left === 0 };
+}
+
+/** محصولاتی که موجودی‌شان رو به پایان است (برای اعلان ادمین) */
+export async function lowStockProducts(db, threshold = 3) {
+  const rows = await db
+    .prepare('SELECT id, title, stock, enabled FROM products WHERE stock >= 0 AND stock <= ? ORDER BY stock ASC LIMIT 20')
+    .bind(Number(threshold) || 3)
+    .all();
+  return rows.results || [];
 }
 
 // ─── ساعد‌ها ───

@@ -2,10 +2,13 @@
 //  کرون‌جاب‌ها — هر ۱۵ دقیقه: نرخ ارز، سلامت سرورها، یادآوری،
 //  تبلیغ گروه‌ها، لیگ هفتگی و انقضای خودکار تست رایگان
 // ═══════════════════════════════════════════════════════════════════
-import { faDigits, fmtToman, weekKey } from './db.js';
+import { faDigits, fmtToman, weekKey, lowStockProducts } from './db.js';
 import { getSettingValue, getNum } from './texts.js';
 import { send, ikb, btn, ubtn } from './tg.js';
-import { getUsdRate } from './pricing.js';
+import { getUsdRate, getGoldRateInfo } from './pricing.js';
+import { checkVariants } from './antiblock.js';
+import { reconcilePendingPayments } from './gateway.js';
+import { notifyAdmins } from './notify.js';
 import { healSubscription } from './subs.js';
 import { runAdScheduler } from './group.js';
 import { tmpl } from './util.js';
@@ -27,6 +30,7 @@ export async function scheduled(env) {
     await expireSubs(env);
     await runAdScheduler(env);
     await cleanIpMaintenance(env);
+    await maintenance(env);
     if (now() - (await lastRun(env, 'health')) > 6 * 3600) {
       await healthCheck(env);
       await markRun(env, 'health');
@@ -42,11 +46,70 @@ export async function scheduled(env) {
   return Date.now() - t0;
 }
 
-/** گرم نگه‌داشتن کش نرخ ارز (هر ۴ ساعت فورس رفرش) */
+/** گرم نگه‌داشتن کش نرخ ارز + نرخ طلا (هر ۴ ساعت فورس رفرش) */
 async function refreshRate(env) {
   const force = now() - (await lastRun(env, 'rate')) > 4 * 3600;
   await getUsdRate(env, force);
+  try {
+    await getGoldRateInfo(env, force);
+  } catch {}
   if (force) await markRun(env, 'rate');
+}
+
+/** کارهای خودکار جدید: تطبیق پرداخت درگاه، سلامت واریانت‌ها، موجودی */
+async function maintenance(env) {
+  const { DB } = env;
+  // ۱) درگاه بانکی: تسویهٔ تراکنش‌هایی که callback‌شان گم شده (کاربر با دکمهٔ بازگشت برنگشته)
+  if ((await getSettingValue(DB, 'gateway_auto_reconcile')) === '1') {
+    try {
+      const r = await reconcilePendingPayments(env);
+      if (r && r.checked) await notifyAdmins(env, 'gateway', `♻️ تطبیق خودکار درگاه: ${faDigits(r.checked)} تراکنش بررسی، ${faDigits(r.settled)} تراکنش تسویه شد.`);
+    } catch (e) {
+      console.error('reconcile', e);
+    }
+  }
+  // ۲) بررسی دورهٔ مسیرهای ضدسانسور (بخش ۳.۱) — هر ۳ ساعت
+  if ((await getSettingValue(DB, 'variant_check_enabled')) === '1' && now() - (await lastRun(env, 'variants')) > 3 * 3600) {
+    try {
+      const r = await checkVariants(env);
+      await markRun(env, 'variants');
+      if (r && r.died) {
+        await notifyAdmins(env, 'deadConfig', `💀 ${faDigits(r.died)} مسیر/واریانت از تحویل حذف شد (${faDigits(r.checked || 0)} مسیر بررسی شد).\nاز «🛡 ضدسانسور» ببینید کدام سرور خالی شده است.`);
+      }
+    } catch (e) {
+      console.error('variants', e);
+    }
+  }
+  // ۳) موجودی (بخش ۲۳)
+  try {
+    const th = Number(await getSettingValue(DB, 'low_stock_threshold')) || 3;
+    const low = await lowStockProducts(DB, th);
+    for (const p of low) {
+      await notifyAdmins(
+        env,
+        'outOfStock',
+        `${p.stock <= 0 ? '📦⛔ موجودی' : '📦 موجودی'} محصول «${p.title}» ${p.stock <= 0 ? 'تمام شد' : `به ${faDigits(p.stock)} رسید`}.${p.stock <= 0 && p.enabled ? '\nمحصول هنوز فعال است — اگر موجودی ندارید غیرفعالش کنید.' : ''}`,
+        null,
+        { dedupe: `stock:${p.id}:${p.stock}`, ttl: 6 * 3600 }
+      );
+    }
+  } catch (e) {
+    console.error('stock', e);
+  }
+  // ۴) سرورهایی که همهٔ مسیرهایشان مرده → به ادمین گزارش می‌شود (بخش ۳: غیرفعال‌سازی خودکار)
+  try {
+    const dead = (
+      await DB.prepare('SELECT id, name FROM servers WHERE active=1 AND healthy=0 AND last_check>? LIMIT 10').bind(now() - 7 * 86400).all()
+    ).results;
+    for (const d of dead) {
+      const left = await DB.prepare('SELECT COUNT(*) v FROM config_variants WHERE server_id=? AND active=1 AND healthy=1').bind(d.id).first();
+      if (!Number(left?.v || 0)) {
+        await notifyAdmins(env, 'deadConfig', `⛔ سرور «${d.name}» بدون مسیر سالم است.\n\nتا رفع مشکل، کانفیگ تازه‌ای از این سرور تحویل نمی‌شود؛ برای غیرفعال‌کردن: /admin → 🖥 سرورها`, null, { dedupe: `srvdead:${d.id}`, ttl: 12 * 3600 });
+      }
+    }
+  } catch (e) {
+    console.error('srvdead', e);
+  }
 }
 
 /** تست سلامت سرورها + جایگزینی خودکار سرور مرده در ساب‌ها */
@@ -75,7 +138,14 @@ async function healthCheck(env) {
         ok = !!res && res.status < 500;
       } catch {}
     }
+    const before = Number(s.healthy);
     await DB.prepare('UPDATE servers SET healthy=?, last_check=? WHERE id=?').bind(ok ? 1 : 0, now(), s.id).run();
+    if (!ok && before === 1) {
+      await notifyAdmins(env, 'deadConfig', `💀 سرور «${s.name}» (${s.protocol}) از دسترس خارج شد.\n\nساب‌های فعال این سرور به‌صورت خودکار به مسیر سالم جایگزین می‌شود (heal).`, null, { dedupe: `srv:${s.id}:dead`, ttl: 3600 });
+    }
+    if (ok && before === 0) {
+      await notifyAdmins(env, 'serviceError', `🟢 سرور «${s.name}» دوباره در دسترس شد.`, null, { dedupe: `srv:${s.id}:back`, ttl: 3600 });
+    }
   }
   // ترمیم ساب‌ها: جایگزینی سرورهای مرده
   const subs = (await DB.prepare('SELECT * FROM subscriptions WHERE active=1 AND expire_at>?').bind(now()).all()).results;
