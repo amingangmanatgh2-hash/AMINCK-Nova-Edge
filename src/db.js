@@ -289,12 +289,108 @@ export const SCHEMA = [
      min_order       INTEGER DEFAULT 0,            -- حداقل مبلغ سفارش
      active          INTEGER DEFAULT 1,
      created_at      INTEGER DEFAULT 0
+   )`,
+
+  // ─── 🧪 پست/متن شیشه‌ای (استودیو؛ کد ۵ رقمی برای انتشار در گروه) ───
+  `CREATE TABLE IF NOT EXISTS glass_posts (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     code        TEXT UNIQUE NOT NULL,           -- کد ۵ رقمی: @BotName 31763
+     user_id     INTEGER NOT NULL,
+     title       TEXT DEFAULT '',
+     body        TEXT NOT NULL DEFAULT '',
+     buttons     TEXT DEFAULT '[]',              -- JSON: [{t,u}]
+     photo       TEXT DEFAULT '',                -- file_id تصویر (اختیاری)
+     style       TEXT DEFAULT 'aurora',
+     ref_cta     INTEGER DEFAULT 0,              -- ۱ = دکمهٔ دعوت سازنده اضافه شود
+     uses        INTEGER DEFAULT 0,              -- بارگذاری/انتشار
+     views       INTEGER DEFAULT 0,              -- بازدید صفحهٔ وب
+     active      INTEGER DEFAULT 1,
+     origin      TEXT DEFAULT 'pv',              -- pv | ref | web | group | panel
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── 🛍 خرید داخل گروه (چت‌بلاک در گروه، تحویل در پیوی) ───
+  `CREATE TABLE IF NOT EXISTS group_orders (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     chat_id     INTEGER NOT NULL,
+     message_id  INTEGER DEFAULT 0,              -- پیام راهنمای پرداخت در گروه
+     order_id    INTEGER DEFAULT 0,
+     user_id     INTEGER NOT NULL,
+     product_id  INTEGER DEFAULT 0,
+     amount      INTEGER DEFAULT 0,
+     discount    INTEGER DEFAULT 0,
+     status      TEXT DEFAULT 'await_receipt',   -- await_receipt | receipt_ok | paid | rejected,
+     notified    INTEGER DEFAULT 0,              -- ۱ = اطلاع «تحویل در پیوی» در گروه فرستاده شد
+     created_at  INTEGER DEFAULT 0,
+     updated_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── ⭐ نظر و امتیاز محصول ───
+  `CREATE TABLE IF NOT EXISTS product_reviews (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     product_id  INTEGER NOT NULL,
+     user_id     INTEGER NOT NULL,
+     rating      INTEGER DEFAULT 5,              -- ۱..۵
+     text        TEXT DEFAULT '',
+     created_at  INTEGER DEFAULT 0,
+     UNIQUE(product_id, user_id)
+   )`,
+
+  // ─── ❤️ محصولات محبوب ───
+  `CREATE TABLE IF NOT EXISTS favorites (
+     user_id     INTEGER NOT NULL,
+     product_id  INTEGER NOT NULL,
+     created_at  INTEGER DEFAULT 0,
+     PRIMARY KEY (user_id, product_id)
+   )`,
+
+  // ─── 📜 گزارش‌های زمان‌بندی‌شده (انضمین: صف ارسال) ───
+  `CREATE TABLE IF NOT EXISTS broadcasts (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     text        TEXT NOT NULL,
+     photo       TEXT DEFAULT '',
+     at          INTEGER DEFAULT 0,              -- ۰ = فوری/در صف باز
+     sent        INTEGER DEFAULT 0,
+     total       INTEGER DEFAULT 0,
+     done        INTEGER DEFAULT 0,              -- ۱ = تمام شد
+     status      TEXT DEFAULT 'queued',          -- queued | running | done | failed | paused
+     error       TEXT DEFAULT '',
+     created_by  INTEGER DEFAULT 0,
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── 🗒 لاگ اقدامات ادمین (بازرس) ───
+  `CREATE TABLE IF NOT EXISTS audit_log (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     actor_id    INTEGER DEFAULT 0,
+     actor       TEXT DEFAULT '',
+     action      TEXT DEFAULT '',
+     target      TEXT DEFAULT '',
+     detail      TEXT DEFAULT '',
+     created_at  INTEGER DEFAULT 0
+   )`,
+
+  // ─── 🎁 کارت خراش روزانه ───
+  `CREATE TABLE IF NOT EXISTS scratch_cards (
+     id          INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id     INTEGER NOT NULL,
+     day         TEXT NOT NULL,                   -- YYYY-MM-DD ( UTC )
+     prize_kind  TEXT DEFAULT 'coins',            -- coins | amount | days | none
+     prize_value INTEGER DEFAULT 0,
+     won         INTEGER DEFAULT 0,
+     created_at  INTEGER DEFAULT 0,
+     UNIQUE(user_id, day)
    )`
 ];
 
 export async function initDb(db) {
   await db.batch(SCHEMA.map((sql) => db.prepare(sql)));
   await migrate(db);
+  try {
+    await db.batch(INDEX_MIGRATIONS.map((sql) => db.prepare(sql)));
+  } catch {
+    /* ایندکس‌ها اختیاری‌اند؛ نبودنشان هیچ مسیری را نمی‌شکند */
+  }
   await seedIfEmpty(db);
 }
 
@@ -335,6 +431,32 @@ const COLUMN_MIGRATIONS = [
   ['servers', 'anti_block', "TEXT DEFAULT ''"],           // JSON پروفایل ضدسانسور سرور
   ['receipts', 'ai_score', 'INTEGER DEFAULT 0'],
   ['receipts', 'reviewed_by', 'INTEGER DEFAULT 0'],
+  // ── 🌐 زبان کاربر (بخش جدید: انتخاب زبان در اولین /start) ──
+  ['users', 'lang', "TEXT DEFAULT ''"],            // '' = هنوز انتخاب نکرده
+  ['users', 'lang_set', 'INTEGER DEFAULT 0'],      // ۱ = صفحهٔ زبان را دیده
+  // ─── 🎁 جوایز روزانه/هفتگی و ضدسوءاستفاده رفرال ───
+  ['users', 'checkin_date', "TEXT DEFAULT ''"],
+  ['users', 'checkin_streak', 'INTEGER DEFAULT 0'],
+  ['users', 'checkin_mask', "TEXT DEFAULT ''"],      // ۷ رقم ۰/۱ برای ۷ روز
+  ['users', 'ref_blocked', 'INTEGER DEFAULT 0'],    // ۱ = پاداش این زیرمجموعه به دلیل سوءاستفاده قطع شده
+  ['products', 'max_devices', 'INTEGER DEFAULT 1'],  // سقف دستگاه‌های مجاز هر محصول
+  ['products', 'review_count', 'INTEGER DEFAULT 0'],
+  ['products', 'review_avg', 'REAL DEFAULT 0'],
+  ['subscriptions', 'device_label', "TEXT DEFAULT ''"],
+  ['groups', 'buy_enabled', 'INTEGER DEFAULT 1'],
+  ['glass_posts', 'photo', "TEXT DEFAULT ''"],
+  ['group_orders', 'notified', 'INTEGER DEFAULT 0'],
+  ['menu_buttons', 'label_i18n', "TEXT DEFAULT '{}'"],   // JSON: {"en":"..","ar":"..","ru":"..","tr":".."}
+];
+
+/** جدول‌هایی که در نصب‌های قدیمی وجود ندارند — ایندکس‌های ایمن */
+const INDEX_MIGRATIONS = [
+  'CREATE INDEX IF NOT EXISTS ix_glass_code ON glass_posts(code)',
+  'CREATE INDEX IF NOT EXISTS ix_glass_user ON glass_posts(user_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS ix_gorder_msg ON group_orders(chat_id, message_id)',
+  'CREATE INDEX IF NOT EXISTS ix_gorder_order ON group_orders(order_id)',
+  'CREATE INDEX IF NOT EXISTS ix_bcast_status ON broadcasts(status, at)',
+  'CREATE INDEX IF NOT EXISTS ix_audit_time ON audit_log(created_at)',
 ];
 
 /** الگوهای SQL هاست‌های نمونه که هرگز نباید تحویل داده شوند */

@@ -175,3 +175,12 @@ export async function makeBrandQR(text, label) {
 
   return encodePNG(size, H, px);
 }
+
+/** QR به‌صورت data-URL (برای صفحه‌های وب شیشه‌ای) */
+export async function qrDataUrl(text, dark = '#0b1220', light = '#ffffff') {
+  try {
+    return await QR.toDataURL(String(text || ''), { margin: 1, width: 320, color: { dark, light }, errorCorrectionLevel: 'M' });
+  } catch {
+    return '';
+  }
+}

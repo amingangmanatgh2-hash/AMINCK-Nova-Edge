@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { getSettingValue } from './texts.js';
 import { ikb } from './tg.js';
+import { menuLabel, userKeyboardRows } from './i18n.js';
 
 export const ACTIONS = {
   url: '🔗 لینک (URL)',
@@ -82,25 +83,55 @@ export async function toggleButton(db, id) {
  * @returns {Promise<{reply_markup:object, dashboardEnabled:boolean}>}
  */
 export async function mainKeyboard(db, isAdmin, opts = {}) {
+  const lang = opts.lang || 'fa';
   const dashboard = (await getSettingValue(db, 'dashboard_enabled')) !== '0';
-  const rows = [
-    [{ text: '🛍 فروشگاه' }, { text: '🎁 پروکسی و تست رایگان' }],
-    [{ text: '💳 حساب من' }, { text: '👥 زیرمجموعه من' }],
-    [{ text: '🎮 مینی‌اپ سکه‌ای' }, { text: '🤖 چت هوش مصنوعی' }],
-    [{ text: '📞 پشتیبانی' }, { text: '📖 راهنما' }],
-  ];
-  if (dashboard) rows.unshift([{ text: '🪟 داشبورد من' }, { text: '🧩 اشتراک‌های من' }]);
-  if (isAdmin) rows.push([{ text: '📊 پنل مدیریت' }]);
+  const perks = (await getSettingValue(db, 'perks_menu_enabled')) !== '0';
+  const glass = (await getSettingValue(db, 'glass_menu_enabled')) !== '0';
+  // ردیف‌های استاندارد (شیشه‌ای/جوایز/زبان) از i18n می‌آیند؛ با تنظیمات قابل خاموش‌کردن‌اند
+  const hidden = new Set();
+  if (!glass) hidden.add(menuLabel(lang, 'glass'));
+  if (!perks) hidden.add(menuLabel(lang, 'perks'));
+  if (!dashboard) hidden.add(menuLabel(lang, 'dashboard'));
+  let rows = userKeyboardRows(lang, { isAdmin: false })
+    .map((r) => r.filter((x) => !hidden.has(x)))
+    .filter((r) => r.length);
+  if (isAdmin) rows.push([menuLabel(lang, 'admin')]);
   const custom = await listButtons(db, { forAdmin: !!isAdmin });
   if (custom.length) {
     const { numbered, auto } = arrangeRows(custom, 2);
     const groups = [...numbered, ...auto];
     for (const g of groups) {
-      const row = g.map((b) => ({ text: b.label }));
+      const row = g.map((b) => ({ text: buttonLabel(b, lang) }));
       if (row.length) rows.push(row);
     }
   }
   return { reply_markup: { keyboard: rows, resize_keyboard: true, is_persistent: true }, dashboardEnabled: dashboard };
+}
+
+/** برچسب دکمهٔ سفارشی در زبان کاربر (ستون label_i18n: JSON) */
+export function buttonLabel(b, lang = 'fa') {
+  const canonical = String(b.label || '');
+  if (!lang || lang === 'fa') return canonical;
+  let map = {};
+  try {
+    map = JSON.parse(b.label_i18n || '{}');
+  } catch {
+    map = {};
+  }
+  return String(map[lang] || canonical);
+}
+
+/** همهٔ برچسب‌های ممکن یک دکمهٔ سفارشی (برای تطبیق ورودی کاربر) */
+export function buttonLabels(b) {
+  const out = [String(b.label || '')];
+  let map = {};
+  try {
+    map = JSON.parse(b.label_i18n || '{}');
+  } catch {
+    map = {};
+  }
+  for (const v of Object.values(map || {})) if (v) out.push(String(v));
+  return out.filter(Boolean);
 }
 
 /** دکمهٔ مربعی منوی تلگرام (میانبر داشبورد) */
@@ -120,7 +151,8 @@ export async function setDashboardMenuButton(env, token, { chatId = null, url = 
  */
 export async function handleCustomButton(ctx, label) {
   const btns = await listButtons(ctx.db, { forAdmin: ctx.user.role !== 'user' });
-  const b = btns.find((x) => String(x.label) === String(label));
+  const want = String(label || '').trim();
+  const b = btns.find((x) => buttonLabels(x).some((l) => String(l).trim() === want));
   if (!b) return false;
   const { send, ikb, btn, ubtn } = await import('./tg.js');
   if (b.action === 'url' && b.value) {

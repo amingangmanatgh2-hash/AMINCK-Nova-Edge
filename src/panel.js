@@ -70,6 +70,18 @@ const EDITABLE_SETTINGS = [
   'notify_throttle_seconds',
   'notify_purchase', 'notify_payment', 'notify_receipt', 'notify_suspicious', 'notify_newUser',
   'notify_referral', 'notify_serviceError', 'notify_outOfStock', 'notify_deadConfig', 'notify_gateway', 'notify_aiFlag',
+  // 🌐 زبان / 🧪 پست شیشه‌ای / 🛍 خرید گروهی / 🎁 جوایز / 📊 گزارش‌ها
+  'lang_default', 'lang_ask',
+  'glass_enabled', 'glass_menu_enabled', 'glass_public', 'glass_max_buttons', 'glass_daily_limit',
+  'glass_auto_post', 'glass_show_ref', 'glass_web_enabled', 'glass_public_publish',
+  'group_buy_enabled', 'group_discount_percent', 'group_coupon_code', 'group_pay_methods',
+  'group_show_rating', 'group_review_need_buy', 'group_receipt_require_reply',
+  'perks_enabled', 'perks_menu_enabled', 'scratch_enabled', 'scratch_prizes', 'scratch_extend_floor_toman',
+  'checkin_enabled', 'checkin_coins', 'checkin_step', 'checkin_day7_bonus',
+  'personal_coupon_enabled', 'personal_coupon_percent', 'personal_coupon_days',
+  'user_daily_orders', 'user_daily_toman', 'ref_anti_abuse', 'ref_min_account_days', 'ref_min_first_buy',
+  'ref_max_same_name', 'referral_coins',
+  'report_daily_enabled', 'report_daily_hour', 'report_weekly_enabled', 'report_notify_zero', 'broadcast_batch', 'audit_log_enabled',
 ];
 
 /** متن‌های قابل ویرایش از پنل وب */
@@ -707,6 +719,146 @@ export async function handlePanelApi(env, request, path) {
   }
 
   // ═══════════ مخزن IP تمیز (بخش ۱) ═══════════
+  // ═══════════ 🧪 پست شیشه‌ای / 🎁 جوایز / 📣 صف ارسال / 🗒 لاگ ═══════════
+  if (path === '/api/panel/glass/list') {
+    const rows = (await DB.prepare('SELECT g.*, u.first_name, u.username FROM glass_posts g LEFT JOIN users u ON u.id=g.user_id ORDER BY g.id DESC LIMIT 200').all()).results;
+    return json({
+      ok: true,
+      posts: rows.map((r) => ({
+        id: Number(r.id),
+        code: r.code,
+        owner: r.username ? '@' + r.username : String(r.first_name || r.user_id),
+        userId: Number(r.user_id),
+        title: r.title || '',
+        body: String(r.body || '').slice(0, 90),
+        style: r.style,
+        buttons: (() => {
+          try {
+            return JSON.parse(r.buttons || '[]').length;
+          } catch {
+            return 0;
+          }
+        })(),
+        uses: Number(r.uses || 0),
+        views: Number(r.views || 0),
+        active: Number(r.active || 0),
+        origin: r.origin || 'pv',
+        created: r.created_at ? fmtDate(Number(r.created_at)) : '—',
+      })),
+      totals: {
+        posts: rows.length,
+        uses: rows.reduce((a, r) => a + Number(r.uses || 0), 0),
+        views: rows.reduce((a, r) => a + Number(r.views || 0), 0),
+      },
+    });
+  }
+  if (path === '/api/panel/glass/toggle' || path === '/api/panel/glass/delete') {
+    const id = Number(body.id || 0);
+    if (!id) return json({ ok: false, error: 'id لازم است' }, 400);
+    if (path.endsWith('delete')) await DB.prepare('DELETE FROM glass_posts WHERE id=?').bind(id).run();
+    else await DB.prepare('UPDATE glass_posts SET active = CASE active WHEN 1 THEN 0 ELSE 1 END WHERE id=?').bind(id).run();
+    await panelAudit(DB, 'glass:' + (path.endsWith('delete') ? 'delete' : 'toggle'), String(id), '');
+    return json({ ok: true });
+  }
+  if (path === '/api/panel/glass/create') {
+    const { createGlassPost } = await import('./glass.js');
+    try {
+      const owner = Number(body.user_id || 0) || (await DB.prepare("SELECT id FROM users WHERE role='super' ORDER BY id LIMIT 1").first())?.id || 0;
+      const p = await createGlassPost(DB, {
+        userId: owner,
+        title: String(body.title || ''),
+        body: String(body.text || ''),
+        buttons: Array.isArray(body.buttons) ? body.buttons : [],
+        style: String(body.style || 'aurora'),
+        refCta: body.ref_cta ? 1 : 0,
+        origin: 'panel',
+      });
+      await panelAudit(DB, 'glass:create', p.code, String(body.title || '').slice(0, 40));
+      return json({ ok: true, code: p.code });
+    } catch (e) {
+      return json({ ok: false, error: String(e.message || e) }, 400);
+    }
+  }
+  if (path === '/api/panel/coupons/bulk') {
+    const { generateCoupons } = await import('./perks.js');
+    const r = await generateCoupons(DB, {
+      count: Number(body.count || 10),
+      percent: Number(body.percent || 10),
+      days: Number(body.days || 7),
+      maxUses: Number(body.max_uses || 1),
+      prefix: String(body.prefix || 'OFF'),
+      minOrder: Number(body.min_order || 0),
+    });
+    await panelAudit(DB, 'coupons:bulk', String(r.count), r.percent + '٪');
+    return json({ ok: true, created: r.created, count: r.count });
+  }
+  if (path === '/api/panel/audit') {
+    const { recentAudit } = await import('./perks.js');
+    return json({ ok: true, rows: await recentAudit(DB, Number(body.limit || 30)) });
+  }
+  if (path === '/api/panel/broadcast/list') {
+    const { listBroadcasts } = await import('./perks.js');
+    return json({ ok: true, items: await listBroadcasts(DB, 15) });
+  }
+  if (path === '/api/panel/broadcast/add') {
+    const { queueBroadcast } = await import('./perks.js');
+    const at = Number(body.at || 0) ? Math.floor(Date.now() / 1000) + Number(body.at) * 60 : 0;
+    const r = await queueBroadcast(DB, { text: String(body.text || ''), at, by: 0 });
+    await panelAudit(DB, 'broadcast:queue', '#' + r.id, String(body.text || '').slice(0, 60));
+    return json(r.ok ? { ok: true, id: r.id } : { ok: false, error: r.error }, r.ok ? 200 : 400);
+  }
+  if (path === '/api/panel/broadcast/run') {
+    const { runBroadcastBatch } = await import('./perks.js');
+    const n = Number(body.batch || await getNum(DB, 'broadcast_batch', 25));
+    const r = await runBroadcastBatch(env, env.TELEGRAM_BOT_TOKEN, { batch: n });
+    return json({ ok: true, ran: r.ran || 0 });
+  }
+  if (path === '/api/panel/perks/preview') {
+    const { salesSummary } = await import('./perks.js');
+    const d = now();
+    return json({ ok: true, day: await salesSummary(DB, d - 86400), week: await salesSummary(DB, d - 7 * 86400) });
+  }
+  if (path === '/api/panel/i18n/list') {
+    const rows = (await DB.prepare("SELECT key, value FROM settings WHERE key LIKE 'i18n:%' OR key LIKE 'text:%:__' ORDER BY key LIMIT 300").all()).results;
+    return json({ ok: true, rows, keys: (await import('./i18n.js')).I18N_KEYS, langs: ['en', 'ar', 'ru', 'tr'] });
+  }
+  if (path === '/api/panel/i18n/save') {
+    const kind = String(body.kind || 'i18n');
+    const lang = String(body.lang || 'en');
+    const key = String(body.key || '').trim();
+    const val = String(body.value || '');
+    if (!/^[A-Za-z0-9_:.-]{1,48}$/.test(key)) return json({ ok: false, error: 'کلید نامعتبر است' }, 400);
+    if (!['en', 'ar', 'ru', 'tr', 'fa'].includes(lang)) return json({ ok: false, error: 'زبان نامعتبر' }, 400);
+    const dbKey = kind === 'text' ? `text:${key}:${lang}` : `i18n:${lang}:${key}`;
+    if (!val.trim()) await DB.prepare('DELETE FROM settings WHERE key=?').bind(dbKey).run();
+    else await DB.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(dbKey, val.slice(0, 1500)).run();
+    await panelAudit(DB, 'i18n:save', dbKey, val.slice(0, 60));
+    return json({ ok: true, key: dbKey });
+  }
+  if (path === '/api/panel/backup/json') {
+    const TABLES = ['settings', 'users', 'products', 'servers', 'orders', 'subscriptions', 'receipts', 'discount_codes', 'menu_buttons', 'glass_posts', 'group_orders', 'product_reviews', 'favorites', 'broadcasts', 'creator_licenses', 'config_variants', 'groups', 'audit_log'];
+    const SECRETISH = /password|token|secret|api_key|panel_password|bot_token|owner_claim/i;
+    const dump = {};
+    for (const t of TABLES) {
+      try {
+        const rows = (await DB.prepare('SELECT * FROM ' + t + ' LIMIT 5000').all()).results || [];
+        dump[t] = rows.map((r) => {
+          const o = {};
+          for (const [k, v] of Object.entries(r)) o[k] = SECRETISH.test(k) ? (v ? '***' : '') : v;
+          // جدول settings: راز در «مقدار» است نه نام ستون → بر اساس کلید ماسک می‌شود
+          if (t === 'settings' && SECRETISH.test(String(r.key || ''))) o.value = r.value ? '***' : '';
+          return o;
+        });
+      } catch {
+        dump[t] = [];
+      }
+    }
+    await panelAudit(DB, 'backup:json', String(Object.values(dump).reduce((a, x) => a + x.length, 0)), '');
+    return new Response(JSON.stringify({ ok: true, exported_at: new Date().toISOString(), tables: dump }, null, 1), {
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Content-Disposition': 'attachment; filename="aminck-backup.json"' },
+    });
+  }
+
   if (path === '/api/panel/cleanips/list') {
     const rows = (await DB.prepare('SELECT * FROM clean_ips ORDER BY score DESC, samples DESC LIMIT 300').all()).results;
     const pending = (await DB.prepare('SELECT COUNT(*) c FROM clean_ips WHERE active=1').first())?.c || 0;
@@ -940,6 +1092,16 @@ function variantDto(v) {
 }
 
 /** تنظیمات قابل نمایش — هیچ کلید حساسی برنمی‌گردد */
+/** ثبت خودکار اقدامات پنل در لاگ ادمین (بخش جدید: بازرسی) */
+async function panelAudit(DB, action, target = '', detail = '') {
+  try {
+    const { audit } = await import('./perks.js');
+    await audit(DB, { actorId: 0, actor: 'web-panel', action, target, detail });
+  } catch {
+    /* لاگ اختیاری است؛ هیچ مسیری را نمی‌شکند */
+  }
+}
+
 async function readSettings(DB) {
   const out = {};
   for (const k of EDITABLE_SETTINGS) {
@@ -1029,6 +1191,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}td,th{padding:7px 4px;b
   <button data-p="gw">🏦 درگاه</button>
   <button data-p="anti">🛡 ضدسانسور</button>
   <button data-p="btns">🔘 دکمه‌ها</button>
+  <button data-p="glx">🧪 پست/جوایز</button>
   <button data-p="lic">🛠 لایسنس</button>
   <button data-p="set">⚙️ تنظیمات</button>
 </div>
@@ -1085,6 +1248,7 @@ async function render(){
   if(CUR==='gw')return pgGateway();
   if(CUR==='anti')return pgAnti();
   if(CUR==='btns')return pgButtons();
+  if(CUR==='glx')return pgGlass();
   if(CUR==='lic')return pgLicenses();
   if(CUR==='set')return pgSettings();
 }
@@ -1642,6 +1806,87 @@ async function loadRate(){
 async function rateRefresh(){var r=await api('/api/panel/rate',{force:true});if(!r.ok)return flash(r.error||'خطا',1);flash('🔄 نرخ بروزرسانی شد');loadRate()}
 
 /* ═════ تنظیمات ═════ */
+
+/* ═════ 🧪 پست شیشه‌ای، جوایز، بث، بازرسی ═════ */
+async function pgGlass(){
+  var r=await api('/api/panel/glass/list');
+  if(!r.ok){$('pages').innerHTML=errBox(r.error);return}
+  var t=r.totals||{};
+  var styles=['aurora','neon','minimal','royal','dark','candy'];
+  var h='<div class="card"><h2>🧪 پست‌های شیشه‌ای</h2>'+
+   '<div class="grid2"><div class="mut">تعداد پست: <b>'+esc(t.posts||0)+'</b></div><div class="mut">استفاده: <b>'+esc(t.uses||0)+'</b> · بازدید: <b>'+esc(t.views||0)+'</b></div></div>'+
+   '<div class="hint">هر پست یک کد ۵ رقمی دارد؛ کاربر با <b>@BotName 12345</b> در گروه آن را منتشر می‌کند. صفحهٔ وب: <b>/g/کد</b></div>'+
+   '<div style="overflow:auto"><table><tr><th>کد</th><th>مالک</th><th>عنوان</th><th>استایل</th><th>دکمه</th><th>کاربرد</th><th>بازدید</th><th>تاریخ</th><th>وضعیت</th><th></th></tr>';
+  (r.posts||[]).forEach(function(p){
+    h+='<tr><td><b>'+esc(p.code)+'</b></td><td>'+esc(p.owner)+'</td><td>'+esc(p.title||'—')+'</td><td>'+esc(p.style)+'</td><td>'+esc(p.buttons)+'</td><td>'+esc(p.uses)+'</td><td>'+esc(p.views)+'</td><td>'+esc(p.created)+'</td><td>'+(Number(p.active)?'<span class="ok">فعال</span>':'<span class="mut">خاموش</span>')+'</td>'+
+     '<td><button class="gh" onclick="glxToggle('+p.id+')">'+(Number(p.active)?'⏸':'▶️')+'</button> <button class="gh" onclick="glxDel('+p.id+')">🗑</button></td></tr>';
+  });
+  h+='</table></div></div>';
+  h+='<div class="card"><h2>➕ ساخت پست شیشه‌ای از پنل</h2>'+
+   '<div class="grid2"><div><label>عنوان (اختیاری)</label><input id="g_title" placeholder="🔥 پیشنهاد ویژه"></div>'+
+   '<div><label>استایل</label><select id="g_style">'+styles.map(function(x){return '<option value="'+x+'">'+x+'</option>'}).join('')+'</select></div></div>'+
+   '<label>متن پست (HTML مجاز)</label><textarea id="g_text" rows="4" placeholder="⚡ کانفیگ‌های تمیز، تحویل فوری"></textarea>'+
+   '<div class="grid2"><div><label>متن دکمه</label><input id="g_bt" placeholder="🛍 فروشگاه"></div><div><label>لینک دکمه</label><input id="g_bu" placeholder="https://t.me/yourbot"></div></div>'+
+   '<div class="row" style="margin-top:8px"><button onclick="glxCreate()">💾 ساخت و دریافت کد</button></div>'+
+   '<div class="mut" id="g_res" style="margin-top:8px"></div></div>';
+  h+='<div class="card"><h2>📣 پیام همگانی (صف ارسال)</h2>'+
+   '<label>متن پیام</label><textarea id="bc_text" rows="3" placeholder="🎁 امشب ۲۰٪ تخفیف"></textarea>'+
+   '<div class="grid2"><div><label>تأخیر (دقیقه، ۰ = فوری)</label><input id="bc_at" value="0"></div>'+
+   '<div><label>اجرای دستی</label><div class="row"><button class="gh" onclick="bcRun()">▶️ یک دسته ارسال شود</button></div></div></div>'+
+   '<div class="row" style="margin-top:6px"><button onclick="bcAdd()">➕ افزودن به صف</button></div>'+
+   '<div id="bc_list" class="mut" style="margin-top:10px">در حال بارگذاری…</div>'+
+   '<div class="hint">صف با کرون هر ۱۵ دقیقه جلو می‌رود (تعداد در هر دسته از تنظیمات).</div></div>';
+  h+='<div class="card"><h2>🎟 تولید انبوه کد تخفیف</h2>'+
+   '<div class="grid2"><div><label>تعداد</label><input id="cp_count" value="10"></div><div><label>درصد تخفیف</label><input id="cp_percent" value="10"></div></div>'+
+   '<div class="grid2"><div><label>اعتبار (روز)</label><input id="cp_days" value="7"></div><div><label>سقف استفاده هر کد</label><input id="cp_uses" value="1"></div></div>'+
+   '<div class="grid2"><div><label>پیشوند</label><input id="cp_prefix" value="OFF"></div><div><label>حداقل سفارش (تومان)</label><input id="cp_min" value="0"></div></div>'+
+   '<div class="row" style="margin-top:8px"><button onclick="cpBulk()">⚙️ ساخت کدها</button><span class="mut" id="cp_res" style="margin-right:8px"></span></div></div>';
+  h+='<div class="card"><h2>🧾 لاگ اقدامات (بازرسی)</h2><div class="row"><button class="gh" onclick="auditLoad()">🔄 نمایش آخرین ۳۰ اقدام</button><button class="gh" onclick="bkJson()">💾 دانلود پشتیبان JSON</button></div><div id="audit_box" class="mut" style="margin-top:10px"></div>'+
+   '<div class="hint">در پشتیبان JSON، مقادیر حساس (توکن/رمز/سکرت) ماسک می‌شوند.</div></div>';
+  $('pages').innerHTML=h;
+  bcLoad();auditLoad();
+}
+async function glxToggle(id){var r=await api('/api/panel/glass/toggle',{id:id});if(r.ok){flash(r.ok?'وضعیت پست تغییر کرد':'خطا',r.ok?0:1);render();}else flash(r.error||'خطا',1)}
+async function glxDel(id){if(!confirm('این پست حذف شود؟'))return;var r=await api('/api/panel/glass/delete',{id:id});if(r.ok){flash('حذف شد');render();}else flash(r.error||'خطا',1)}
+async function glxCreate(){
+  var btns=[];var bt=$('g_bt').value.trim(),bu=$('g_bu').value.trim();
+  if(bt&&bu)btns=[{t:bt,u:bu}];
+  var r=await api('/api/panel/glass/create',{title:$('g_title').value,text:$('g_text').value,style:$('g_style').value,buttons:btns});
+  var box=$('g_res');
+  if(r.ok){box.innerHTML='✅ کد انتشار: <b>'+esc(r.code)+'</b> — در گروه بنویسید <b>@BotName '+esc(r.code)+'</b>';flash('پست ساخته شد')}
+  else box.innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';
+}
+async function bcAdd(){
+  var r=await api('/api/panel/broadcast/add',{text:$('bc_text').value,at:Number($('bc_at').value||0)});
+  if(r.ok){$('bc_text').value='';flash('به صف اضافه شد #'+esc(r.id));bcLoad()}else flash(r.error||'خطا',1)
+}
+async function bcRun(){flash('در حال ارسال…');var r=await api('/api/panel/broadcast/run',{});if(r.ok){flash('✅ '+esc(r.ran)+' پیام از صف ارسال شد');bcLoad()}else flash(r.error||'خطا',1)}
+async function bcLoad(){
+  var r=await api('/api/panel/broadcast/list',{});
+  var box=$('bc_list');if(!box)return;
+  if(!r.ok){box.innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';return}
+  var st={queued:'در صف',running:'در حال ارسال',done:'تمام‌شده',paused:'متوقف',canceled:'لغوشده'};
+  var it=r.items||[];
+  box.innerHTML=it.length?('<table><tr><th>#</th><th>متن</th><th>وضعیت</th><th>ارسال‌شده</th><th>کل</th><th>زمان</th></tr>'+it.map(function(b){
+    return '<tr><td>'+esc(b.id)+'</td><td>'+esc(b.text)+'</td><td>'+esc(st[b.status]||b.status)+'</td><td>'+esc(b.delivered||0)+'</td><td>'+esc(b.total||0)+'</td><td>'+(b.at?esc(new Date(b.at*1000).toLocaleString('fa-IR')):'فوری')+'</td></tr>';
+  }).join('')+'</table>'):'<span class="mut">صف خالی است.</span>';
+}
+async function cpBulk(){
+  var r=await api('/api/panel/coupons/bulk',{count:Number($('cp_count').value||0),percent:Number($('cp_percent').value||0),days:Number($('cp_days').value||0),max_uses:Number($('cp_uses').value||0),prefix:$('cp_prefix').value||'OFF',min_order:Number($('cp_min').value||0)});
+  if(r.ok){$('cp_res').innerHTML='✅ '+esc(r.created)+' کد ساخته شد';flash('کدهای تخفیف ساخته شد')}
+  else $('cp_res').innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';
+}
+async function auditLoad(){
+  var r=await api('/api/panel/audit',{limit:30});
+  var box=$('audit_box');if(!box)return;
+  if(!r.ok){box.innerHTML='<span class="err">'+esc(r.error||'خطا')+'</span>';return}
+  var rows=r.rows||[];
+  box.innerHTML=rows.length?('<table><tr><th>زمان</th><th>کننده</th><th>اقدام</th><th>هدف</th><th>جزئیات</th></tr>'+rows.map(function(a){
+    return '<tr><td>'+esc(a.created_at?new Date(a.created_at*1000).toLocaleString('fa-IR'):'—')+'</td><td>'+esc(a.actor||'')+'</td><td>'+esc(a.action)+'</td><td>'+esc(a.target||'')+'</td><td>'+esc(String(a.detail||'').slice(0,60))+'</td></tr>';
+  }).join('')+'</table>'):'<span class="mut">چیزی ثبت نشده.</span>';
+}
+function bkJson(){window.open('/api/panel/backup/json','_blank')}
+
 async function pgSettings(){
   var r=await api('/api/panel/state');
   if(!r.ok){$('pages').innerHTML=errBox(r.error);return}
@@ -1694,15 +1939,45 @@ async function pgSettings(){
   h+='<div class="row"><button id="setSave" onclick="saveSettings()">💾 ذخیره تنظیمات</button></div>'+
    '<div class="okmsg" id="setOk"></div><div class="err" id="setErr"></div>';
   h+='<div class="card" style="margin-top:14px"><h2>✍️ متن‌های بات</h2><div id="textsBox" class="mut">در حال بارگذاری…</div></div>';
+  h+='<div class="card"><h2>🧪 پست شیشه‌ای</h2>'+
+   '<div class="grid2">'+tog('glass_enabled','پست شیشه‌ای فعال')+tog('glass_menu_enabled','دکمهٔ منوی کاربر')+tog('glass_public','ساخت برای همه (خاموش=فقط خریداران)')+tog('glass_auto_post','انتشار خودکار دکمه‌دار بعد از inline')+tog('glass_show_ref','دکمهٔ دعوت سازنده در پست‌ها')+tog('glass_web_enabled','صفحه/استودیوی وب')+tog('glass_public_publish','انتشار پست دیگران توسط هر کاربر')+'</div>'+
+   '<div class="grid2">'+num('glass_max_buttons','حداکثر دکمه هر پست (۱..۱۰)')+num('glass_daily_limit','سقف ساخت پست روزانه (۰=نامحدود)')+'</div>'+
+   '<div class="hint">پیش‌فرض: روش Inline همه‌جا کار می‌کند (کارت متنی + دکمهٔ لینکی). «انتشار خودکار دکمه‌دار» فقط وقتی ممکن است که ربات در آن چت عضو/ادمین باشد.</div></div>';
+  h+='<div class="card"><h2>🛍 خرید داخل گروه</h2>'+
+   '<div class="grid2">'+tog('group_buy_enabled','خرید در گروه فعال')+tog('group_show_rating','نمایش امتیاز محصولات در گروه')+tog('group_receipt_require_reply','فیش فقط با ریپلای روی پیام پرداخت')+tog('group_review_need_buy','امتیاز فقط باخریداران')+'</div>'+
+   '<div class="grid2">'+num('group_discount_percent','تخفیف گروهی (٪)')+num('group_pay_methods','روش‌های پرداخت (card,gateway,wallet,coin)')+'</div>'+
+   '<label>کد تخفیف پیش‌فرض گروه (اختیاری)</label><input id="c_group_coupon_code" value="'+esc(s.group_coupon_code)+'">'+
+   '<div class="hint">هر کاربری که در گروه <b>/buy</b> بزند، فروشگاه را همان‌جا می‌بیند؛ پرداخت و فیش هم در گروه است و فقط کانفیگ در پیوی تحویل می‌شود.</div></div>';
+  h+='<div class="card"><h2>🎁 باشگاه جوایز کاربر</h2>'+
+   '<div class="grid2">'+tog('perks_enabled','باشگاه جوایز')+tog('perks_menu_enabled','دکمهٔ باشگاه در منو')+tog('scratch_enabled','کارت خراش روزانه')+tog('checkin_enabled','چک‌این ۷ روزه')+tog('personal_coupon_enabled','کوپن شخصی هر کاربر')+'</div>'+
+   '<div class="grid2">'+num('checkin_coins','سکهٔ چک‌این روز اول')+num('checkin_step','افزایش هر روز')+num('checkin_day7_bonus','بونوس روز هفتم')+num('personal_coupon_percent','درصد کوپن شخصی')+num('personal_coupon_days','اعتبار کوپن شخصی (روز)')+num('scratch_extend_floor_toman','حداقل خرید برای جایزهٔ «روز» (تومان)')+'</div>'+
+   '<label>جدول جوایز کارت خراش (JSON)</label><textarea id="c_scratch_prizes" rows="3">'+esc(s.scratch_prizes)+'</textarea></div>';
+  h+='<div class="card"><h2>🛡 محدودیت، ضدسوءاستفاده و گزارش‌ها</h2>'+
+   '<div class="grid2">'+num('user_daily_orders','سقف سفارش روزانه هر کاربر (۰=نامحدود)')+num('user_daily_toman','سقف مبلغ خرید روزانه هر کاربر')+num('ref_min_account_days','حداقل سن حساب زیرمجموعه (روز)')+num('ref_min_first_buy','حداقل مبلغ اولین خرید برای پاداش')+num('ref_max_same_name','حداکثر حساب هم‌نام مجاز (۰=بدون محدودیت)')+num('referral_coins','سکهٔ هر دعوت موفق')+'</div>'+
+   '<div class="grid2">'+tog('ref_anti_abuse','فعال بودن بررسی سوءاستفاده رفرال')+tog('audit_log_enabled','لاگ اقدامات ادمین')+tog('report_daily_enabled','گزارش روزانه در پیوی ادمین')+tog('report_weekly_enabled','گزارش هفتگی')+tog('report_notify_zero','ارسال گزارش حتی با فروش صفر')+'</div>'+
+   '<div class="grid2">'+num('report_daily_hour','ساعت ارسال گزارش (UTC ۰..۲۳)')+num('broadcast_batch','تعداد پیام هر دسته در ارسال همگانی')+'</div>'+
+   '<div class="hint">گزارش‌ها و صف ارسال همگانی با کرون (هر ۱۵ دقیقه) جلو می‌روند؛ برای اجرای دستی به تب «🧪 پست/جوایز» بروید.</div></div>';
+  h+='<div class="card"><h2>🌐 زبان ربات</h2><div class="grid2">'+
+   '<div><label>زبان پیش‌فرض</label><select id="c_lang_default"><option value="fa"'+(s.lang_default==='fa'?' selected':'')+'>فارسی</option><option value="en"'+(s.lang_default==='en'?' selected':'')+'>English</option><option value="ar"'+(s.lang_default==='ar'?' selected':'')+'>العربية</option><option value="ru"'+(s.lang_default==='ru'?' selected':'')+'>Русский</option><option value="tr"'+(s.lang_default==='tr'?' selected':'')+'>Türkçe</option></select></div>'+
+   tog('lang_ask','پرسیدن زبان در اولین /start (خاموش = اجبار زبان پیش‌فرض)')+'</div>'+
+   '<div class="hint">برای ترجمهٔ کامل‌تر، متن دلخواه را با کلید <b>text:&lt;key&gt;:&lt;lang&gt;</b> در بخش «متن‌های بات» ذخیره کنید (مثلاً text:pay_intro:en). برای ترجمه‌های کوتاه ربات هم کلید <b>i18n:&lt;lang&gt;:&lt;key&gt;</b> کار می‌کند.</div></div>';
+  h+='<div class="card"><h2>🌐 ترجمهٔ دستی پیام‌های ربات</h2>'
+   +'<div class="grid2"><div><label>نوع</label><select id="tl_kind"><option value="i18n">پیام‌های ربات (i18n)</option><option value="text">متن‌های بات (text)</option></select></div>'+
+   '<div><label>زبان</label><select id="tl_lang"><option value="en">English</option><option value="ar">العربية</option><option value="ru">Русский</option><option value="tr">Türkçe</option><option value="fa">فارسی (فقط text)</option></select></div></div>'+
+   '<label>کلید</label><input id="tl_key" placeholder="مثلاً welcome یا shop_title">'+
+   '<label>متن ترجمه‌شده (خالی = حذف ترجمه و برگشت به پیش‌فرض)</label><textarea id="tl_val" rows="3"></textarea>'+
+   '<div class="row" style="margin-top:8px"><button onclick="tlSave()">💾 ذخیره ترجمه</button><button class="gh" onclick="tlLoad()">🔄 فهرست ترجمه‌ها</button></div>'+
+   '<div class="mut" id="tl_list" style="margin-top:8px"></div>'+
+   '<div class="hint">کلیدهای پیام‌های ربات: welcome, shop_title, product_buy_card, product_trial, pay_wait, referral_title, glass_title, err_sold_out … — پس از ذخیره، بلافاصله روی همان پیام‌ها اعمال می‌شود.</div></div>';
   h+='<div class="card"><h2>🔐 تغییر رمز پنل</h2><input id="npw" inputmode="numeric" maxlength="10" placeholder="رمز جدید — دقیقاً ۱۰ رقم">'+
    '<div class="hint">رمز باید دقیقاً ۱۰ رقم عددی باشد.</div><div class="err" id="perr"></div>'+
    '<div class="row" style="margin-top:8px"><button onclick="chpw()">تغییر رمز</button></div></div>';
   $('pages').innerHTML=h;
-  loadTexts();
+  loadTexts();tlLoad();
   loadRate();
   loadKillswitch();
 }
-var SETTING_KEYS=['ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text',
+var SETTING_KEYS=['lang_default','lang_ask','glass_enabled','glass_menu_enabled','glass_public','glass_max_buttons','glass_daily_limit','glass_auto_post','glass_show_ref','glass_web_enabled','glass_public_publish','group_buy_enabled','group_discount_percent','group_coupon_code','group_pay_methods','group_show_rating','group_review_need_buy','group_receipt_require_reply','perks_enabled','perks_menu_enabled','scratch_enabled','scratch_extend_floor_toman','checkin_enabled','checkin_coins','checkin_step','checkin_day7_bonus','personal_coupon_enabled','personal_coupon_percent','personal_coupon_days','user_daily_orders','user_daily_toman','ref_anti_abuse','ref_min_account_days','ref_min_first_buy','ref_max_same_name','referral_coins','report_daily_enabled','report_daily_hour','report_weekly_enabled','report_notify_zero','broadcast_batch','audit_log_enabled','ai_enabled','ai_model','ai_price_coins','usd_rate_manual','margin','referral_percent','referral_goal','card_number','card_holder','shop_enabled','trial_enabled','card_pay_enabled','wallet_enabled','game_enabled','referral_enabled','auto_verify','group_ai_enabled','group_welcome_enabled','ad_interval_hours','ad_text',
  'price_base','price_per_gb','price_per_day','price_per_device','discount_tiers','loyalty_discount_percent','loyalty_min_paid',
  'probe_enabled','probe_reward_coins','probe_daily_cap','probe_min_samples','clean_ip_auto_manage','clean_ip_min_healthy',
  'sub_min_configs','variant_fail_limit','variant_check_enabled','inline_enabled','low_stock_threshold','price_floor_toman',

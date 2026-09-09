@@ -201,9 +201,62 @@ export const DEFAULT_SETTINGS = {
   notify_aiFlag: '1',
   // ─── بخش ۱۷: قفل مالک ───
   owner_claim: '0',
+  // ─── 🌐 زبان کاربر ───
+  lang_default: 'fa',            // زبان پیش‌فرض (کاربر در اولین /start می‌تواند عوض کند)
+  lang_ask: '1',                 // ۰ = از کاربر زبان نپرس و lang_default را اجبار کن
+  // ─── 🧪 پست/متن شیشه‌ای ───
+  glass_enabled: '1',
+  glass_menu_enabled: '1',
+  glass_public: '1',             // ۰ = فقط خریداران/ادمین پست بسازند
+  glass_max_buttons: '6',        // سقف دکمه شیشه‌ای هر پست (۱..۱۰)
+  glass_daily_limit: '0',        // سقف ساخت پست در روز برای هر کاربر (۰ = نامحدود)
+  glass_auto_post: '0',          // ۱ = بعد از انتخاب نتیجهٔ inline، نسخهٔ دکمه‌دار هم منتشر شود
+  glass_show_ref: '0',           // ۱ = دکمهٔ دعوت سازنده به همه پست‌ها اضافه شود
+  glass_web_enabled: '1',        // صفحه/استودیوی وب پست شیشه‌ای
+  glass_public_publish: '0',     // ۱ = هر کسی بتواند پست دیگران را با ربات در گروهش منتشر کند
+  // ─── 🛍 خرید داخل گروه ───
+  group_buy_enabled: '1',
+  group_discount_percent: '0',
+  group_coupon_code: '',
+  group_pay_methods: 'card,gateway,wallet,coin',
+  group_show_rating: '1',
+  group_review_need_buy: '0',
+  group_receipt_require_reply: '1',
+  // ─── 🎁 باشگاه جوایز کاربر ───
+  perks_enabled: '1',
+  perks_menu_enabled: '1',
+  scratch_enabled: '1',
+  scratch_prizes: '[{"kind":"coins","value":20,"weight":42},{"kind":"coins","value":60,"weight":22},{"kind":"amount","value":15000,"weight":12},{"kind":"days","value":1,"weight":8},{"kind":"coins","value":200,"weight":4},{"kind":"none","value":0,"weight":12}]',
+  scratch_extend_floor_toman: '0',   // حداقل کل خرید برای اینکه جایزهٔ «روز» اعمال شود
+  checkin_enabled: '1',
+  checkin_coins: '15',
+  checkin_step: '5',
+  checkin_day7_bonus: '120',
+  personal_coupon_enabled: '1',
+  personal_coupon_percent: '7',
+  personal_coupon_days: '30',
+  // ─── 🛡 محدودیت و ضدسوءاستفاده ───
+  user_daily_orders: '0',        // سقف سفارش روزانه هر کاربر (۰ = نامحدود)
+  user_daily_toman: '0',         // سقف مبلغ خرید روزانه هر کاربر
+  ref_anti_abuse: '1',
+  ref_min_account_days: '0',     // ۰ = سن حساب بررسی نشود (پیش‌فرض محافظه‌کارانه برای اینکه دعوت فوری کاربر را نکشد)
+  ref_min_first_buy: '0',
+  ref_max_same_name: '3',
+  referral_coins: '25',
+  // ─── 📊 گزارش و صف ارسال ───
+  report_daily_enabled: '1',
+  report_daily_hour: '2',        // ساعت UTC ارسال گزارش روزانه
+  report_weekly_enabled: '1',
+  report_notify_zero: '0',
+  broadcast_batch: '25',         // تعداد پیام در هر اجرا (کرون هر ۵ دقیقه)
+  audit_log_enabled: '1',
 };
 
-export async function getText(db, key) {
+export async function getText(db, key, lang = '') {
+  if (lang && lang !== 'fa') {
+    const tl = await getSetting(db, `text:${key}:${lang}`, '');
+    if (tl) return tl;
+  }
   const v = await getSetting(db, `text:${key}`, '');
   return v || DEFAULT_TEXTS[key] || '';
 }

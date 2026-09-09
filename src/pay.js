@@ -5,7 +5,7 @@ import { createSubscription, checkDeliverable, buildDirectLinks } from './subs.j
 import { addBalance, getUser, fmtToman, faDigits, fmtDate } from './db.js';
 import { getNum, getSettingValue } from './texts.js';
 import { send, ikb, ubtn, btn } from './tg.js';
-import { deepLink, getBase } from './util.js';
+import { deepLink, getBase, esc } from './util.js';
 import { deliveryKind, NO_REAL_SERVER_MESSAGE, SERVICE_UNAVAILABLE_MESSAGE, NoRealServerError, serverIssues } from './proxy.js';
 import { consumeStock } from './db.js';
 import { notifyAdmins } from './notify.js';
@@ -77,6 +77,19 @@ export async function issueFor(env, user, product, order) {
   return createSubscription(env, user, product, { orderId: order?.id });
 }
 
+/** 🏷 مصرف کوپن/کد تخفیف ثبت‌شده روی سفارش (وقتی پرداخت قطعی شد) */
+async function consumeCouponFromOrder(env, order) {
+  const m = String(order?.note || '').match(/coupon:(\d+)/);
+  if (!m) return false;
+  try {
+    const { consumeDiscountCode } = await import('./pricing.js');
+    await consumeDiscountCode(env, Number(m[1]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** کسر موجودی + اعلان پایان موجودی (بخش ۲۳) */
 async function takeStock(env, product, user, order) {
   const st = await consumeStock(env.DB, product?.id);
@@ -95,6 +108,7 @@ async function takeStock(env, product, user, order) {
 /** ثبت ساب برای سفارش و بستن حلقه تحویل */
 export async function deliverOrder(env, user, product, order) {
   const sub = await issueFor(env, user, product, order);
+  await consumeCouponFromOrder(env, order);
   if (order) {
     await env.DB.prepare("UPDATE orders SET status='paid', sub_token=?, expire_at=?, paid_at=? WHERE id=?")
       .bind(sub.token, sub.expire, Math.floor(Date.now() / 1000), order.id)
@@ -121,7 +135,52 @@ async function afterPurchase(env, buyer, order) {
   const { DB } = env;
   const amount = order?.amount_toman || 0;
   const fresh = await getUser(DB, buyer.id);
+
+  // 🛍 اگر سفارش از خرید گروهی شروع شده، در گروه هم «تحویل در پیوی» اعلام شود
+  try {
+    const { notifyGroupPaid } = await import('./groupbuy.js');
+    await notifyGroupPaid(env, env.TELEGRAM_BOT_TOKEN, order?.id, fresh, 'paid');
+  } catch (e) {
+    console.error('group paid notice failed', e);
+  }
+
+  // 🎟 اگر کاربر «جایزه روز» معوقه دارد (کارت خراش بدون اشتراک) → اعمال شود
+  try {
+    const pend = await DB.prepare("SELECT value FROM settings WHERE key=?").bind(`scratch_pending:${buyer.id}`).first();
+    const extraDays = Number(pend?.value || 0);
+    if (extraDays > 0) {
+      await DB.prepare('DELETE FROM settings WHERE key=?').bind(`scratch_pending:${buyer.id}`).run();
+      const sub = await DB.prepare('SELECT * FROM subscriptions WHERE user_id=? AND active=1 ORDER BY expire_at DESC LIMIT 1').bind(buyer.id).first();
+      if (sub) {
+        await DB.prepare('UPDATE subscriptions SET expire_at = expire_at + ? WHERE id=?').bind(extraDays * 86400, sub.id).run();
+        await send(env.TELEGRAM_BOT_TOKEN, buyer.id, `🎟 جایزهٔ معوقهٔ کارت خراش (${faDigits(extraDays)} روز) به «${sub.title || 'اشتراک'}» اضافه شد ✨`);
+      }
+    }
+  } catch (e) {
+    console.error('scratch pending apply failed', e);
+  }
+
   if (!fresh?.referrer_id || fresh.ref_first_paid) return;
+  // 🛡 ضدسوءاستفاده از سیستم رفرال
+  try {
+    const referrer = await getUser(DB, fresh.referrer_id);
+    const { referralAbuseCheck } = await import('./perks.js');
+    const chk = await referralAbuseCheck(DB, fresh, referrer, amount);
+    if (!chk.allow) {
+      await DB.prepare('UPDATE users SET ref_blocked=1 WHERE id=?').bind(fresh.id).run();
+      const { notifyAdmins } = await import('./notify.js');
+      await notifyAdmins(
+        env,
+        'suspicious',
+        `🛡 <b>پاداش رفرال رد شد</b>\n👤 کاربر: <code>${fresh.id}</code> (${esc(String(fresh.first_name || '')).slice(0, 40)})\n👥 معرف: <code>${fresh.referrer_id}</code>\n💳 مبلغ: ${fmtToman(amount)}\n🧾 دلیل: <code>${esc(chk.why)}</code>`,
+        null,
+        { dedupe: 'refabuse:' + fresh.id }
+      );
+      return;
+    }
+  } catch (e) {
+    console.error('referral abuse check failed', e);
+  }
   const percent = await getNum(DB, 'referral_percent', 10);
   const reward = Math.round((amount * percent) / 100 / 1000) * 1000;
   if (reward <= 0) return;
@@ -215,6 +274,7 @@ export async function approveReceipt(env, receipt) {
 
   await DB.prepare("UPDATE receipts SET status='approved' WHERE id=?").bind(receipt.id).run();
   await DB.prepare("UPDATE orders SET status='paid', paid_at=? WHERE id=?").bind(Math.floor(Date.now() / 1000), order.id).run();
+  await consumeCouponFromOrder(env, order);
 
   if (isCharge) {
     await addBalance(DB, order.user_id, order.amount_toman);

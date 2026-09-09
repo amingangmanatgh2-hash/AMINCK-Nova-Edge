@@ -12,7 +12,8 @@ import { createSubscription, defaultTemplate, defaultPort } from './subs.js';
 import { serverIssues, isServerDeliverable, isValidMtprotoSecret, isValidHost, buildMtprotoLinks, buildSocks5Links, NoRealServerError } from './proxy.js';
 import { realActiveServerCount } from './db.js';
 import { aiDiagnostics, TEXT_MODELS } from './ai.js';
-import { parseMoney, getBase, isValidPanelPassword } from './util.js';
+import { parseMoney, getBase, isValidPanelPassword, esc } from './util.js';
+import { perksAdminPage } from './perks.js';
 import { CATS, userTag } from './user.js';
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -50,6 +51,8 @@ export async function openAdminPanel(ctx, editMsg) {
     { perm: 'settings', label: '⚙️ تنظیمات', cb: 'adm:set' },
     { perm: 'export', label: '📤 خروجی دیتابیس', cb: 'adm:export' },
     { perm: null, label: '📣 ارسال همگانی', cb: 'adm:bc' },
+    { perm: 'settings', label: '🎁 جوایز، گروه، گزارش', cb: 'adm:perks' },
+    { perm: 'export', label: '🗒 لاگ ادمین', cb: 'adm:audit' },
   ];
   const visible = items.filter((i) => !i.perm || hasPerm(u, i.perm));
   const rows = [];
@@ -949,7 +952,86 @@ export async function handleAdminCallback(ctx, data) {
   if (data === 'adm:bc') {
     if (ctx.user.role !== 'super') return answerCb(ctx.token, ctx.cbId, 'فقط سوپرادمین');
     await setState(ctx, 'admin:bc');
-    return send(ctx.token, ctx.user.id, '📣 متن پیام همگانی را بفرستید. (برای همه کاربران ارسال می‌شود — با احتیاط!)');
+    return send(
+      ctx.token,
+      ctx.user.id,
+      '📣 متن پیام همگانی را بفرستید.\n\nپس از ارسال، می‌پرسیم «فوری» یا «زمان‌بندی». پیام در صف قرار می‌گیرد و با کرون (هر ۱۵ دقیقه) دسته‌دسته ارسال می‌شود تا محدودیت سرور رد شود.'
+    );
+  }
+  if (data === 'adm:perks') return need('settings') && perksAdminPage(ctx);
+  if (data === 'adm:bc:now' || data.startsWith('adm:bc:+')) {
+    if (ctx.user.role !== 'super') return answerCb(ctx.token, ctx.cbId, 'فقط سوپرادمین');
+    const draft = (await ctx.db.prepare("SELECT value FROM settings WHERE key='bc_draft'").first())?.value || '';
+    if (!draft.trim()) {
+      await setState(ctx, 'admin:bc');
+      return send(ctx.token, ctx.user.id, '⚠️ متن پیام از قبل ذخیره نشده؛ متن را دوباره بفرستید.');
+    }
+    const mins = data === 'adm:bc:now' ? 0 : Number(data.slice(8)) || 0;
+    const { queueBroadcast, audit } = await import('./perks.js');
+    const r = await queueBroadcast(ctx.db, { text: `📣 ${draft}`, at: mins ? Math.floor(Date.now() / 1000) + mins * 60 : 0, by: ctx.user.id });
+    await audit(ctx.db, { actorId: ctx.user.id, actor: ctx.user.username || String(ctx.user.id), action: 'broadcast:queue', target: `#${r.id}`, detail: draft.slice(0, 80) });
+    await ctx.db.prepare("DELETE FROM settings WHERE key='bc_draft'").run();
+    await setState(ctx, '');
+    await answerCb(ctx.token, ctx.cbId, r.ok ? '✅ در صف قرار گرفت' : '⛔');
+    return send(
+      ctx.token,
+      ctx.user.id,
+      r.ok
+        ? `✅ ارسال همگانی #${faDigits(r.id)} در صف است.\n⏱ ${mins ? 'شروع: ' + fmtDate(Math.floor(Date.now() / 1000) + mins * 60) : 'شروع: فوری (از اجرای بعدی کرون، هر ۱۵ دقیقه)'}\n🛡 دسته‌دسته ارسال می‌شود تا محدودیت ارسال تلگرام رد شود.`
+        : `⛔ ${r.error}`
+    );
+  }
+  if (data === 'adm:audit') {
+    if (!need('export')) return;
+    const { recentAudit } = await import('./perks.js');
+    const rows = await recentAudit(ctx.db, 20);
+    const text = rows.length
+      ? '🗒 <b>آخرین اقدامات ادمین</b>\n\n' + rows.map((a) => `• ${fmtDate(a.created_at)} — <b>${a.actor || a.actor_id}</b> · ${a.action}${a.target ? ' → ' + a.target : ''}${a.detail ? '\n  <i>' + a.detail.slice(0, 90) + '</i>' : ''}`).join('\n')
+      : '🗒 لاگی ثبت نشده است. (اقدامات مهم ادمین از این به بعد ثبت می‌شود)';
+    return send(ctx.token, ctx.user.id, text, { reply_markup: menuKb([[btn('🎁 جوایز/گزارش', 'adm:perks')], [btn('📤 خروجی JSON', 'adm:exp:full')]], 'panel') });
+  }
+  if (data.startsWith('adm:report:')) {
+    const days = Number(data.slice(11)) || 0;
+    const { salesSummary, reportText } = await import('./perks.js');
+    const since = Math.floor(Date.now() / 1000) - days * 86400;
+    const s2 = await salesSummary(ctx.db, since);
+    await send(ctx.token, ctx.user.id, reportText(days >= 7 ? 'weekly' : 'daily', s2));
+    return answerCb(ctx.token, ctx.cbId, '✅ آماده شد');
+  }
+  if (data === 'adm:couponbulk') {
+    await setState(ctx, 'admin:couponbulk');
+    return send(
+      ctx.token,
+      ctx.user.id,
+      '🎟 مشخصات کوپن‌های انبوه را در یک خط بفرستید:\n<code>تعداد درصد اعتبارروز سقف‌استفاده پیشوند</code>\n\nمثال: <code>25 15 7 1 NEW</code> → ۲۵ کوپن ۱۵٪، ۷ روزه، هر کدام یک استفاده، با پیشوند NEW-'
+    );
+  }
+  if (data === 'adm:bclist') {
+    const { listBroadcasts } = await import('./perks.js');
+    const list = await listBroadcasts(ctx.db, 10);
+    if (!list.length) return send(ctx.token, ctx.user.id, '📣 صف ارسال همگانی خالی است.', { reply_markup: menuKb([[btn('📣 پیام جدید', 'adm:bc')]]) });
+    const st = { queued: '⏳ در صف', running: '📤 در حال ارسال', done: '✅ تمام شد', paused: '⏸ متوقف', failed: '⛔ خطا' };
+    return send(
+      ctx.token,
+      ctx.user.id,
+      '📣 <b>صف ارسال همگانی</b>\n\n' +
+        list.map((b) => `${st[b.status] || b.status} · #${faDigits(b.id)} · 📤 ${faDigits(b.delivered)} از ${faDigits(b.total || '?')}\n   <i>${b.text.replace(/\n/g, ' ').slice(0, 60)}</i>${b.at ? `\n   ⏰ ${fmtDate(b.at)}` : ''}`).join('\n'),
+      { reply_markup: menuKb([[btn('📣 پیام جدید', 'adm:bc'), btn('🎁 جوایز/گزارش', 'adm:perks')]])
+      }
+    );
+  }
+  if (data.startsWith('atog:')) {
+    const k = data.slice(5);
+    const ALLOW = ['scratch_enabled', 'checkin_enabled', 'personal_coupon_enabled', 'ref_anti_abuse', 'report_daily_enabled', 'report_weekly_enabled', 'group_buy_enabled', 'group_ai_enabled', 'glass_enabled', 'glass_auto_post', 'glass_public', 'glass_show_ref', 'glass_web_enabled', 'perks_menu_enabled', 'glass_menu_enabled', 'auto_verify', 'group_show_rating'];
+    if (!ALLOW.includes(k)) return answerCb(ctx.token, ctx.cbId, 'کلید مجاز نیست');
+    if (ctx.user.role !== 'super' && k.includes('glass_auto')) return answerCb(ctx.token, ctx.cbId, 'فقط سوپرادمین');
+    const cur = (await getSettingValue(ctx.db, k)) === '1';
+    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(k, cur ? '0' : '1').run();
+    const { audit } = await import('./perks.js');
+    await audit(ctx.db, { actorId: ctx.user.id, actor: ctx.user.username || String(ctx.user.id), action: 'toggle', target: k, detail: cur ? 'خاموش' : 'روشن' });
+    await answerCb(ctx.token, ctx.cbId, cur ? 'خاموش شد' : 'روشن شد');
+    const { perksAdminPage } = await import('./perks.js');
+    return perksAdminPage(ctx);
   }
   if (data.startsWith('adm:reply:')) {
     const uid = data.slice(10);
@@ -1202,14 +1284,46 @@ export async function handleAdminText(ctx, text) {
     return send(ctx.token, ctx.user.id, '✅ گروه ثبت شد. پست‌های تبلیغاتی زمان‌بندی‌شده برای آن فعال است.');
   }
   if (st === 'admin:bc') {
+    await setState(ctx, 'admin:bc:confirm');
+    await ctx.db.prepare('INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind('bc_draft', text).run();
+    return send(
+      ctx.token,
+      ctx.user.id,
+      `👀 <b>پیش‌نمایش پیام همگانی</b>\n\n📣 ${esc(text.slice(0, 900))}\n\n⏱ انتخاب کنید: فوری یا زمان‌بندی؟ (برای زمان‌بندی عدد دقیقه بفرستید)`,
+      { reply_markup: ikb([[btn('🚀 الان ارسال شود (صف)', 'adm:bc:now')], [btn('⏳ ۶۰ دقیقه دیگر', 'adm:bc:+60'), btn('⏳ فردا', 'adm:bc:+1440')]]) }
+    );
+  }
+  if (st === 'admin:bc:confirm') {
+    const mins = Number(String(text).match(/\d+/)?.[0] || 0);
+    if (!mins) return send(ctx.token, ctx.user.id, '⚠️ فقط عدد دقیقه بفرستید (مثلاً ۶۰) یا /cancel.');
     await setState(ctx, '');
-    const users = (await ctx.db.prepare('SELECT id FROM users WHERE banned=0').all()).results;
-    let ok = 0;
-    for (const u of users) {
-      const r = await send(ctx.token, u.id, `📣 ${text}`);
-      if (r?.ok) ok++;
-    }
-    return send(ctx.token, ctx.user.id, `✅ برای ${faDigits(ok)} کاربر ارسال شد.`);
+    const draft = (await ctx.db.prepare("SELECT value FROM settings WHERE key='bc_draft'").first())?.value || '';
+    const { queueBroadcast } = await import('./perks.js');
+    const r = await queueBroadcast(ctx.db, { text: `📣 ${draft}`, at: Math.floor(Date.now() / 1000) + mins * 60, by: ctx.user.id });
+    return send(ctx.token, ctx.user.id, r.ok ? `✅ در صف قرار گرفت (هر ۱۵ دقیقه یک دسته ارسال می‌شود).\n⏰ ارسال از: ${fmtDate(Math.floor(Date.now() / 1000) + mins * 60)}` : `⛔ ${r.error}`);
+  }
+  if (st === 'admin:couponbulk') {
+    await setState(ctx, '');
+    const parts = String(text).split(/[\s،]+/).filter(Boolean).map((x) => Number(String(x).match(/\d+/)?.[0] || NaN));
+    const o = {
+      count: Number.isFinite(parts[0]) ? parts[0] : 10,
+      percent: Number.isFinite(parts[1]) ? parts[1] : 10,
+      days: Number.isFinite(parts[2]) ? parts[2] : 7,
+      maxUses: Number.isFinite(parts[3]) ? parts[3] : 1,
+      prefix: String(text).trim().split(/\s+/).pop() || 'OFF',
+    };
+    const { generateCoupons } = await import('./perks.js');
+    const r = await generateCoupons(ctx.db, o);
+    const { audit } = await import('./perks.js');
+    await audit(ctx.db, { actorId: ctx.user.id, actor: ctx.user.username || String(ctx.user.id), action: 'coupons:bulk', target: `${r.count}`, detail: `${o.percent}% / ${o.days}d` });
+    if (!r.count) return send(ctx.token, ctx.user.id, '⛔ هیچ کوپنی ساخته نشد.');
+    return send(
+      ctx.token,
+      ctx.user.id,
+      `🎟 <b>${faDigits(r.count)} کوپن ساخته شد</b> · ${faDigits(r.percent)}٪ · ${faDigits(r.days)} روز\n\n` +
+        r.created.map((c) => `<code>${c}</code>`).join(' · ') +
+        `\n\n📤 برای کپی: از پنل وب بخش «کدهای تخفیف» خروجی بگیرید.`
+    );
   }
   if (st.startsWith('admin:setv:')) {
     const k = st.split(':')[2];

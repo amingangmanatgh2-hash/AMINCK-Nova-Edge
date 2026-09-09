@@ -13,6 +13,7 @@ import { healSubscription } from './subs.js';
 import { runAdScheduler } from './group.js';
 import { tmpl } from './util.js';
 import { cleanIpMaintenance } from './cleanip.js';
+import { runBroadcastBatch, sendSalesReport } from './perks.js';
 
 const now = () => Math.floor(Date.now() / 1000);
 
@@ -39,6 +40,10 @@ export async function scheduled(env) {
       await reminders(env);
       await markRun(env, 'remind');
     }
+    // 📣 صف ارسال همگانی (زمان‌بندی‌شده) — هر اجرا یک دسته می‌فرستد
+    await broadcastTick(env);
+    // 📊 گزارش فروش روزانه/هفتگی در پیوی ادمین‌ها
+    await reportTick(env);
     await leagueCheck(env);
   } catch (e) {
     console.error('scheduled error', e);
@@ -183,6 +188,41 @@ async function reminders(env) {
     await send(env.TELEGRAM_BOT_TOKEN, user.id, text, { reply_markup: kb });
     await DB.prepare('UPDATE subscriptions SET reminder_sent=1 WHERE id=?').bind(s.id).run();
     await DB.prepare('UPDATE users SET last_reminded=? WHERE id=?').bind(now(), user.id).run();
+  }
+}
+
+// ─── 📣 صف ارسال همگانی ───
+async function broadcastTick(env) {
+  const { DB } = env;
+  const due = await DB.prepare("SELECT COUNT(*) c FROM broadcasts WHERE status IN ('queued','running') AND (at=0 OR at<=?)").bind(now()).first();
+  if (!Number(due?.c || 0)) return;
+  const batch = await getNum(DB, 'broadcast_batch', 25);
+  const r = await runBroadcastBatch(env, env.TELEGRAM_BOT_TOKEN, { batch });
+  await DB.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').bind('broadcast_last_run', String(now())).run();
+  if (r?.ran) console.log('broadcast ran', r.ran);
+}
+
+// ─── 📊 گزارش‌ها ───
+async function reportTick(env) {
+  const { DB } = env;
+  if ((await getSettingValue(DB, 'report_daily_enabled')) === '0' && (await getSettingValue(DB, 'report_weekly_enabled')) === '0') return;
+  const hour = Number(await getSettingValue(DB, 'report_daily_hour')) || 0;
+  const d = new Date();
+  if (d.getUTCHours() !== hour) return;
+  const dayIso = d.toISOString().slice(0, 10);
+  if ((await getSettingValue(DB, 'report_daily_enabled')) !== '0') {
+    const last = await DB.prepare("SELECT value FROM settings WHERE key='report_daily_last'").first();
+    if (String(last?.value || '') !== dayIso) {
+      await DB.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').bind('report_daily_last', dayIso).run();
+      await sendSalesReport(env, 'daily');
+    }
+  }
+  if (d.getUTCDay() === 1 && (await getSettingValue(DB, 'report_weekly_enabled')) !== '0') {
+    const wk = await DB.prepare("SELECT value FROM settings WHERE key='report_weekly_last'").first();
+    if (String(wk?.value || '') !== dayIso) {
+      await DB.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').bind('report_weekly_last', dayIso).run();
+      await sendSalesReport(env, 'weekly');
+    }
   }
 }
 

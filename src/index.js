@@ -8,7 +8,7 @@ import { withBotToken } from './config.js';
 import { handleSetup } from './setup.js';
 import { tg, send, getMe, setupBotProfile, uploadProfilePhoto, userMainKb } from './tg.js';
 import { getText, DEFAULT_TEXTS } from './texts.js';
-import { html, text, json } from './util.js';
+import { html, text, json, getBase } from './util.js';
 import { subLandingHtml } from './subs.js';
 import { makeBrandQR } from './qr.js';
 import { scheduled } from './jobs.js';
@@ -17,6 +17,9 @@ import { panelHtml, handlePanelApi, ensurePanelPassword } from './panel.js';
 import { onBotJoinedGroup, welcomeNewMember, groupAiReply } from './group.js';
 import { probeTargets, probeReport, applyConnectionFeedback } from './cleanip.js';
 import { handleInlineQuery } from './inline.js';
+import { handleChosenInline, configCardHtml, inlineGlassResults, handleGlassCommand, handleGlassCallback, glassLandingHtml, handleGlassApi, glassStudioHtml, getGlassByCode, glassMenu } from './glass.js';
+import { handleGroupMessage, handleGroupCallback, handleGroupReceiptPhoto, groupIntro } from './groupbuy.js';
+import { canonicalLabel } from './i18n.js';
 import { handleGatewayCallback } from './gateway.js';
 import { creatorPageHtml, creatorSubResponse, handleCreatorApi } from './creator.js';
 import { setDashboardMenuButton } from './menu.js';
@@ -82,11 +85,27 @@ export default {
         const res = await applyConnectionFeedback(env, body?.token || '', body?.ip || '');
         return json(res, res.ok ? 200 : 400);
       }
+      if (path.startsWith('/api/glass/')) return await handleGlassApi(env, request);
       if (path.startsWith('/api/game/')) return await handleGameApi(env, request, path);
       if (path.startsWith('/api/panel/')) return await handlePanelApi(env, request, path);
       if (path === '/panel' || path === '/panel/') return await panelHtml(env);
       if (path === '/app' || path === '/app/') return gameHtml(env);
-      if (path.startsWith('/sub/')) return await subPage(env, path.slice(5));
+      if (path === '/g/studio' || path.startsWith('/g/studio/')) {
+        const parts = path.split('/').filter(Boolean); // g, studio, uid, sig
+        return await glassStudioHtml(env, request, Number(parts[2] || 0), parts[3] || '');
+      }
+      if (path.startsWith('/g/')) {
+        const code = path.slice(3).replace(/[^0-9]/g, '').slice(0, 8);
+        const p = await getGlassByCode(env.DB, code);
+        if (!p || !p.active) return html('<meta charset="utf-8"><body style=\"font-family:sans-serif;background:#05070f;color:#fff;display:grid;place-items:center;height:100vh;margin:0\"><div>⛔ این پست شیشه‌ای پیدا نشد یا حذف شده است.</div></body>', 404);
+        return await glassLandingHtml(env.DB, p, { bot: await getBotUsername(env, token), origin: url.origin });
+      }
+      if (path.startsWith('/sub/')) {
+        const t = path.slice(5);
+        if (t.endsWith('/card')) return await configCardHtml(env, t.slice(0, -5)); // 🧪 نسخهٔ شیشه‌ای کانفیگ
+        return await subPage(env, t);
+      }
+      if (path.startsWith('/sc/')) return await configCardHtml(env, path.slice(4));
       if (path === '/logo.png' || path === '/logo.jpg') {
         return new Response(Uint8Array.from(atob(LOGO_JPG_B64), (c) => c.charCodeAt(0)), { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' } });
       }
@@ -144,15 +163,27 @@ async function dispatch(update, env, token) {
     const chat = mcm.chat;
     if ((chat.type === 'group' || chat.type === 'supergroup') && ['member', 'administrator'].includes(st)) {
       await onBotJoinedGroup(env, chat);
+      try {
+        await groupIntro(env, chat.id, token, await getBotUsername(env, token));
+      } catch (e) {
+        console.error('group intro failed', e);
+      }
     }
     return;
   }
 
-  // 📎 حالت Inline — ویترین محصولات در هر چت
+  // 📎 حالت Inline — ویترین محصولات + پست شیشه‌ای در هر چت
   if (update.inline_query) {
-    return handleInlineQuery(env, token, update.inline_query, await getBotUsername(env, token));
+    const username = await getBotUsername(env, token);
+    const glassHandled = await handleGlassInline(env, token, update.inline_query, username);
+    if (glassHandled) return;
+    return handleInlineQuery(env, token, update.inline_query, username);
   }
-  if (update.chosen_inline_result) return; // انتخاب شد؛ ثبت لازم نیست
+  // 🧪 کاربر نتیجهٔ inline را انتخاب کرد → آمار + (اختیاری) انتشار نسخهٔ دکمه‌دار
+  if (update.chosen_inline_result) {
+    await handleChosenInline(env, token, update.chosen_inline_result, await getBotUsername(env, token));
+    return;
+  }
 
   const msg = update.message;
   const cb = update.callback_query;
@@ -164,8 +195,22 @@ async function dispatch(update, env, token) {
       for (const nm of newMembers) await welcomeNewMember(env, msg.chat, nm);
       return;
     }
-    // /start و /help در گروه → هدایت به پیوی به‌جای سکوت
     const gtext = (msg.text || '').trim();
+    // 🧪 پست شیشه‌ای در گروه: /glass post 31763
+    if (/^\/glass(?:@\w+)?\b/i.test(gtext)) {
+      const uid = msg.from?.id;
+      if (!uid) return;
+      await ensureUser(DB, msg.from);
+      const gUser = (await getUser(DB, uid)) || { id: uid, role: 'user', total_paid: 0, lang: 'fa', state: '', first_name: msg.from.first_name || '' };
+      const ctx = { env, db: DB, token, user: gUser, update, botUsername: await getBotUsername(env, token), chatId: msg.chat.id };
+      return handleGlassCommand(ctx, gtext.replace(/^\/glass(?:@\w+)?\s*/i, ''), { inGroup: true, chatId: msg.chat.id });
+    }
+    // 🛍 خرید داخل گروه (فروشگاه، فیش، پرداخت) — همه در گروه، تحویل در پیوی
+    if (msg.photo?.length) {
+      const handledReceipt = await handleGroupReceiptPhoto(env, msg, token);
+      if (handledReceipt) return;
+    }
+    if (await handleGroupMessage(env, msg, token, await getBotUsername(env, token))) return;
     if (/^\/(start|help)(@\w+)?$/i.test(gtext)) {
       const bu = await getBotUsername(env, token);
       await tg(token, 'sendMessage', {
@@ -177,7 +222,7 @@ async function dispatch(update, env, token) {
     }
     // چت هوش مصنوعی داخل گروه (ریپلای/منشن/«ربات ...»)
     await groupAiReply(env, msg, await getBotUsername(env, token));
-    return; // خرید همچنان فقط در پیوی انجام می‌شود
+    return;
   }
 
   // ── کال‌بک ──
@@ -187,6 +232,13 @@ async function dispatch(update, env, token) {
     if (!user || user.banned) return tg(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: '⛔' });
     const ctx = { env, db: DB, token, user: await getUser(DB, uid), update, cbId: cb.id, botUsername: await getBotUsername(env, token) };
     const data = cb.data || '';
+    // 🧪 استودیوی پست شیشه‌ای + 🎁 باشگاه جوایز + 🌐 زبان
+    if (/^(gl:|perk:|rev:|lang:)/.test(data)) {
+      if (data.startsWith('gl:')) return handleGlassCallback(ctx, data);
+      return handleUserCallback(ctx, data);
+    }
+    // 🛍 خرید داخل گروه (کال‌بک‌های gb: از چت گروه)
+    if (data.startsWith('gb:')) return handleGroupCallback(ctx, data);
     if (data.startsWith('adm:') || data === 'panel' || data.startsWith('rcpt:') || data.startsWith('npw:') || data.startsWith('nsw:')) {
       if (!isAdmin(ctx.user)) return tg(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: '⛔ دسترسی ندارید' });
       if (data.startsWith('npw:') || data.startsWith('nsw:')) return handleWizardCallback(ctx, data);
@@ -263,6 +315,24 @@ async function dispatch(update, env, token) {
     if (msg.document) return send(token, tgUser.id, '🧾 لطفاً فیش را به صورت تصویر (عکس) ارسال کنید.');
     return;
   }
+}
+
+/** اگر کاربر کد پست شیشه‌ای را نوشت، همان را نشان بده (وگرنه فروشگاه) */
+async function handleGlassInline(env, token, iq, username) {
+  const q = String(iq.query || '').trim();
+  const isCode = /^#?\d{4,8}$/.test(q);
+  const enabled = (await getSettingValue(env.DB, 'glass_enabled', '1')) !== '0';
+  if (!enabled) return false;
+  if (!isCode) return false; // بقیهٔ کوئری‌ها → ویترین محصولات
+  const origin = await getBase(env);
+  let lang = 'fa';
+  try {
+    const u = await getUser(env.DB, iq.from?.id || 0);
+    lang = u?.lang || 'fa';
+  } catch {}
+  const results = await inlineGlassResults(env.DB, { query: q, bot: username, origin, userId: iq.from?.id || 0, lang });
+  await tg(token, 'answerInlineQuery', { inline_query_id: iq.id, results, cache_time: 5, is_personal: false });
+  return true;
 }
 
 let firstRunLock = false;

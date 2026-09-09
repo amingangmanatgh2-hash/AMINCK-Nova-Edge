@@ -3,6 +3,7 @@
 //  اجرا:  npm test
 // ═══════════════════════════════════════════════════════════════════
 import { DatabaseSync } from 'node:sqlite';
+import { readFile } from 'node:fs/promises';
 
 // ─── ثبت نتایج ───
 let pass = 0;
@@ -2119,6 +2120,625 @@ section('۴۴) کرون‌جاب: کارهای خودکار');
   } finally {
     globalThis.fetch = prev;
   }
+}
+
+
+// ── ۴۵) 🌐 چندزبانگی (بخش جدید: انتخاب زبان در اولین /start) ──
+section('۴۵) چندزبانگی: فارسی، انگلیسی، عربی، روسی، ترکی');
+{
+  const { canonicalLabel, userKeyboardRows, menuLabel, normalizeLang, isRtl, t, t: tt, langName } = await import('../src/i18n.js');
+  check('نگاشت برچسب انگلیسی به کلید یکپارچهٔ فارسی', canonicalLabel('🛍 Store') === '🛍 فروشگاه', canonicalLabel('🛍 Store'));
+  check('برچسب روسی هم نگاشت می‌شود', canonicalLabel('🛍 Магазин') === '🛍 فروشگاه');
+  check('برچسب ناشناس بدون تغییر می‌ماند', canonicalLabel('سلام') === 'سلام');
+  const rows = userKeyboardRows('en');
+  check('کیبورد انگلیسی ۷ ردیف دارد (شیشه‌ای/جوایز/زبان)', rows.length === 7, String(rows.length));
+  check('دکمهٔ باشگاه جوایز در کیبورد انگلیسی هست', rows.flat().includes('🎁 Rewards club'));
+  // برچسب بومی هر پنج زبان باید به کلید فارسی برگردد (وگرنه دکمهٔ جوایز در عربی/روسی بی‌کار می‌ماند)
+  for (const lbl of ['🎁 نادي الجوائز', '🎁 Клуб наград', '🎁 Ödül kulübü', '🎁 Rewards club']) {
+    check('برچسب «' + lbl + '» به مسیر جوایز نگاشت می‌شود', canonicalLabel(lbl) === '🎁 باشگاه جوایز', canonicalLabel(lbl));
+  }
+  const rowsAr = userKeyboardRows('ar', { isAdmin: false });
+  check('کیبورد عربی برچسب عربی جوایز را دارد (نه فارسی)', rowsAr.flat().includes('🎁 نادي الجوائز'));
+  check('دکمهٔ پست شیشه‌ای در کیبورد انگلیسی هست', rows.flat().includes('🧪 Glass post'));
+  check('دکمهٔ باشگاه جوایز/زبان در کیبورد هست', rows.flat().includes('🌐 Language'));
+  check('کیبورد فارسی همان برچسب‌های همیشگی را دارد', userKeyboardRows('fa').flat().includes('🛍 فروشگاه'));
+  check('برچسب ترکی ساخته می‌شود', menuLabel('tr', 'glass') === '🧪 Cam gönderi', menuLabel('tr', 'glass'));
+  check('زبان‌های منطقه‌ای نرمال می‌شوند', normalizeLang('en-GB') === 'en' && normalizeLang('ar-EG') === 'ar' && normalizeLang('xx') === 'fa');
+  check('جهت RTL برای فارسی/عربی و LTR برای بقیه', isRtl('fa') && isRtl('ar') && !isRtl('en') && !isRtl('ru') && !isRtl('tr'));
+  check('متن انگلیسی جایگزین {name} می‌پذیرد', t('en', 'welcome', { name: 'Ali' }).includes('AMINCK Nova'));
+  check('نام زبان‌ها درست است', langName('ru') === 'Русский' && langName('tr') === 'Türkçe');
+  const { langKeyboard } = await import('../src/i18n.js');
+  const kb = langKeyboard();
+  check('صفحهٔ انتخاب زبان ۵ گزینه دارد', kb.inline_keyboard.flat().length === 5, String(kb.inline_keyboard.flat().length));
+  check('همهٔ گزینه‌ها callback زبان دارند', kb.inline_keyboard.flat().every((b) => /^lang:(fa|en|ar|ru|tr)$/.test(b.callback_data)));
+
+  // جریان واقعی: کاربر تازه → اول زبان، بعد منو
+  const env = await makeEnv();
+  const { handleStart, setUserLang, showMainMenu } = await import('../src/user.js');
+  const { ensureUser, getUser } = await import('../src/db.js');
+  const { user } = await ensureUser(env.DB, { id: 7710001, first_name: 'New' });
+  const sent2 = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    let p = {};
+    try { p = JSON.parse(init.body || '{}'); } catch {}
+    sent2.push({ url: u.split('/').pop(), payload: p });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: sent2.length } }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const ctx = { env, db: env.DB, token: 'TESTTOKEN', user: await getUser(env.DB, 7710001), update: {}, botUsername: 'aminck_test_bot', isNew: true };
+  await handleStart(ctx, '');
+  const langMsg = sent2.find((s) => /Select language/.test(s.payload.text || ''));
+  check('اولین /start → منوی انتخاب زبان (قبل از فروشگاه)', !!langMsg);
+  check('صفحهٔ زبان ۵ دکمهٔ زبان دارد', !!langMsg && (langMsg.payload.reply_markup?.inline_keyboard || []).flat().length === 5);
+  await setUserLang(ctx, 'ar');
+  const after = await getUser(env.DB, 7710001);
+  check('زبان کاربر در دیتابیس ثبت شد', after.lang === 'ar' && Number(after.lang_set) === 1, `${after.lang}/${after.lang_set}`);
+  const arMenu = sent2.filter((s) => /المتجر/.test(JSON.stringify(s.payload.reply_markup || '')));
+  check('کیبورد بعد از انتخاب زبان، عربی است', arMenu.length > 0);
+  sent2.length = 0;
+  await showMainMenu(ctx);
+  const kbTxt = JSON.stringify(sent2[0]?.payload?.reply_markup?.keyboard || []);
+  check('منوی اصلی به زبان کاربر (عربی)', kbTxt.includes('🧩 اشتراكاتي') && kbTxt.includes('🛍 المتجر'), kbTxt.slice(0, 120));
+  // lang_ask=0 → پرسش حذف و زبان پیش‌فرض تحمیل می‌شود
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('lang_ask','0') ON CONFLICT(key) DO UPDATE SET value='0'").run();
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('lang_default','tr') ON CONFLICT(key) DO UPDATE SET value='tr'").run();
+  const { user: u2 } = await ensureUser(env.DB, { id: 7710002, first_name: 'T2' });
+  sent2.length = 0;
+  await handleStart({ env, db: env.DB, token: 'TESTTOKEN', user: await getUser(env.DB, 7710002), update: {}, botUsername: 'aminck_test_bot', isNew: true }, '');
+  const forced = await getUser(env.DB, 7710002);
+  check('با lang_ask=0 زبان پیش‌فرض تحمیل می‌شود (ترکی)', forced.lang === 'tr' && !/Select language/.test(JSON.stringify(sent2)), forced.lang);
+  globalThis.fetch = prev;
+  void u2; void user;
+}
+
+// ── ۴۶) 🧪 پست شیشه‌ای: ساخت، کد، اینلاين، صفحهٔ وب ──
+section('۴۶) 🧪 پست شیشه‌ای (کد ۵ رقمی، دکمه شیشه‌ای، صفحهٔ وب)');
+{
+  const env = await makeEnv();
+  const { ensureUser } = await import('../src/db.js');
+  await ensureUser(env.DB, { id: 7720001, first_name: 'Glass' });
+  const G = await import('../src/glass.js');
+  const p = await G.createGlassPost(env.DB, {
+    userId: 7720001,
+    title: 'فروش ویژه',
+    body: '⚡️ بهترین کانفیگ‌ها\n🔥 ۵۰٪ تخفیف تا نیمه‌شب',
+    buttons: [{ t: '🛍 خرید', u: 'https://buy.test' }, { t: '📞 پشتیبانی', u: 'https://t.me/support' }, { t: '⛔ بدون لینک', u: 'not-a-url' }],
+    style: 'neon',
+  });
+  check('پست ساخته شد و کد ۵ رقمی گرفت', /^\d{5}$/.test(p.code), p.code);
+  check('دکمهٔ بدون لینک معتبر حذف شد', p.buttons.length === 2, String(p.buttons.length));
+  check('سبک ذخیره شد', p.style === 'neon');
+  const p2 = await G.getGlassByCode(env.DB, p.code);
+  check('پیدا کردن پست فقط با کد', p2.id === p.id);
+  const txt = G.glassTelegramText(p, { bot: 'aminck_test_bot', lang: 'fa' });
+  check('متن تلگرام کد و نام بات را برای انتشار دارد', txt.includes(`@aminck_test_bot ${p.code}`));
+  check('دکمه‌ها در نسخهٔ inline به‌صورت لینک می‌آیند (محدودیت تلگرام)', txt.includes('<a href="https://buy.test">⚡️ 🛍 خرید</a>'));
+  const kb = G.glassKeyboard(p, { bot: 'aminck_test_bot', publicUrl: 'https://bot.test/g/' + p.code });
+  check('کیبورد شیشه‌ای واقعی (inline_keyboard) ساخته می‌شود', kb.inline_keyboard[0][0].url === 'https://buy.test');
+  check('دکمهٔ صفحهٔ وب به پست اضافه می‌شود', JSON.stringify(kb).includes('/g/' + p.code));
+  const res = await G.inlineGlassResults(env.DB, { query: p.code, bot: 'aminck_test_bot', origin: 'https://bot.test', userId: 7720001 });
+  check('اینلاين با کد، ۲ نتیجه می‌دهد (انتشار + کپی متن)', res.length === 2, String(res.length));
+  check('نتیجهٔ اینلاين فقط متن دارد (reply_markup ممنوع)', !res[0].reply_markup && !!res[0].input_message_content.message_text);
+  const res2 = await G.inlineGlassResults(env.DB, { query: '99999', bot: 'x', origin: '', userId: 1 });
+  check('کد نامعتبر → نتیجهٔ راهنما (نه خطا)', res2.length >= 1 && /پیدا نشد|وارد کنید/.test(res2[0].title));
+  const res3 = await G.inlineGlassResults(env.DB, { query: 'تخفیف', bot: 'x', origin: '', userId: 7720001 });
+  check('جستجوی متنی در پست‌های خود کاربر', res3.some((r) => r.id === 'gl_' + p.code));
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('glass_enabled','0') ON CONFLICT(key) DO UPDATE SET value='0'").run();
+  check('با خاموش‌کردن glass_enabled اینلاين بی‌مصرف می‌شود', (await G.inlineGlassResults(env.DB, { query: p.code, userId: 7720001 })).length === 0);
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('glass_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+
+  // انتشار واقعی با دکمه‌های شیشه‌ای + عکس
+  const sentG = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    let b = {};
+    try { b = JSON.parse(init.body || '{}'); } catch {}
+    sentG.push({ m: String(url).split('/').pop(), p: b });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: sentG.length } }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  await G.publishGlass(env.DB, 'TESTTOKEN', -100555, p, { bot: 'aminck_test_bot', origin: 'https://bot.test' });
+  const pub = sentG.find((s) => s.m === 'sendMessage' && String(s.p.chat_id) === '-100555');
+  check('ربات در گروه پست کرد (با کیبورد شیشه‌ای)', !!pub && !!pub.p.reply_markup.inline_keyboard);
+  check('استفادهٔ پست شمرده شد', (await G.getGlassByCode(env.DB, p.code)).uses === 1);
+  const withPhoto = await G.createGlassPost(env.DB, { userId: 7720001, body: 'پست تصویری', photo: 'FILEID123', buttons: [{ t: 'لینک', u: 'https://a.test' }] });
+  sentG.length = 0;
+  await G.publishGlass(env.DB, 'TESTTOKEN', -100555, withPhoto, { bot: 'aminck_test_bot', origin: 'https://bot.test' });
+  const photoPost = sentG.find((s) => s.m === 'sendPhoto');
+  check('پست تصویری با sendPhoto + caption و دکمه فرستاده می‌شود', !!photoPost && photoPost.p.photo === 'FILEID123' && !!photoPost.p.reply_markup);
+  globalThis.fetch = prev;
+
+  // صفحهٔ وب و کلیک‌ها
+  const page = await (await G.glassLandingHtml(env.DB, p, { bot: 'aminck_test_bot', origin: 'https://bot.test' })).text();
+  check('صفحهٔ وب پست شیشه‌ای رندر می‌شود', page.includes('class="card"') && page.includes('کپی متن'));
+  check('لینک انتشار در صفحهٔ وب نشان داده می‌شود', page.includes(`@aminck_test_bot ${p.code}`));
+  const bad = await G.saveGlassPost(env.DB, { id: p.id, userId: 999, body: 'hack' });
+  check('ویرایش پست دیگران رد می‌شود', bad.ok === false);
+  const okEdit = await G.saveGlassPost(env.DB, { id: p.id, userId: 7720001, body: 'متن تازه', buttons: [{ t: 'x', u: 'https://x.test' }], style: 'royal' });
+  check('ویرایش توسط مالک موفق است و کد ثابت می‌ماند', okEdit.ok && okEdit.post.code === p.code && okEdit.post.style === 'royal');
+  check('آمار بازدید با API ثبت می‌شود', !!(await G.trackGlassClick(env.DB, p.code, 'views')));
+  const limit = await G.listGlass(env.DB, 7720001);
+  check('لیست پست‌های کاربر (۲ پست)', limit.length === 2, String(limit.length));
+  check('حذف پست توسط غیرمالک بی‌اثر است', !(await (async () => { await G.deleteGlass(env.DB, p.id, 999, false); return (await G.getGlassById(env.DB, p.id)) === null; })()));
+  await G.deleteGlass(env.DB, p2.id, 7720001, false);
+  check('حذف پست توسط مالک انجام شد', (await G.listGlass(env.DB, 7720001)).length === 1);
+
+  // پست دعوت شیشه‌ای (رفرال)
+  const ref = await G.ensureRefGlass(env.DB, { userId: 7720001, botUsername: 'aminck_test_bot', percent: 12, coins: 30 });
+  check('پست دعوت شیشه‌ای با کد ثابت ساخته شد', /^\d{5}$/.test(ref.code) && ref.refCta === 1);
+  check('دکمهٔ دعوت، لینک ref_ کاربر را دارد', ref.buttons[0].u.includes('start=ref_7720001'));
+  const ref2 = await G.ensureRefGlass(env.DB, { userId: 7720001, botUsername: 'aminck_test_bot', percent: 20, coins: 40 });
+  check('ساخت دوباره پست دعوت، کد را تغییر نمی‌دهد (آمار حفظ می‌شود)', ref2.code === ref.code && ref2.id === ref.id && ref2.body.includes('۲۰٪'), ref2.body.slice(0, 60));
+  check('پست دعوت در اینلاين هم با همان کد کار می‌کند', (await G.inlineGlassResults(env.DB, { query: ref.code, userId: 7720001 }))[0].id === 'gl_' + ref.code);
+
+  // سقف روزانه
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('glass_daily_limit','2') ON CONFLICT(key) DO UPDATE SET value='2'").run();
+  check('شمارش پست‌های امروز کاربر درست است', (await G.countGlassToday(env.DB, 7720001)) >= 2);
+  // استودیو وب: امضا و دسترسی
+  const { glassStudioKey, glassStudioHtml, handleGlassApi } = G;
+  const key = await glassStudioKey({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, 7720001);
+  check('کلید استودیو وب فرمت uid.sig دارد', /^\d+\.[0-9a-f]{32}$/.test(key), key);
+  const sig = key.split('.')[1];
+  const good = await glassStudioHtml({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, new Request('https://bot.test/g/studio'), 7720001, sig);
+  check('صفحهٔ استودیو با امضای درست باز می‌شود', good.status === 200 && (await good.text()).includes('استودیوی پست شیشه‌ای'));
+  const bad2 = await glassStudioHtml({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, new Request('https://bot.test/g/studio'), 7720001, 'deadbeef');
+  check('امضای نادرست → ۴۰۳ (بدون دسترسی به حساب دیگران)', bad2.status === 403);
+  const api = (path, body, k) =>
+    handleGlassApi({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, new Request('https://bot.test' + path, { method: 'POST', body: JSON.stringify(body), headers: k ? { 'x-glass-key': k } : {} }), path);
+  const noauth = await api('/api/glass/list', {});
+  check('API استودیو بدون کلید/initData → ۴۰۳', noauth.status === 403);
+  const meta = await (await api('/api/glass/meta', {}, key)).json();
+  check('متای استودیو: ۶ سبک + سقف دکمه', meta.ok && meta.styles.length === 6 && meta.maxButtons >= 1);
+  const sv = await (await api('/api/glass/save', { title: 'وب', text: 'متن از استودیو 🌐', buttons: [{ t: 'خرید', u: 'https://o.test' }], style: 'candy' }, key)).json();
+  check('ذخیره پست از استودیوی وب', sv.ok && /^\d{5}$/.test(sv.post.code) && sv.post.style === 'candy');
+  const lst = await (await api('/api/glass/list', {}, key)).json();
+  check('لیست پست‌ها از استودیو', lst.ok && lst.posts.length >= 2);
+  const del = await (await api('/api/glass/delete', { id: sv.post.id }, key)).json();
+  check('حذف پست از استودیو', del.ok === true);
+  const initData = await makeInitData(7720001);
+  const viaInit = await (await api('/api/glass/list', { initData })).json();
+  check('استودیو با initData معتبر تلگرام هم کار می‌کند', viaInit.ok === true);
+  const viaBad = await handleGlassApi({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, new Request('https://bot.test/api/glass/list', { method: 'POST', body: JSON.stringify({ initData: 'junk' }) }), '/api/glass/list');
+  check('initData جعلی → ۴۰۳', viaBad.status === 403);
+}
+
+// ── ۴۷) 🛍 خرید داخل گروه ──
+section('۴۷) خرید کامل در گروه (پرداخت در گروه، تحویل در پیوی)');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser, setSetting } = await import('../src/db.js');
+  await setSetting(env.DB, 'margin', '1');
+  await setSetting(env.DB, 'usd_rate_manual', '100000');
+  await addRealServer(env);
+  const prod = await env.DB.prepare("SELECT * FROM products WHERE category='vless' LIMIT 1").first();
+  await env.DB.prepare("UPDATE products SET price_usd=1, price_mode='fx', enabled=1, stock=-1 WHERE id=?").bind(prod.id).run();
+  const P = await env.DB.prepare('SELECT * FROM products WHERE id=?').bind(prod.id).first();
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('group_discount_percent','20') ON CONFLICT(key) DO UPDATE SET value='20'").run();
+  await ensureUser(env.DB, { id: 7730001, first_name: 'Buyer' });
+
+  const GB = await import('../src/groupbuy.js');
+  check('تریگر «/buy 3» شناسایی می‌شود', JSON.stringify(GB.isGroupBuyTrigger('/buy 3')) === JSON.stringify({ pid: 3, coupon: '' }));
+  check('تریگر «فروشگاه» شناسایی می‌شود', !!GB.isGroupBuyTrigger('فروشگاه'));
+  check('تریگر «/buy 5 NEW-AB» با کد تخفیف', GB.isGroupBuyTrigger('/buy 5 NEW-AB').coupon === 'NEW-AB');
+  check('متن معمولی تریگر نیست', GB.isGroupBuyTrigger('سلام حالت چطوره') === null);
+
+  const calls = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    let b = {};
+    try { b = JSON.parse(init.body || '{}'); } catch {}
+    calls.push({ m: String(url).split('/').pop(), p: b });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: calls.length } }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const chat = { id: -100777, type: 'supergroup' };
+  const msg = { chat, from: { id: 7730001, first_name: 'Buyer', is_bot: false }, message_id: 500, text: '/buy' };
+  const handled = await GB.handleGroupMessage(env, msg, 'TESTTOKEN', 'aminck_test_bot');
+  check('پیام «/buy» در گروه پاسخ داده شد', handled === true);
+  const shopMsg = calls.find((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '-100777');
+  check('فروشگاه گروه با دکمه‌های gb: باز شد', !!shopMsg && JSON.stringify(shopMsg.p.reply_markup).includes('gb:cat:'));
+  check('تخفیف گروهی در پیام گروه اعلام شد', /۲۰٪/.test(shopMsg.p.text), shopMsg.p.text.slice(0, 120));
+
+  // کارت محصول با تخفیف گروهی
+  calls.length = 0;
+  const u = await getUser(env.DB, 7730001);
+  const card = await GB.showProductCard(env, 'TESTTOKEN', { chat, message_id: 501, from: { id: 7730001 } }, u, P.id, '');
+  const cardText = (calls.find((c) => c.m === 'sendMessage') || {}).p?.text || '';
+  check('کارت محصول در گروه با قیمت تخفیف‌دار', /قیمت شما در این گروه/.test(cardText), cardText.slice(-160));
+  check('قیمت نهایی ۲۰٪ کمتر از قیمت پایه است', cardText.includes('۸۰,۰۰۰') && cardText.includes('۱۰۰,۰۰۰'), cardText.match(/[۰-۹,]+ تومان/g)?.join(' | '));
+  check('دکمهٔ پرداخت در گروه (نه پیوی) گذاشته شد', JSON.stringify(calls[0].p.reply_markup).includes('gb:pay:card:'));
+  check('دکمهٔ «تست رایگان» و امتیاز هم در گروه هست', JSON.stringify(calls[0].p.reply_markup).includes('gb:trial'));
+  void card;
+
+  // پرداخت کیف پولی در گروه → تحویل در پیوی + یک پیام گروهی
+  calls.length = 0;
+  await env.DB.prepare('UPDATE users SET balance=500000 WHERE id=?').bind(7730001).run();
+  const cbCtx = {
+    env, db: env.DB, token: 'TESTTOKEN', user: await getUser(env.DB, 7730001), cbId: 'c1', botUsername: 'aminck_test_bot',
+    update: { callback_query: { id: 'c1', message: { chat_id: -100777, message_id: 501, chat }, from: { id: 7730001 }, data: `gb:pay:wal:${P.id}:` } },
+  };
+  await GB.handleGroupCallback(cbCtx, `gb:pay:wal:${P.id}:`);
+  const gTexts = calls.filter((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '-100777').map((c) => c.p.text);
+  const pvTexts = calls.filter((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '7730001').map((c) => c.p.text);
+  check('پرداخت با کیف پول در گروه انجام شد', (await getUser(env.DB, 7730001)).balance === 420000, String((await getUser(env.DB, 7730001)).balance));
+  check('کانفیگ در پیوی تحویل شد (نه در گروه)', pvTexts.join(' ').includes('vless://') || pvTexts.join('').length > 0);
+  check('در گروه فقط «تحویل در پیوی» اعلام شد', gTexts.some((t) => /تحویل در پیوی/.test(t)), JSON.stringify(gTexts).slice(0, 200));
+  check('کانفیگ در پیام گروهی نیست (حریم خصوصی)', !gTexts.join('').includes('vless://'));
+  const gorders = (await env.DB.prepare('SELECT * FROM group_orders').all()).results;
+  check('رکورد خرید گروهی ثبت شد', gorders.length === 1 && gorders[0].status === 'paid', JSON.stringify(gorders[0] || {}).slice(0, 120));
+
+  // فیش ریپلای‌شده در گروه → AI → تایید، تحویل پیوی، اطلاع گروه
+  calls.length = 0;
+  const order2 = await env.DB.prepare("INSERT INTO orders (user_id, product_id, title, amount_toman, method, status, created_at) VALUES (?,?,?,?,?,?,?) RETURNING *")
+    .bind(7730001, P.id, P.title, 100000, 'card', 'pending', Math.floor(Date.now() / 1000)).first();
+  await env.DB.prepare("INSERT INTO group_orders (chat_id,message_id,order_id,user_id,product_id,amount,status,created_at) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(-100777, 600, order2.id, 7730001, P.id, 100000, 'await_receipt', Math.floor(Date.now() / 1000)).run();
+  const receiptMsg = { chat, from: { id: 7730001 }, message_id: 601, photo: [{ file_id: 'small' }, { file_id: 'big' }], reply_to_message: { message_id: 600, from: { id: 1, is_bot: true } } };
+  const rh = await GB.handleGroupReceiptPhoto(env, receiptMsg, 'TESTTOKEN', 'aminck_test_bot');
+  check('فیش ریپلای‌شده در گروه پردازش شد', rh === true);
+  const orderAfter = await env.DB.prepare('SELECT * FROM orders WHERE id=?').bind(order2.id).first();
+  check('سفارش گروهی با تایید AI پرداخت شد', orderAfter.status === 'paid', orderAfter.status);
+  check('اطلاع «تحویل در پیوی» در گروه ارسال شد', calls.some((c) => c.m === 'sendMessage' && /تحویل در پیوی/.test(c.p.text || '') && String(c.p.chat_id) === '-100777'));
+  check('پیام تحویل فقط در پیوی است', calls.some((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '7730001'));
+  const go2 = await env.DB.prepare('SELECT * FROM group_orders WHERE order_id=?').bind(order2.id).first();
+  check('رکورد گروهی بسته شد (نکته: ضدتکرار اطلاع)', go2.status === 'paid' && Number(go2.notified) === 1, JSON.stringify(go2));
+  check('اطلاع تکراری در گروه ارسال نشد (ضدتکرار)', calls.filter((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '-100777' && /تحویل در پیوی/.test(c.p.text || '')).length === 1);
+
+  // عکس بدون پیام پرداخت → دست‌نخورده (به AI گروه می‌رسد)
+  const notReceipt = await GB.handleGroupReceiptPhoto(env, { chat, from: { id: 7730001 }, message_id: 700, photo: [{ file_id: 'x' }], reply_to_message: { message_id: 1, from: { id: 5 } } }, 'TESTTOKEN');
+  check('عکس بی‌ربط به حساب خرید گروهی نمی‌آید', notReceipt === false);
+  // لغو سفارش گروهی
+  calls.length = 0;
+  const order3 = await env.DB.prepare("INSERT INTO orders (user_id, product_id, title, amount_toman, method, status, created_at) VALUES (?,?,?,?,?,?,?) RETURNING *")
+    .bind(7730001, P.id, P.title, 100000, 'card', 'pending', Math.floor(Date.now() / 1000)).first();
+  await env.DB.prepare("INSERT INTO group_orders (chat_id,message_id,order_id,user_id,product_id,amount,status,created_at) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(-100777, 800, order3.id, 7730001, P.id, 100000, 'await_receipt', Math.floor(Date.now() / 1000)).run();
+  const g3 = await env.DB.prepare('SELECT * FROM group_orders WHERE order_id=?').bind(order3.id).first();
+  await GB.handleGroupCallback({ ...cbCtx, update: { callback_query: { id: 'c2', message: { chat_id: -100777, message_id: 800, chat }, data: `gb:cancel:${g3.id}` } } }, `gb:cancel:${g3.id}`);
+  check('لغو سفارش در گروه، سفارش را rejected می‌کند', (await env.DB.prepare('SELECT status FROM orders WHERE id=?').bind(order3.id).first()).status === 'rejected');
+  // خرید غیرفعال‌شده توسط ادمین
+  await env.DB.prepare("INSERT INTO settings (key,value) VALUES ('group_buy_enabled','0') ON CONFLICT(key) DO UPDATE SET value='0'").run();
+  check('با خاموش‌کردن group_buy_enabled فروشگاه گروه بسته می‌شود', (await GB.handleGroupMessage(env, msg, 'TESTTOKEN', 'b')) === false);
+  globalThis.fetch = prev;
+}
+
+// ── ۴۸) 🎁 باشگاه جوایز + ⭐ نظر + ❤️ + 🛡 محدودیت‌ها ──
+section('۴۸) کارت خراش، چک‌این، کوپن شخصی، نظر، علاقه‌مندی، سقف خرید');
+{
+  const env = await makeEnv();
+  const { ensureUser, getUser, addBalance } = await import('../src/db.js');
+  const { setSetting } = await import('../src/db.js');
+  // اولین کاربر به‌طور طبیعی super می‌شود (قفل مالک) → برای تست سقف خرید، کاربر معمولی لازم است
+  await ensureUser(env.DB, { id: 7740000, first_name: 'Owner' });
+  await ensureUser(env.DB, { id: 7740001, first_name: 'P1' });
+  await env.DB.prepare("UPDATE users SET role='user' WHERE id=7740001").run();
+  const P = await import('../src/perks.js');
+  // کارت خراش با جایزهٔ قطعی
+  await setSetting(env.DB, 'scratch_prizes', '[{"kind":"coins","value":500,"weight":1}]');
+  const s1 = await P.scratchNow(env, await getUser(env.DB, 7740001));
+  check('کارت خراش روزانه باز شد و سکه داد', s1.ok === true && s1.value === 500);
+  check('سکهٔ کاربر زیاد شد', (await getUser(env.DB, 7740001)).coins === 500);
+  const s2 = await P.scratchNow(env, await getUser(env.DB, 7740001));
+  check('باز کردن دوباره در همان روز رد می‌شود', s2.ok === false && s2.done === true);
+  await setSetting(env.DB, 'scratch_enabled', '0');
+  check('با خاموش‌کردن scratch_enabled کارت باز نمی‌شود', (await P.scratchNow(env, await getUser(env.DB, 7740002 || 7740001))).ok === false);
+  await setSetting(env.DB, 'scratch_enabled', '1');
+  // چک‌این ۷ روزه
+  const c1 = await P.checkinNow(env.DB, 7740001);
+  check('چک‌این روز اول ثبت شد', c1.ok === true && c1.streak === 1);
+  const c2 = await P.checkinNow(env.DB, 7740001);
+  check('چک‌این دوباره در همان روز رد می‌شود', c2.ok === false && c2.done === true);
+  const u1 = await getUser(env.DB, 7740001);
+  check('کوین چک‌این هم اضافه شد', u1.coins === 500 + 15, String(u1.coins));
+  // دو روز قبل → رکورد ادامه پیدا می‌کند
+  await env.DB.prepare("UPDATE users SET checkin_date=?, checkin_streak=3 WHERE id=7740001").bind(new Date(Date.now() - 86400000).toISOString().slice(0, 10)).run();
+  const c3 = await P.checkinNow(env.DB, 7740001);
+  check('ادامهٔ رکورد بعد از چک‌این دیروز', c3.streak === 4, String(c3.streak));
+  check('نوار ۷ روزه ساخته می‌شود', P.streakBars(c3.mask).includes('🟩'));
+  await env.DB.prepare("UPDATE users SET checkin_date=?, checkin_streak=6 WHERE id=7740001").bind(new Date(Date.now() - 86400000).toISOString().slice(0, 10)).run();
+  const c4 = await P.checkinNow(env.DB, 7740001);
+  check('روز هفتم بونوس می‌گیرد', c4.streak === 7 && c4.reward > 120, String(c4.reward));
+  // کوپن شخصی
+  const cp = await P.personalCoupon(env.DB, 7740001);
+  check('کوپن شخصی با کد یکتا ساخته شد', /^VIP\d{1,5}\d{3}$/.test(cp.code) && Number(cp.user_id) === 7740001, cp.code);
+  const cp2 = await P.personalCoupon(env.DB, 7740001);
+  check('کوپن شخصی تکراری ساخته نمی‌شود', cp2.code === cp.code);
+  const mine = await P.myCoupons(env.DB, 7740001);
+  check('کوپن‌های من فهرست می‌شود', mine.length === 1 && mine[0].percent > 0);
+  // کوپن فقط مالک خودش
+  const { applyDiscountCode } = await import('../src/pricing.js');
+  const own = await applyDiscountCode(env, cp.code, 7740001, 200000);
+  const other = await applyDiscountCode(env, cp.code, 999999, 200000);
+  check('کوپن شخصی برای مالکش کار می‌کند', own.ok === true);
+  check('کوپن شخصی برای دیگری رد می‌شود', other.ok === false, other.error);
+  // تولید انبوه
+  const bulk = await P.generateCoupons(env.DB, { count: 12, percent: 15, days: 7, maxUses: 1, prefix: 'NEW' });
+  check('تولید انبوه کوپن (۱۲ کد)', bulk.count === 12 && bulk.created.every((c) => c.startsWith('NEW-')), String(bulk.count));
+  check('کوپن‌های انبوه در دیتابیس‌اند', (await env.DB.prepare("SELECT COUNT(*) c FROM discount_codes WHERE code LIKE 'NEW-%'").first()).c === 12);
+  // نظر و امتیاز
+  const prod = await env.DB.prepare("SELECT * FROM products LIMIT 1").first();
+  await P.saveReview(env.DB, { productId: prod.id, userId: 7740001, rating: 4, text: 'سرعت خوب، پشتیبانی سریع' });
+  const pr = await env.DB.prepare('SELECT review_count, review_avg FROM products WHERE id=?').bind(prod.id).first();
+  check('میانگین و تعداد نظر روی محصول محاسبه شد', Number(pr.review_count) === 1 && Number(pr.review_avg) === 4, JSON.stringify(pr));
+  await P.saveReview(env.DB, { productId: prod.id, userId: 7740001, rating: 2, text: 'اصلاح نظر' });
+  const pr2 = await env.DB.prepare('SELECT review_count, review_avg FROM products WHERE id=?').bind(prod.id).first();
+  check('ثبت نظر دوباره جایگزین می‌شود (نه تکراری)', Number(pr2.review_count) === 1 && Number(pr2.review_avg) === 2);
+  const tr = await P.topReviews(env.DB, prod.id);
+  check('نظر با نام کاربر برگردانده می‌شود', tr.length === 1 && tr[0].stars === '★★☆☆☆');
+  // علاقه‌مندی
+  const f1 = await P.toggleFavorite(env.DB, 7740001, prod.id);
+  check('افزودن به علاقه‌مندی', f1.added === true && (await P.isFavorite(env.DB, 7740001, prod.id)) === true);
+  const f2 = await P.toggleFavorite(env.DB, 7740001, prod.id);
+  check('حذف از علاقه‌مندی', f2.added === false && (await P.favoriteProducts(env.DB, 7740001)).length === 0);
+  // شمارش معکوس انقضا
+  const cd = P.countdownLine({ expire_at: Math.floor(Date.now() / 1000) + 3 * 86400, created_at: Math.floor(Date.now() / 1000) - 27 * 86400 }, 'fa');
+  check('شمارش معکوس با نوار پیشرفت', cd.includes('روز') && cd.includes('🟩'), cd);
+  check('اشتراک منقضی «منقضی شده» است', P.countdownLine({ expire_at: 1, created_at: 0 }, 'fa').includes('منقضی'));
+  // لینک چنددستگاهی
+  const dl = P.deviceLinks('https://bot.test', 'TOK', 3);
+  check('لینک اختصاصی هر دستگاه ساخته می‌شود', dl.length === 3 && dl[1].url === 'https://bot.test/sub/TOK?d=2' && dl[0].label.includes('دستگاه ۱'));
+  // سقف خرید روزانه
+  await setSetting(env.DB, 'user_daily_orders', '1');
+  const lim1 = await P.checkPurchaseLimits(env.DB, await getUser(env.DB, 7740001), 100000);
+  check('بدون سفارش امروز، خرید آزاد است', lim1.ok === true);
+  await env.DB.prepare('INSERT INTO orders (user_id, product_id, title, amount_toman, method, status, created_at) VALUES (?,?,?,?,?,?,?)').bind(7740001, prod.id, 'x', 100000, 'card', 'pending', Math.floor(Date.now() / 1000)).run();
+  const lim2 = await P.checkPurchaseLimits(env.DB, await getUser(env.DB, 7740001), 100000);
+  check('سقف تعداد سفارش روزانه اجرا می‌شود', lim2.ok === false && /سقف/.test(lim2.reason));
+  const adminOk = await P.checkPurchaseLimits(env.DB, { id: 1, role: 'super' }, 100000);
+  check('سقف برای ادمین اعمال نمی‌شود', adminOk.ok === true);
+  await setSetting(env.DB, 'user_daily_orders', '0');
+  await setSetting(env.DB, 'user_daily_toman', '150000');
+  const lim3 = await P.checkPurchaseLimits(env.DB, await getUser(env.DB, 7740001), 100000);
+  check('سقف مبلغ روزانه هم کار می‌کند', lim3.ok === false);
+  await setSetting(env.DB, 'user_daily_toman', '0');
+  // ضدسوءاستفاده رفرال
+  await ensureUser(env.DB, { id: 7740002, first_name: 'P1', username: 'sameuser' });
+  await env.DB.prepare("UPDATE users SET username='sameuser' WHERE id=7740001").run();
+  await env.DB.prepare('UPDATE users SET referrer_id=7740001, username=?, first_name=?, created_at=? WHERE id=7740002').bind('sameuser', 'P1', Math.floor(Date.now() / 1000)).run();
+  const ab1 = await P.referralAbuseCheck(env.DB, await getUser(env.DB, 7740002), await getUser(env.DB, 7740001), 100000);
+  check('یوزرنیم یکسان با معرف → پاداش رد می‌شود', ab1.allow === false && ab1.why === 'same_username', ab1.why);
+  // نام یکسان به‌تنهایی نباید پاداش را بزند (اسم‌های رایج); فقط «خوشه» رد می‌شود
+  await env.DB.prepare("UPDATE users SET username='' WHERE id=7740002").run();
+  const abSingle = await P.referralAbuseCheck(env.DB, await getUser(env.DB, 7740002), await getUser(env.DB, 7740001), 100000);
+  check('فقط هم‌نام بودن پاداش را رد نمی‌کند (بدون خوشه)', abSingle.allow === true, abSingle.why);
+  await setSetting(env.DB, 'ref_max_same_name', '2');  // آستانهٔ خوشه از پنل قابل تغییر است
+  await ensureUser(env.DB, { id: 7740003, first_name: 'P1' });
+  await env.DB.prepare('UPDATE users SET referrer_id=7740001, created_at=? WHERE id=7740003').bind(Math.floor(Date.now() / 1000)).run();
+  const ab3 = await P.referralAbuseCheck(env.DB, await getUser(env.DB, 7740002), await getUser(env.DB, 7740001), 100000);
+  check('خوشهٔ حساب‌های هم‌نام از یک معرف → رد می‌شود', ab3.allow === false && ab3.why === 'name_cluster', ab3.why);
+  const ab2 = await P.referralAbuseCheck(env.DB, { id: 5, first_name: 'Ali', username: 'ali5', created_at: Math.floor(Date.now() / 1000) }, await getUser(env.DB, 7740001), 100000);
+  check('کاربر مستقل با اولین خرید معتبر → پاداش آزاد', ab2.allow === true, ab2.why);
+  // لاگ ادمین
+  await P.audit(env.DB, { actorId: 1, actor: 'admin', action: 'test', target: 'x', detail: 'y' });
+  check('لاگ اقدامات ادمین نوشته می‌شود', (await P.recentAudit(env.DB, 5)).some((r) => r.action === 'test'));
+  // گزارش فروش + صف ارسال
+  await env.DB.prepare("UPDATE orders SET status='paid', paid_at=? WHERE user_id=?").bind(Math.floor(Date.now() / 1000), 7740001).run();
+  const sum = await P.salesSummary(env.DB, Math.floor(Date.now() / 1000) - 3600);
+  check('خلاصهٔ فروش شامل درآمد و سفارش است', sum.revenue >= 100000 && sum.orders >= 1, JSON.stringify(sum).slice(0, 120));
+  const rep = P.reportText('daily', sum);
+  check('متن گزارش روزانه ساخته می‌شود', rep.includes('گزارش روزانه') && rep.includes('درآمد'));
+  const q = await P.queueBroadcast(env.DB, { text: '📣 تخفیف امشب', at: 0, by: 1 });
+  check('پیام همگانی در صف قرار گرفت', q.ok === true && q.id > 0, JSON.stringify(q));
+  const sent2 = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    let b = {};
+    try { b = JSON.parse(init.body || '{}'); } catch {}
+    sent2.push(b);
+    return new Response(JSON.stringify({ ok: true, result: { message_id: sent2.length } }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const r = await P.runBroadcastBatch({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, 'TESTTOKEN', { batch: 50 });
+  check('صف ارسال همگانی اجرا شد و برای کاربران فرستاد', r.ran >= 1 && sent2.length >= 1, `${r.ran}/${sent2.length}`);
+  check('پیام همگانی فقط یک‌بار برای هر کاربر ارسال می‌شود', new Set(sent2.map((x) => x.chat_id)).size === sent2.length, `${new Set(sent2.map((x) => x.chat_id)).size}/${sent2.length}`);
+  const bAfter = await env.DB.prepare('SELECT * FROM broadcasts ORDER BY id DESC LIMIT 1').first();
+  check('وضعیت پیام همگانی به done رسید', ['done', 'running'].includes(bAfter.status) && Number(bAfter.total) >= 1, bAfter.status);
+  // زمان‌بندی آینده → اجرا نمی‌شود
+  const future = await P.queueBroadcast(env.DB, { text: '🕒 بعداً', at: Math.floor(Date.now() / 1000) + 7200, by: 1 });
+  check('پیام زمان‌بندی‌شده در صف با id ذخیره می‌شود', future.ok === true && future.id > 0, JSON.stringify(future));
+  const before = sent2.length;
+  await P.runBroadcastBatch({ ...env, TELEGRAM_BOT_TOKEN: 'TESTTOKEN' }, 'TESTTOKEN', { batch: 50 });
+  check('پیام زمان‌بندی‌شده زودتر از موعد ارسال نمی‌شود', sent2.length === before);
+  globalThis.fetch = prev;
+  void addBalance;
+}
+
+// ── ۴۹) 🧪 پست شیشه‌ای در اینلاين: انتشار واقعی در گروه + آمار ──
+section('۴۹) انتخاب نتیجهٔ inline و انتشار خودکار');
+{
+  const env = await makeEnv();
+  const { ensureUser } = await import('../src/db.js');
+  await ensureUser(env.DB, { id: 7750001, first_name: 'S' });
+  const G = await import('../src/glass.js');
+  const { setSetting } = await import('../src/db.js');
+  const p = await G.createGlassPost(env.DB, { userId: 7750001, body: 'پست تست انتشار', buttons: [{ t: '🛍', u: 'https://a.test' }] });
+  await setSetting(env.DB, 'glass_auto_post', '1');
+  const calls = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    let b = {};
+    try { b = JSON.parse(init.body || '{}'); } catch {}
+    calls.push({ m: String(url).split('/').pop(), p: b });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: calls.length } }), { headers: { 'Content-Type': 'application/json' } });
+  };
+  const usesBefore = (await G.getGlassByCode(env.DB, p.code)).uses;
+  await G.handleChosenInline(env, 'TESTTOKEN', { result_id: 'gl_' + p.code, from: { id: 7750001 }, location: { chat_id: -100999 } }, 'aminck_test_bot');
+  const posted = calls.find((c) => c.m === 'sendMessage' && String(c.p.chat_id) === '-100999');
+  check('با glass_auto_post روشن، نسخهٔ دکمه‌دار در چت منتشر شد', !!posted && !!posted.p.reply_markup);
+  check('آمار استفاده after انتخاب نتیجه زیاد شد', (await G.getGlassByCode(env.DB, p.code)).uses >= usesBefore + 1);
+  calls.length = 0;
+  await G.handleChosenInline(env, 'TESTTOKEN', { result_id: 'glc_' + p.code, from: { id: 7750001 } }, 'bot');
+  check('انتخاب «کپی متن» پست دیگری منتشر نمی‌کند', !calls.some((c) => c.m === 'sendMessage'));
+  // بدون location (استفاده از منوی چسبان در پیوی) → فقط آمار
+  calls.length = 0;
+  await G.handleChosenInline(env, 'TESTTOKEN', { result_id: 'gl_' + p.code, from: { id: 7750001 } }, 'bot');
+  check('بدون چتِ مشخص، پیامی ارسال نمی‌شود (بی‌سروصدا)', !calls.some((c) => c.m === 'sendMessage'));
+  globalThis.fetch = prev;
+  void p;
+}
+
+// ── ۵۰) پنل وب: تب جدید، ترجمه‌ها، پشتیبان JSON ──
+section('۵۰) پنل وب: 🧪 پست/جوایز، ترجمه، کوپن انبوه، پشتیبان');
+{
+  const env = await makeEnv();
+  const { ensureUser, setSetting } = await import('../src/db.js');
+  const { handlePanelApi, ensurePanelPassword } = await import('../src/panel.js');
+  await ensureUser(env.DB, { id: 7760001, first_name: 'A' });
+  const pw = await ensurePanelPassword(env.DB);
+  const post = (path, body, headers = {}) =>
+    handlePanelApi(env, new Request('https://x.dev' + path, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...headers } }), path);
+  let r = await post('/api/panel/login', { password: pw });
+  const tok = ((r.headers.get('Set-Cookie') || '').match(/nova_panel=([a-f0-9]{32})/) || [])[1];
+  const auth = { Cookie: `nova_panel=${tok}` };
+  check('ورود پنل برای تست‌های جدید', r.status === 200 && !!tok);
+
+  r = await post('/api/panel/state', {}, auth);
+  const st = await r.json();
+  check('تنظیمات جدید در state پنل می‌آید', st.ok && st.settings.glass_max_buttons === '6' && st.settings.group_discount_percent === '0', JSON.stringify(st.settings).slice(0, 160));
+  check('تنظیمات سقف خرید و گزارش روزانه هم قابل خواندن است', st.settings.user_daily_orders === '0' && st.settings.report_daily_enabled === '1');
+
+  r = await post('/api/panel/settings', { glass_max_buttons: '8', group_discount_percent: '15', user_daily_orders: '2' }, auth);
+  check('ذخیرهٔ تنظیمات جدید از پنل', r.status === 200);
+  check('مقدار تازه خوانده می‌شود', (await env.DB.prepare("SELECT value FROM settings WHERE key='glass_max_buttons'").first()).value === '8');
+  check('تخفیف گروهی از پنل ست شد', (await env.DB.prepare("SELECT value FROM settings WHERE key='group_discount_percent'").first()).value === '15');
+
+  const G = await import('../src/glass.js');
+  const gp = await G.createGlassPost(env.DB, { userId: 7760001, body: 'پست پنلی', buttons: [{ t: 'x', u: 'https://a.test' }] });
+  r = await (await post('/api/panel/glass/list', {}, auth)).json();
+  check('لیست پست‌های شیشه‌ای در پنل', r.ok && r.posts.length === 1 && r.posts[0].code === gp.code);
+  check('پنل نام مالک پست را نشان می‌دهد', r.posts[0].owner.includes('7760001') || r.posts[0].owner === 'A', r.posts[0].owner);
+  r = await (await post('/api/panel/glass/toggle', { id: gp.id }, auth)).json();
+  check('خاموش/روشن کردن پست از پنل', r.ok && Number((await env.DB.prepare('SELECT active FROM glass_posts WHERE id=?').bind(gp.id).first()).active) === 0);
+  r = await (await post('/api/panel/glass/create', { title: 'تابلو', text: 'پست ادمین', style: 'royal', buttons: [{ t: '🛍', u: 'https://o.test' }] }, auth)).json();
+  check('ساخت پست شیشه‌ای از پنل (کد ۵ رقمی)', r.ok && /^\d{5}$/.test(r.code));
+  r = await (await post('/api/panel/glass/delete', { id: gp.id }, auth)).json();
+  check('حذف پست از پنل', r.ok);
+
+  r = await (await post('/api/panel/coupons/bulk', { count: 5, percent: 20, days: 3, max_uses: 2, prefix: 'PNL' }, auth)).json();
+  check('تولید انبوه کوپن از پنل', r.ok && r.count === 5);
+  r = await (await post('/api/panel/i18n/save', { kind: 'i18n', lang: 'en', key: 'welcome', value: '⚡ Custom welcome {name}' }, auth)).json();
+  check('ذخیرهٔ ترجمهٔ دستی از پنل', r.ok === true);
+  const ov = await env.DB.prepare("SELECT value FROM settings WHERE key='i18n:en:welcome'").first();
+  check('ترجمه در تنظیمات ذخیره شد', /Custom welcome/.test(ov?.value || ''));
+  r = await (await post('/api/panel/i18n/list', {}, auth)).json();
+  check('فهرست ترجمه‌های ذخیره‌شده', r.ok && r.rows.some((x) => x.key === 'i18n:en:welcome') && r.keys.includes('welcome'));
+  const { ti18n } = await import('../src/i18n.js');
+  check('ترجمهٔ پنل روی متن ربات اعمال می‌شود', (await ti18n(env.DB, 'en', 'welcome', { name: 'X' })).includes('Custom welcome X'));
+  r = await (await post('/api/panel/i18n/save', { kind: 'text', lang: 'ar', key: 'pay_intro', value: 'ادفع عبر البطاقة' }, auth)).json();
+  check('ذخیرهٔ ترجمهٔ متن‌های بات (text:key:lang)', r.ok === true);
+  const { getText } = await import('../src/texts.js');
+  check('متن بات به زبان عربی از دیتابیس خوانده می‌شود', (await getText(env.DB, 'pay_intro', 'ar')).includes('البطاقة'));
+  check('برای زبان فارسی همان متن پیش‌فرض می‌ماند', (await getText(env.DB, 'pay_intro', 'fa')).includes('پرداخت'));
+
+  r = await (await post('/api/panel/audit', { limit: 10 }, auth)).json();
+  check('لاگ اقدامات ادمین در پنل نمایش داده می‌شود', r.ok && r.rows.length >= 2 && r.rows.some((x) => x.action === 'i18n:save'));
+  r = await (await post('/api/panel/broadcast/add', { text: '📣 تست پنل', at: 0 }, auth)).json();
+  check('اضافه کردن پیام همگانی از پنل', r.ok && r.id > 0);
+  r = await (await post('/api/panel/broadcast/list', {}, auth)).json();
+  check('فهرست صف ارسال همگانی', r.ok && r.items.length === 1);
+
+  const res = await post('/api/panel/backup/json', {}, auth);
+  const dump = JSON.parse(await res.text());
+  check('پشتیبان JSON همهٔ جدول‌های جدید را دارد', !!dump.tables.glass_posts && !!dump.tables.broadcasts && !!dump.tables.audit_log && !!dump.tables.group_orders);
+  const leaky = Object.entries(dump.tables.settings || {}).filter(([k, v]) => /password|token|secret/i.test(String(v)));
+  check('رمز پنل و توکن بات در پشتیبان لو نرفته', !JSON.stringify(dump).includes(pw) && !JSON.stringify(dump).includes('TESTTOKEN'), JSON.stringify(dump.tables.settings).slice(0, 240));
+  check('تنظیمات غیرحساس (ترجمه‌ها) در پشتیبان می‌آیند تا بازگردانی کامل باشد', JSON.stringify(dump.tables.settings).includes('i18n:en:welcome'));
+  check('مقادیر حساس در پشتیبان ماسک شده‌اند', (dump.tables.settings || []).every((x) => !/^(panel_password|bot_token)/.test(x.key) || x.value === '***' || x.value === ''), JSON.stringify((dump.tables.settings || []).filter((x) => /password|token/.test(x.key))).slice(0, 200));
+}
+
+
+// ── ۵۱) سیم‌کشی مسیرها در ورکر (رگرسیون قابلیت‌های جدید) ──
+section('۵۱) سیم‌کشی: مسیرهای وب‌هوک/HTTP برای شیشه‌ای، گروه و زبان');
+{
+  const src = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+  const userSrc = await readFile(new URL('../src/user.js', import.meta.url), 'utf8');
+  const jobsSrc = await readFile(new URL('../src/jobs.js', import.meta.url), 'utf8');
+  const paySrc = await readFile(new URL('../src/pay.js', import.meta.url), 'utf8');
+  check('chosen_inline_result دیگر بی‌کار نیست (آمار + انتشار)', /if \(update\.chosen_inline_result\)[\s\S]{0,180}handleChosenInline/.test(src));
+  check('inline: اول کد پست شیشه‌ای، بعد ویترین محصولات', /handleGlassInline\(env, token, update\.inline_query/.test(src) && /handleInlineQuery\(env, token, update\.inline_query/.test(src));
+  check('/glass در گروه پشتیبانی می‌شود', /handleGlassCommand\(ctx, gtext\.replace/.test(src));
+  check('فروشگاه گروهی قبل از AI گروه بررسی می‌شود', src.lastIndexOf('handleGroupMessage(env') < src.lastIndexOf('await groupAiReply(') && src.lastIndexOf('handleGroupMessage(env') > 0);
+  check('فیش ریپلای‌شده در گروه پردازش می‌شود', /handleGroupReceiptPhoto\(env, msg, token\)/.test(src));
+  check('کال‌بک‌های gb: به خرید گروهی می‌روند', /data\.startsWith\('gb:'\)\) return handleGroupCallback/.test(src));
+  check('کال‌بک‌های gl: به استودیوی شیشه‌ای می‌روند', /gl:\|perk:\|rev:\|lang:/.test(src));
+  check('صفحهٔ وب هر پست: /g/<code>', /path\.startsWith\('\/g\/'\)[\s\S]{0,500}glassLandingHtml/.test(src));
+  check('استودیوی وب با امضا: /g/studio', /glassStudioHtml\(env, request/.test(src));
+  check('API استودیو: /api/glass/*', /path\.startsWith\('\/api\/glass\/'\)\) return await handleGlassApi/.test(src));
+  check('معرفی خرید گروهی هنگام عضویت ربات در گروه', /groupIntro\(env, chat\.id, token/.test(src));
+  check('اولین /start → منوی زبان (رگرسیون)', /lang_set[\s\S]{0,60}lang_ask/.test(userSrc) && /showLanguagePicker\(ctx/.test(userSrc));
+  check('برچسب‌های بومی منو به کلید فارسی نگاشت می‌شوند', /const label = canonicalLabel\(text\)/.test(userSrc) && /case '🧪 پست شیشه‌ای'/.test(userSrc) && /case '🎁 باشگاه جوایز'/.test(userSrc));
+  check('کدهای تخفیف از /coupon و از صفحهٔ محصول اعمال می‌شوند', /case 'coupon'/.test(userSrc) && /applyDiscountCode\(ctx\.env, saved\.coupon/.test(userSrc));
+  check('کرون: صف ارسال همگانی و گزارش روزانه', /broadcastTick\(env\)/.test(jobsSrc) && /reportTick\(env\)/.test(jobsSrc) && /runBroadcastBatch/.test(jobsSrc) && /sendSalesReport/.test(jobsSrc));
+  check('پس از پرداخت، اطلاع گروه و ضدسوءاستفاده رفرال اجرا می‌شود', /notifyGroupPaid\(env/.test(paySrc) && /referralAbuseCheck\(DB/.test(paySrc));
+  check('مصرف کوپن هنگام قطعی‌شدن پرداخت', /consumeCouponFromOrder\(env, order\)/.test(paySrc));
+  check('پیام تحویل در گروه، متن کانفیگ را فاش نمی‌کند', !/chat_id: chatId,[\s\S]{0,200}vless:\/\//.test(await readFile(new URL('../src/groupbuy.js', import.meta.url), 'utf8')));
+
+  // runtime: کاربر در گروه کد را می‌نویسد → نتیجهٔ inline با متن شیشه‌ای
+  const env = await makeEnv();
+  const { ensureUser } = await import('../src/db.js');
+  await ensureUser(env.DB, { id: 7770001, first_name: 'G' });
+  const G = await import('../src/glass.js');
+  const post = await G.createGlassPost(env.DB, { userId: 7770001, body: 'پست گروهی 🧪', buttons: [{ t: '🛍', u: 'https://a.test' }] });
+  const results = await G.inlineGlassResults(env.DB, { query: post.code, bot: 'aminck_test_bot', origin: 'https://bot.test', userId: 7770001 });
+  const first = results[0];
+  check('متن آمادهٔ ارسال در گروه، هم کد و هم دکمهٔ لینکی دارد', first.input_message_content.message_text.includes(post.code) && first.input_message_content.message_text.includes('https://a.test'));
+  const page = await G.glassLandingHtml(env.DB, post, { bot: 'aminck_test_bot', origin: 'https://bot.test' });
+  const body = await page.text();
+  check('صفحهٔ وب از XSS محافظت می‌کند (متن کاربر escape می‌شود)', !body.includes('<script>alert') && body.includes('class="card"'));
+  const xss = await G.createGlassPost(env.DB, { userId: 7770001, body: '<script>alert(1)</script>', buttons: [] });
+  const xssBody = await (await G.glassLandingHtml(env.DB, xss, { bot: 'b', origin: '' })).text();
+  check('متن مخرب در صفحهٔ وب خنثی می‌شود', !xssBody.includes('<script>alert(1)</script>'));
+}
+
+
+// ── ۵۲) نسخهٔ شیشه‌ایِ کانفیگ‌ساز ──
+section('۵۲) 🧪 نسخهٔ شیشه‌ای کانفیگ: صفحهٔ /sc، پست اشتراک، ویزارد');
+{
+  const env = await makeEnv();
+  const { ensureUser, setSetting } = await import('../src/db.js');
+  await ensureUser(env.DB, { id: 7780001, first_name: 'Cfg' });
+  const nowTs = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("INSERT INTO subscriptions (user_id,product_id,title,token,days,traffic_gb,expire_at,active,created_at) VALUES (?,?,?,?,'30','100',?,1,?)")
+    .bind(7780001, 1, 'VLESS خانوادگی', 'cfgtok123', nowTs + 20 * 86400, nowTs).run();
+  await env.DB.prepare("UPDATE products SET max_devices=3 WHERE id=1").run();
+  const G = await import('../src/glass.js');
+  const sub = await env.DB.prepare('SELECT * FROM subscriptions WHERE token=?').bind('cfgtok123').first();
+  const { body, buttons } = await G.glassPostForSubscription(env.DB, sub, { bot: 'aminck_bot', origin: 'https://bot.test' });
+  check('متن پست، عنوان و توکن صفحه را دارد', body.includes('VLESS خانوادگی') && body.includes('https://bot.test/sub/cfgtok123'));
+  check('دکمهٔ صفحهٔ شیشه‌ای (/sc) در پست هست', buttons.some((b) => b.u === 'https://bot.test/sc/cfgtok123'), JSON.stringify(buttons));
+  check('اعتبار روز‌شماری‌شده فارسی در متن می‌آید', /۲۰ روز اعتبار/.test(body) && /دستگاه هم‌زمان: <b>۳<\/b>/.test(body), body.slice(0, 160));
+
+  const card = await G.configCardHtml({ ...env, KV: env.KV }, 'cfgtok123');
+  const cardHtml = await card.text();
+  check('صفحهٔ کانفیگ با کد ۲۰۰ و حالت شیشه‌ای باز می‌شود', card.status === 200 && cardHtml.includes('backdrop-filter'));
+  check('QR به‌صورت data-URL در صفحه هست', cardHtml.includes('data:image/png;base64') || cardHtml.includes('img.qr'));
+  check('دکمهٔ کپی لینک و اشتراک‌گذاری در گروه', cardHtml.includes('کپی لینک اشتراک') && cardHtml.includes('t.me/share/url'));
+  check('XSS در عنوان اشتراک خنثی می‌شود', !cardHtml.includes('<script>alert(1)</script>'));
+
+  const bad = await G.configCardHtml(env, 'not-existing-token');
+  check('توکن نامعتبر → ۴۰۴ (نه صفحهٔ خالی)', bad.status === 404);
+
+  const demoRes = await G.configCardHtml(env, 'demo');
+  const demoHtml = await demoRes.text();
+  check('نمونهٔ دمو بدون خرید باز می‌شود', demoRes.status === 200 && demoHtml.includes('نمونهٔ نمایشی'));
+  check('دمو لینک دانلود واقعی ندارد (دروغ نمی‌گوییم)', !demoHtml.includes('دریافت مستقیم'));
+  const f = G.glassFrame('royal');
+  check('قاب شیشه‌ای: استایل معتبر و رنگ تأکید', f.style === 'royal' && f.accent.startsWith('#'));
+  check('استایل نامعتبر → اورورا (بی‌خطر)', G.glassFrame('nope').style === 'aurora');
+
+  const wsrc = await readFile(new URL('../src/user.js', import.meta.url), 'utf8');
+  check('ویزارد کانفیگ‌ساز نوار قدم‌ها دارد', /wizardFrame\(ctx/.test(wsrc) && /قدم \$\{faDigits\(step\)\} از \$\{faDigits\(total\)\}/.test(wsrc));
+  check('پروتکل‌های بیشتر + مدت‌های بیشتر در ویزارد', wsrc.includes("custom:p:ws") && wsrc.includes('custom:d:${proto}:365'));
+  check('دکمهٔ نمونهٔ شیشه‌ای و کوپن در پیش‌نمایش قیمت', wsrc.includes("'custom:demo'") && wsrc.includes("perk:coupon"));
+  check('دکمهٔ پست شیشه‌ای در لیست اشتراک‌ها', wsrc.includes('gl:cfg:${s.token}'));
+  // گارد رگرسیون: هر تابعی که render() صدا می‌زند باید تعریف‌شده باشد (باگ قبلی: pgGlass تعریف نشده بود)
+  const panelSrc = await readFile(new URL('../src/panel.js', import.meta.url), 'utf8');
+  const called = new Set([...panelSrc.matchAll(/return (pg[A-Za-z0-9_]+)\(/g)].map((m) => m[1]));
+  const declared = new Set([...panelSrc.matchAll(/(?:async )?function (pg[A-Za-z0-9_]+)/g)].map((m) => m[1]));
+  const missing = [...called].filter((f) => !declared.has(f));
+  check('همهٔ تب‌های پنل تابع خود را دارند (بدون ReferenceError)', missing.length === 0, 'missing: ' + missing.join(','));
+  check('تب شیشه‌ای: ساخت پست، صف بث، کوپن انبوه، لاگ، بک‌آپ', ['glxCreate', 'bcAdd', 'bcRun', 'cpBulk', 'auditLoad', 'bkJson'].every((f) => panelSrc.includes('function ' + f)));
+  const isrc = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+  check('مسیر /sub/<t>/card و /sc/<t> وصل است', isrc.includes("endsWith('/card')") && isrc.includes("path.startsWith('/sc/')"));
+  check('کال‌بک gl:cfg در گلس وصل است', (await readFile(new URL('../src/glass.js', import.meta.url), 'utf8')).includes("act.startsWith('cfg:')"));
 }
 
 // ═══════════════════ نتیجه ═══════════════════
