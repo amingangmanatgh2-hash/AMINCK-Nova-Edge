@@ -18,3 +18,7 @@ tmp/
 assets/
 __pycache__/
 *.pyc
+
+# runtime server state
+server/state.json
+server/state.json.tmp

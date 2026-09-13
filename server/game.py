@@ -1,4 +1,5 @@
-"""GameServer: worlds, players, bots, physics, combat, chat/commands, AI."""
+"""GameServer: worlds, players, bots, physics, combat, chat/commands, AI,
+economy, ranks, scoreboard, time/weather and admin actions."""
 import asyncio, math, random, time, traceback
 from . import data as mcdata
 from .profile import Profile
@@ -9,9 +10,11 @@ from .ai import Brain
 from .ai_client import ai_chat, configured as _ai_configured
 from .registry import Registry
 from . import gamemodes as G
+from . import economy as _econ
 
 TICK = 1.0 / 20.0
 VOID_MARGIN = 10
+SB_OBJECTIVE = "nova_sidebar"
 
 
 class GameServer:
@@ -26,6 +29,12 @@ class GameServer:
         self.ai_gateway_token = config.get("ai_gateway_token", "")
         self.ai_model = config.get("ai_model", "@cf/meta/llama-3.1-8b-instruct")
         self.image_model = config.get("image_model", "@cf/black-forest-labs/flux-1-schnell")
+        self.admin_password = config.get("admin_password", "") or ""
+        self.admin_names = {n.strip().lower() for n in
+                            (config.get("admin_names", "") or "").split(",") if n.strip()}
+        self.site_url = config.get("site_url", "") or ""
+        self.difficulty = config.get("difficulty", "normal") or "normal"
+        self.scoreboard_on = bool(config.get("scoreboard", True))
         self.players = {}
         self.bots = {}
         self.ids = EntityIdAllocator()
@@ -37,14 +46,40 @@ class GameServer:
         self._chat_lock = asyncio.Lock()
         self._seq = 0
 
+        # world time / weather
+        self.world_time = 0          # day ticks (0..24000)
+        self.world_age = 0
+        self.weather = "clear"       # clear | rain | thunder
+        self._time_broadcast = 0.0
+        self._weather_levels = {"clear": (0.0, 0.0), "rain": (1.0, 0.0), "thunder": (1.0, 1.0)}
+
+        # TPS measurement
+        self._tick_times = []
+        self.tps = 20.0
+
+        # economy + persistence
+        self.econ = _econ.Economy(self)
+
         # canonical block registry (modern names) — worlds store canonical ids
         self.canonical_reg = Registry(mcdata.load(775))
         # lobby + gamemode registry
         self.modes = G.build_modes(self)
         self.lobby = self.modes["lobby"]
 
+    # ── admin ──────────────────────────────────────────────────────────────
+    def is_admin(self, p):
+        if not p:
+            return False
+        return getattr(p, "admin", False) or p.name.lower() in self.admin_names
+
+    def check_admin_password(self, password):
+        if not self.admin_password:
+            return False
+        import hmac as _hmac
+        return _hmac.compare_digest(str(password), str(self.admin_password))
+
     def is_banned(self, name):
-        return False
+        return self.econ.is_banned(name)
 
     # ── logging ───────────────────────────────────────────────────────────
     def log(self, msg):
@@ -70,10 +105,13 @@ class GameServer:
     def status_json(self, proto):
         import json as _json
         online = sum(1 for p in self.players.values() if p.connected)
+        desc = f"§a§l{self.name}\n§r{self.motd}"
+        if self.site_url:
+            desc += f"\n§b§o{self.site_url}"
         return _json.dumps({
             "version": {"name": f"{self.name} 1.8→26.x", "protocol": proto},
             "players": {"max": 100, "online": online, "sample": []},
-            "description": {"text": f"§a§l{self.name}\n§r{self.motd}"},
+            "description": {"text": desc},
             "favicon": getattr(self, "favicon_data_uri", ""),
         })
 
@@ -83,8 +121,11 @@ class GameServer:
         p.entity_id = self.ids.alloc()
         p.uuid = session.uuid
         p.name = session.username
+        p.admin = p.name.lower() in self.admin_names
+        p._join_ts = time.time()
         session.player = p
         self.players[p.name.lower()] = p
+        self.econ.get(p.name)  # ensure a record exists
         self.log(f"+ {p.name} joined (protocol {session.proto})")
 
     def spawn_player(self, session):
@@ -104,13 +145,84 @@ class GameServer:
         # player info for self
         p.session._send = True  # noop marker
         self._queue(p, prof.player_info_add(p.uuid, p.name, gamemode=p.gamemode))
-        self._queue(p, prof.update_time(0, 6000))
+        self._queue(p, prof.update_time(self.world_age, self.world_time))
         self._queue(p, prof.spawn_position(int(p.x), int(p.y), int(p.z)))
         self._queue(p, prof.abilities(creative=(p.gamemode == 1), allow_flying=(p.gamemode == 1)))
         self._queue(p, prof.update_health(p.health))
         self._queue(p, prof.position(p.x, p.y, p.z, p.yaw, p.pitch))
+        # weather state
+        rain, thunder = self._weather_levels.get(self.weather, (0.0, 0.0))
+        self._queue(p, prof.game_state_change(7, rain))
+        self._queue(p, prof.game_state_change(8, thunder))
+        # experience
+        lvl = self.econ.level(p.name)
+        xp_total = self.econ.xp(p.name)
+        self._queue(p, prof.experience(0.0, lvl, xp_total))
         self._send_chunks(p)
+        self._queue(p, self._scoreboard_setup_frames(p))
         self._flush(p)
+        self._welcome(p)
+
+    def _welcome(self, p):
+        lines = [f"§6§lWelcome to {self.name}§r §7— Java 1.8 → 26.x"]
+        lines.append("§7Type §f/menu §7for gamemodes, §f/help §7for commands.")
+        if self.site_url:
+            lines.append(f"§bWebsite & shop: §f{self.site_url}")
+        for ln in lines:
+            self._chat_to(p, ln)
+
+    # ── scoreboard ─────────────────────────────────────────────────────────
+    def _scoreboard_setup_frames(self, p):
+        """Objective + display + all known scores for this player."""
+        prof = p.session.profile
+        frames = []
+        if not self.scoreboard_on or prof.proto < 393:
+            return frames
+        f = prof.scoreboard_objective(SB_OBJECTIVE, f"§6§l{self.name}")
+        if f:
+            frames.append(f)
+        f = prof.scoreboard_display(1, SB_OBJECTIVE)
+        if f:
+            frames.append(f)
+        for other in self.players.values():
+            if other.connected:
+                f = prof.scoreboard_score(other.name, SB_OBJECTIVE, self.econ.coins(other.name))
+                if f:
+                    frames.append(f)
+        f = prof.scoreboard_score(p.name, SB_OBJECTIVE, self.econ.coins(p.name))
+        if f:
+            frames.append(f)
+        return frames
+
+    def refresh_score(self, name):
+        """Update one player's sidebar score for everyone in their world."""
+        p = self.players.get(name.lower())
+        if not p:
+            return
+        score = self.econ.coins(name)
+        frames = {}
+        for other in self.players.values():
+            if not other.connected:
+                continue
+            if other.world is not p.world:
+                continue
+            prof = other.session.profile
+            f = prof.scoreboard_score(name, SB_OBJECTIVE, score)
+            if f:
+                frames[other.name.lower()] = f
+        for oname, f in frames.items():
+            o = self.players.get(oname)
+            if o and o.connected:
+                asyncio.ensure_future(o.session.send_raw(f))
+
+    def remove_score(self, name):
+        for other in self.players.values():
+            if not other.connected:
+                continue
+            prof = other.session.profile
+            f = prof.scoreboard_score(name, SB_OBJECTIVE, 0, remove=True)
+            if f:
+                asyncio.ensure_future(other.session.send_raw(f))
 
     def _queue(self, p, data):
         if data is None:
@@ -189,6 +301,12 @@ class GameServer:
             del self.players[p.name.lower()]
         if p.mode is not None:
             p.mode.leave(self, p)
+        # persist playtime + stats
+        rec = self.econ.data["players"].get(p.name.lower())
+        if rec:
+            rec["playtime"] = rec.get("playtime", 0) + int(time.time() - getattr(p, "_join_ts", time.time()))
+            self.econ.save()
+        self.remove_score(p.name)
         # broadcast removal
         for other in self.players.values():
             if other.world is p.world and other.connected and hasattr(other, "_spawned"):
@@ -206,8 +324,13 @@ class GameServer:
         if message.startswith("/"):
             await self.on_command(p, message[1:])
             return
+        # mute check
+        if self.econ.is_muted(p.name):
+            self._chat_to(p, "§cYou are muted.")
+            return
         # in-game chat
         self.broadcast_chat(p, message)
+        self._quest_progress(p, "chat")
         # AI / bots respond (network call offloaded to a thread)
         for b in self.bots.values():
             if b.world is p.world and b.brain is not None:
@@ -351,7 +474,21 @@ class GameServer:
         entity.health = 0.0
         if killer is not None and killer is not entity:
             killer.kills += 1
+            # economy: reward kills (bots and players), xp + coins
+            if not killer.is_bot:
+                reward = 10 if getattr(entity, "is_bot", False) else 25
+                self.econ.add_kill(killer.name)
+                self.econ.add_coins(killer.name, reward)
+                leveled = self.econ.add_xp(killer.name, 15)
+                self.refresh_score(killer.name)
+                self._chat_to(killer, f"§6+{reward} coins §7(+15 XP)")
+                if leveled:
+                    self._chat_to(killer, f"§a§lLEVEL UP! §fYou are now level {self.econ.level(killer.name)}")
+                    asyncio.ensure_future(self._send_many(killer, killer.session.profile.title(title="§a§lLEVEL UP!")))
+                self._quest_progress(killer, "kill")
         entity.deaths += 1
+        if not entity.is_bot:
+            self.econ.add_death(entity.name)
         self.broadcast_world(entity.world, self._death_message(entity, killer))
         # play death effect (game state change + respawn)
         if not entity.is_bot:
@@ -366,8 +503,30 @@ class GameServer:
 
     def _death_message(self, entity, killer):
         if killer is not None and killer is not entity:
-            return f"§c{killer.name} §7killed §c{entity.name}"
+            return f"§c{killer.name} §7killed §c{entity.name} §7(+coins)"
         return f"§7{entity.name} died"
+
+    # ── daily quest ────────────────────────────────────────────────────────
+    def _quest_progress(self, player, kind):
+        rec = self.econ.get(player.name)
+        day = time.strftime("%Y-%m-%d")
+        if rec.get("quest_day") != day:
+            rec["quest_day"] = day
+            rec["quest_progress"] = {}
+            rec["quest_done"] = False
+            self.econ.save()
+        if rec.get("quest_done"):
+            return
+        prog = rec["quest_progress"].get(kind, 0) + 1
+        rec["quest_progress"][kind] = prog
+        need = {"kill": 5, "join": 3, "chat": 5}.get(kind, 5)
+        if prog >= need:
+            rec["quest_done"] = True
+            self.econ.add_coins(player.name, 150)
+            self.econ.add_xp(player.name, 60)
+            self._chat_to(player, "§a§lDaily quest complete! §f+150 coins, +60 XP 🎉")
+            self.refresh_score(player.name)
+        self.econ.save()
 
     def respawn_entity(self, entity, x, y, z):
         entity.alive = True
@@ -446,15 +605,19 @@ class GameServer:
 
     # ── bots ──────────────────────────────────────────────────────────────
     def create_bot(self, name, world, role="enemy", skill=0.7, aggression=0.6,
-                   team=None, personality="hostile", x=0.5, y=70.0, z=0.5):
+                   team=None, personality="hostile", x=0.5, y=70.0, z=0.5,
+                   difficulty=None):
+        if difficulty is None and role == "enemy":
+            difficulty = self.difficulty
         bot = Bot(name, self.ids.alloc())
-        bot.brain = Brain(role=role, skill=skill, aggression=aggression, personality=personality)
+        bot.brain = Brain(role=role, skill=skill, aggression=aggression,
+                          personality=personality, difficulty=difficulty)
         bot.world = world
         bot.team = team
         bot.set_pos(x, y, z)
         self.bots[bot.entity_id] = bot
         self._spawn_bot_to_world(bot)
-        self.log(f"bot spawned: {name} in {world.name}")
+        self.log(f"bot spawned: {name} in {world.name} (difficulty={bot.brain.difficulty})")
         return bot
 
     def remove_bot(self, bot):
@@ -490,7 +653,9 @@ class GameServer:
             asyncio.ensure_future(p.session.send_raw(frame))
 
     def broadcast_chat(self, p, message):
-        msg = f"§7<{p.name}> §f{message}"
+        info = self.econ.rank_info(p.name)
+        prefix = info["color"] + info["label"] + " " if info["label"] != "Player" else ""
+        msg = f"§8[{prefix}§f{p.name}§8] §f{message}"
         for other in self.players.values():
             if other.world is p.world and other.connected:
                 self._chat_to(other, msg)
@@ -594,6 +759,15 @@ class GameServer:
                 self.log("tick error:\n" + traceback.format_exc())
 
     def _tick(self, dt):
+        t0 = time.perf_counter()
+        # advance world time + periodic broadcast
+        self.world_age += 1
+        self.world_time = (self.world_time + 1) % 24000
+        self._time_broadcast += dt
+        if self._time_broadcast >= 10.0:
+            self._time_broadcast = 0.0
+            self._broadcast_time()
+            self.econ.save()
         for p in list(self.players.values()):
             if p.connected:
                 self._physics(p, dt)
@@ -605,6 +779,12 @@ class GameServer:
                 mode.tick(self, dt)
             except Exception:
                 pass
+        # TPS measurement
+        self._tick_times.append(time.perf_counter() - t0)
+        if len(self._tick_times) > 40:
+            self._tick_times.pop(0)
+        avg = sum(self._tick_times) / max(1, len(self._tick_times))
+        self.tps = min(20.0, 1.0 / avg) if avg > 0 else 20.0
 
     # ── commands ──────────────────────────────────────────────────────────
     async def on_command(self, p, command):
@@ -615,6 +795,12 @@ class GameServer:
 
         def reply(msg):
             self._chat_to(p, msg)
+
+        def admin_only():
+            if not self.is_admin(p):
+                reply("§cYou need admin permissions for this. §7(/adminlogin <password>)")
+                return False
+            return True
 
         try:
             if cmd in ("help", "?"):
@@ -627,10 +813,11 @@ class GameServer:
                 self.lobby.join(self, p)
                 reply("§aBack to lobby!")
             elif cmd in ("gamemode", "mode"):
-                if args and args[0] in ("0", "1", "2", "3", "survival", "creative"):
-                    gm = {"survival": 0, "creative": 1, "adventure": 2, "spectator": 3}.get(args[0], int(args[0]) if args[0].isdigit() else 0)
+                gm_map = {"survival": 0, "creative": 1, "adventure": 2, "spectator": 3}
+                if args and args[0] in gm_map or (args and args[0].isdigit() and 0 <= int(args[0]) <= 3):
+                    gm = gm_map.get(args[0], int(args[0]))
                     p.gamemode = gm
-                    await p.session.send_raw(prof.abilities(creative=(gm == 1), allow_flying=(gm == 1)))
+                    await p.session.send_raw(prof.abilities(creative=(gm == 1), allow_flying=(gm in (1, 2))))
                     reply(f"§aGamemode set to {gm}")
                 else:
                     reply("§7Usage: /gamemode <0|1|2|3>")
@@ -642,12 +829,70 @@ class GameServer:
                 self.clear_world_bots(p.world)
                 reply("§aBots cleared.")
             elif cmd in ("stats", "me"):
-                reply(f"§7Kills: §f{p.kills} §7Deaths: §f{p.deaths}")
+                s = self.econ.stats(p.name)
+                reply(f"§7Rank: §f{self.econ.rank_info(p.name)['color']}{self.econ.rank_info(p.name)['label']} "
+                      f"§7| Level: §f{s['level']} §7| XP: §f{s['xp']} §7| Coins: §f{s['coins']} "
+                      f"§7| Kills: §f{s['kills']} §7| Deaths: §f{s['deaths']}")
+            elif cmd in ("coins", "bal", "money"):
+                reply(f"§6Coins: §f{self.econ.coins(p.name)}")
+            elif cmd == "pay":
+                await self.cmd_pay(p, args, reply)
+            elif cmd == "shop":
+                reply(self.shop_text())
+            elif cmd == "buy":
+                await self.cmd_buy(p, args, reply)
+            elif cmd == "redeem":
+                if not args:
+                    reply("§7Usage: /redeem <code>")
+                else:
+                    r = self.econ.redeem_code(p.name, args[0])
+                    reply(f"§aCode redeemed: §f{r}§a!" if r else "§cInvalid or used code.")
+            elif cmd in ("rank", "ranks"):
+                reply(self.ranks_text())
+            elif cmd in ("kit", "kits"):
+                await self.cmd_kit(p, args, reply)
+            elif cmd in ("xp", "level"):
+                reply(f"§aLevel {self.econ.level(p.name)} §7({self.econ.xp(p.name)} XP)")
+            elif cmd in ("quest", "quests"):
+                reply(self.quest_text(p))
+            elif cmd == "sethome":
+                await self.cmd_sethome(p, args, reply)
+            elif cmd == "home":
+                await self.cmd_home(p, args, reply)
+            elif cmd == "delhome":
+                await self.cmd_delhome(p, args, reply)
+            elif cmd == "homes":
+                hs = self.econ.homes(p.name)
+                reply("§7Homes: §f" + (", ".join(hs) if hs else "none"))
+            elif cmd == "setwarp":
+                if not admin_only():
+                    return
+                await self.cmd_setwarp(p, args, reply)
+            elif cmd == "warp":
+                await self.cmd_warp(p, args, reply)
+            elif cmd == "delwarp":
+                if not admin_only():
+                    return
+                await self.cmd_delwarp(p, args, reply)
+            elif cmd == "warps":
+                ws = self.econ.warps()
+                reply("§7Warps: §f" + (", ".join(ws) if ws else "none"))
+            elif cmd == "msg":
+                await self.cmd_msg(p, args, reply)
+            elif cmd == "r":
+                await self.cmd_reply(p, args, reply)
             elif cmd == "list":
                 names = ", ".join(pp.name for pp in self.players.values() if pp.connected)
                 reply(f"§7Online ({len(self.players)}): §f{names}")
             elif cmd in ("server", "info", "version"):
-                reply(f"§a{self.name} §7— supports Minecraft 1.8 → 26.x (Java), Bedrock beta")
+                reply(f"§a{self.name} §7— Java 1.8 → 26.x, Bedrock ping. §f/site")
+            elif cmd == "site":
+                if self.site_url:
+                    reply(f"§bWebsite & shop: §f{self.site_url}")
+                else:
+                    reply("§7No site URL configured.")
+            elif cmd in ("ping", "tps"):
+                reply(f"§7TPS: §f{self.tps:.1f} §7| Uptime: §f{self._uptime()}")
             elif cmd == "fly":
                 p.gamemode = 1
                 await p.session.send_raw(prof.abilities(creative=True, allow_flying=True, flying=True))
@@ -659,6 +904,9 @@ class GameServer:
             elif cmd == "ai":
                 self.ai_enabled = not self.ai_enabled
                 reply(f"§7Bot AI chat: §f{'ON' if self.ai_enabled else 'OFF'}")
+            elif cmd == "scoreboard":
+                self.scoreboard_on = not self.scoreboard_on
+                reply(f"§7Sidebar scoreboard: §f{'ON' if self.scoreboard_on else 'OFF'}")
             elif cmd == "tp":
                 if len(args) >= 3:
                     p.set_pos(float(args[0]), float(args[1]), float(args[2]))
@@ -666,23 +914,76 @@ class GameServer:
                     reply("§aTeleported.")
                 else:
                     reply("§7Usage: /tp <x> <y> <z>")
+            elif cmd == "time":
+                await self.cmd_time(p, args, reply, admin_only)
+            elif cmd == "weather":
+                await self.cmd_weather(p, args, reply, admin_only)
+            elif cmd == "give":
+                if not admin_only():
+                    return
+                await self.cmd_give(p, args, reply)
+            elif cmd == "broadcast":
+                if not admin_only():
+                    return
+                if args:
+                    msg = " ".join(args)
+                    self.broadcast_all(f"§6§l[Broadcast] §r{msg}")
+                    reply("§aBroadcast sent.")
+                else:
+                    reply("§7Usage: /broadcast <message>")
+            elif cmd == "kick":
+                if not admin_only():
+                    return
+                await self.cmd_kick(p, args, reply)
+            elif cmd == "ban":
+                if not admin_only():
+                    return
+                await self.cmd_ban(p, args, reply)
+            elif cmd == "unban":
+                if not admin_only():
+                    return
+                if args:
+                    self.econ.unban(args[0])
+                    reply(f"§aUnbanned {args[0]}.")
+            elif cmd == "mute":
+                if not admin_only():
+                    return
+                await self.cmd_mute(p, args, reply)
+            elif cmd == "unmute":
+                if not admin_only():
+                    return
+                if args:
+                    self.econ.unmute(args[0])
+                    reply(f"§aUnmuted {args[0]}.")
+            elif cmd == "adminlogin":
+                if args and self.check_admin_password(args[0]):
+                    p.admin = True
+                    reply("§aYou are now admin.")
+                else:
+                    reply("§cWrong password.")
             else:
                 reply(f"§cUnknown command §7{cmd}. §fType /help")
         except Exception as e:
             self.log(f"command error: {cmd} {e!r}")
             reply("§cCommand error.")
 
+    def _uptime(self):
+        u = int(time.time() - self.started)
+        h, m, s = u // 3600, (u % 3600) // 60, u % 60
+        return f"{h}h {m}m {s}s"
+
     def help_text(self):
         return "\n".join([
             "§6§lAMINCK Nova — Help",
-            "§f/menu §7— list gamemodes",
-            "§f/join <mode> §7— join a gamemode",
-            "§f/lobby §7— back to hub",
-            "§f/gamemode <0|1|2|3>",
-            "§f/companion §7— spawn a friendly AI",
-            "§f/enemy <n> §7— spawn hostile AI bots",
-            "§f/killbots §7— clear AI bots",
-            "§f/stats /list /tp /fly /heal /ai /server",
+            "§7── Play ──",
+            "§f/menu §7- gamemodes §8| §f/join <mode> §8| §f/lobby §8| §f/gamemode <0-3>",
+            "§f/companion §8| §f/enemy <n> §8| §f/killbots §8| §f/fly §8| §f/heal §8| §f/tp <x y z>",
+            "§7── Economy ──",
+            "§f/coins §8| §f/pay <name> <n> §8| §f/shop §8| §f/buy <item> §8| §f/redeem <code>",
+            "§f/rank §8| §f/kit <name> §8| §f/xp §8| §f/quest",
+            "§7── Utility ──",
+            "§f/sethome [n] §8| §f/home [n] §8| §f/delhome §8| §f/warp <n> §8| §f/warps",
+            "§f/msg <name> <text> §8| §f/r <text> §8| §f/stats §8| §f/list §8| §f/site §8| §f/tps",
         ])
 
     def menu_text(self):
@@ -693,6 +994,32 @@ class GameServer:
             lines.append(f"§f/{m.id:12s} §7— {m.desc}")
         return "\n".join(lines)
 
+    def shop_text(self):
+        lines = ["§6§lShop §7(/buy <id>):", ""]
+        for c in _econ.CATALOG:
+            price = f"§6{c['price_coins']} coins" if c.get("price_coins") else f"§b{c['price_toman']} Toman (site)"
+            lines.append(f"§f{c['id']:14s} §7{c['name']} — {price}")
+        lines.append("")
+        lines.append(f"§7Site shop: §f{self.site_url or '(not set)'}")
+        return "\n".join(lines)
+
+    def ranks_text(self):
+        lines = ["§6§lRanks:", ""]
+        for rid, r in _econ.RANKS.items():
+            lines.append(f"{r['color']}{rid} §7— {r['label']} (fly={r['fly']}, coin ×{r['coin_mult']})")
+        return "\n".join(lines)
+
+    def quest_text(self, p):
+        rec = self.econ.get(p.name)
+        day = time.strftime("%Y-%m-%d")
+        if rec.get("quest_day") != day:
+            return "§7Daily quest: §fkill 5 enemies §7→ §f+150 coins, +60 XP"
+        if rec.get("quest_done"):
+            return "§aDaily quest complete! §7Come back tomorrow."
+        prog = rec.get("quest_progress", {}).get("kill", 0)
+        return f"§7Daily quest: kill 5 enemies §f({prog}/5) §7→ +150 coins, +60 XP"
+
+    # ── command handlers ───────────────────────────────────────────────────
     async def cmd_join(self, p, args, reply):
         if not args:
             reply(self.menu_text())
@@ -703,6 +1030,7 @@ class GameServer:
             reply(f"§cUnknown mode §7{key}. §f/menu")
             return
         mode.join(self, p)
+        self._quest_progress(p, "join")
         reply(f"§aYou joined §f{mode.name}§a! §7(/lobby to leave)")
 
     async def cmd_companion(self, p, reply):
@@ -712,7 +1040,8 @@ class GameServer:
         bot = self.create_bot("Nova", p.world, role="companion", skill=0.75,
                               personality="friendly", x=p.x + 2, y=p.y, z=p.z)
         bot.brain.set_follow(p)
-        reply("§aYour companion §fNova§a has spawned and will follow you!")
+        bot.brain.set_owner(p)
+        reply("§aYour companion §fNova§a has spawned and will follow + defend you!")
 
     async def cmd_enemy(self, p, args, reply):
         if p.mode is None or p.mode.id == "lobby":
@@ -727,7 +1056,261 @@ class GameServer:
             bot = self.create_bot(f"Raider{i+1}", p.world, role="enemy", skill=0.72,
                                   personality="hostile", x=x, y=p.y, z=z)
             bot.brain.set_hunt(p)
-        reply(f"§c{n} enemy bot(s) spawned!")
+        reply(f"§c{n} enemy bot(s) spawned §7(difficulty: {self.difficulty})!")
+
+    async def cmd_pay(self, p, args, reply):
+        if len(args) < 2 or not args[1].isdigit():
+            reply("§7Usage: /pay <name> <amount>")
+            return
+        target = self.players.get(args[0].lower())
+        if not target or not target.connected:
+            reply("§cPlayer not online.")
+            return
+        amt = int(args[1])
+        if amt <= 0:
+            return
+        if self.econ.spend(p.name, amt):
+            self.econ.add_coins(target.name, amt)
+            self.refresh_score(p.name)
+            self.refresh_score(target.name)
+            reply(f"§aPaid §f{amt} §acoins to §f{target.name}§a.")
+            self._chat_to(target, f"§6{p.name} §7paid you §f{amt} §7coins.")
+        else:
+            reply("§cNot enough coins.")
+
+    async def cmd_buy(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /buy <item id> — see /shop")
+            return
+        item = _econ.CATALOG_BY_ID.get(args[0].lower())
+        if not item:
+            reply("§cUnknown item. §f/shop")
+            return
+        if item.get("price_coins") is None:
+            reply(f"§bThis item is bought on the site: §f{self.site_url or '(site not set)'}")
+            return
+        price = item["price_coins"]
+        if not self.econ.spend(p.name, price):
+            reply("§cNot enough coins.")
+            return
+        if item["type"] == "rank":
+            self.econ.set_rank(p.name, item["rank"])
+            reply(f"§aYou are now §f{_econ.RANKS[item['rank']]['color']}{item['rank'].upper()}§a!")
+        elif item["type"] == "kit":
+            rec = self.econ.get(p.name)
+            rec.setdefault("kits", []).append(item["kit"])
+            self.econ.save()
+            reply(f"§aKit unlocked: §f{item['kit']}")
+        self.refresh_score(p.name)
+
+    async def cmd_kit(self, p, args, reply):
+        if not args:
+            allowed = set(self.econ.rank_info(p.name)["kits"]) | set(self.econ.get(p.name).get("kits", [])) | {"builder"}
+            reply("§7Your kits: §f" + (", ".join(sorted(allowed)) or "none"))
+            return
+        kit = args[0].lower()
+        allowed = set(self.econ.rank_info(p.name)["kits"]) | set(self.econ.get(p.name).get("kits", []))
+        if kit not in allowed and not self.is_admin(p):
+            reply("§cYou don't own this kit. §f/rank")
+            return
+        items = _econ.KITS.get(kit)
+        if not items:
+            reply("§cUnknown kit.")
+            return
+        self.give_items(p, items)
+        reply(f"§aKit §f{kit}§a given!")
+
+    async def cmd_sethome(self, p, args, reply):
+        name = args[0].lower() if args else "home"
+        ok = self.econ.set_home(p.name, name, (p.x, p.y, p.z, p.world.name if p.world else "lobby"))
+        reply(f"§aHome '{name}' set." if ok else "§cMax homes reached (10).")
+
+    async def cmd_home(self, p, args, reply):
+        name = args[0].lower() if args else "home"
+        pos = self.econ.home(p.name, name)
+        if not pos:
+            reply("§cNo such home.")
+            return
+        x, y, z, wname = pos
+        if p.world is None or p.world.name != wname:
+            mode = self.modes.get(wname) or self.modes.get("survival")
+            mode.join(self, p)
+        p.set_pos(x, y, z)
+        await p.session.send_raw(p.session.profile.position(x, y, z, p.yaw, p.pitch))
+        reply(f"§aTeleported home ({name}).")
+
+    async def cmd_delhome(self, p, args, reply):
+        name = args[0].lower() if args else "home"
+        reply("§aHome deleted." if self.econ.del_home(p.name, name) else "§cNo such home.")
+
+    async def cmd_setwarp(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /setwarp <name>")
+            return
+        self.econ.set_warp(args[0].lower(), (p.x, p.y, p.z, p.world.name if p.world else "lobby"))
+        reply(f"§aWarp '{args[0]}' set.")
+
+    async def cmd_warp(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /warp <name>")
+            return
+        pos = self.econ.warp(args[0].lower())
+        if not pos:
+            reply("§cNo such warp.")
+            return
+        x, y, z, wname = pos
+        if p.world is None or p.world.name != wname:
+            (self.modes.get(wname) or self.modes.get("survival")).join(self, p)
+        p.set_pos(x, y, z)
+        await p.session.send_raw(p.session.profile.position(x, y, z, p.yaw, p.pitch))
+        reply(f"§aWarped to {args[0]}.")
+
+    async def cmd_delwarp(self, p, args, reply):
+        if args and self.econ.del_warp(args[0].lower()):
+            reply("§aWarp deleted.")
+        else:
+            reply("§cNo such warp.")
+
+    async def cmd_msg(self, p, args, reply):
+        if len(args) < 2:
+            reply("§7Usage: /msg <name> <message>")
+            return
+        target = self.players.get(args[0].lower())
+        if not target or not target.connected:
+            reply("§cPlayer not online.")
+            return
+        msg = " ".join(args[1:])
+        self._chat_to(target, f"§d{p.name} §8→ §dYou§7: §f{msg}")
+        target._last_msg = p.name
+        reply(f"§7You §8→ §d{target.name}§7: §f{msg}")
+
+    async def cmd_reply(self, p, args, reply):
+        if not args or not getattr(p, "_last_msg", None):
+            reply("§7No one to reply to.")
+            return
+        target = self.players.get(p._last_msg.lower())
+        if not target or not target.connected:
+            reply("§cPlayer offline.")
+            return
+        msg = " ".join(args)
+        self._chat_to(target, f"§d{p.name} §8→ §dYou§7: §f{msg}")
+        reply(f"§7You §8→ §d{target.name}§7: §f{msg}")
+
+    async def cmd_time(self, p, args, reply, admin_only):
+        times = {"day": 1000, "noon": 6000, "night": 13000, "midnight": 18000}
+        if not args:
+            reply(f"§7Time: §f{self.world_time} ticks")
+            return
+        if not admin_only():
+            return
+        if args[0] in times:
+            self.set_time(times[args[0]])
+            reply(f"§aTime set to {args[0]}.")
+        elif args[0].isdigit():
+            self.set_time(int(args[0]) % 24000)
+            reply("§aTime set.")
+        else:
+            reply("§7Usage: /time <day|noon|night|midnight|ticks>")
+
+    async def cmd_weather(self, p, args, reply, admin_only):
+        if not args:
+            reply(f"§7Weather: §f{self.weather}")
+            return
+        if not admin_only():
+            return
+        w = args[0].lower()
+        if w in ("clear", "rain", "thunder"):
+            self.set_weather(w)
+            reply(f"§aWeather set to {w}.")
+        else:
+            reply("§7Usage: /weather <clear|rain|thunder>")
+
+    async def cmd_give(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /give <item> [count]")
+            return
+        name = args[0]
+        count = int(args[1]) if len(args) > 1 and args[1].isdigit() else 1
+        prof = p.session.profile
+        item_id = prof.reg.item_id(name)
+        if item_id is None or item_id == 1 and name not in ("air",):
+            reply(f"§cUnknown item '{name}'.")
+            return
+        slot = 36 + (p.held_slot % 9)
+        await p.session.send_raw(prof.set_slot(-2, slot, item_id, count))
+        inv = getattr(p, "inventory", None) or {}
+        inv[name] = inv.get(name, 0) + count
+        p.inventory = inv
+        reply(f"§aGave §f{count}× {name}§a.")
+
+    async def cmd_kick(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /kick <name> [reason]")
+            return
+        target = self.players.get(args[0].lower())
+        if not target:
+            reply("§cPlayer not online.")
+            return
+        reason = " ".join(args[1:]) or "Kicked by admin"
+        asyncio.ensure_future(target.session.disconnect(reason))
+        reply(f"§aKicked {target.name}.")
+
+    async def cmd_ban(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /ban <name> [reason]")
+            return
+        self.econ.ban(args[0])
+        target = self.players.get(args[0].lower())
+        if target:
+            reason = " ".join(args[1:]) or "Banned"
+            asyncio.ensure_future(target.session.disconnect(reason))
+        reply(f"§aBanned {args[0]}.")
+
+    async def cmd_mute(self, p, args, reply):
+        if not args:
+            reply("§7Usage: /mute <name> [minutes]")
+            return
+        minutes = int(args[1]) if len(args) > 1 and args[1].isdigit() else 30
+        self.econ.mute(args[0], minutes * 60)
+        reply(f"§aMuted {args[0]} for {minutes} min.")
+
+    # ── game-wide actions (commands + panel) ───────────────────────────────
+    def set_time(self, ticks):
+        self.world_time = ticks % 24000
+        self._broadcast_time()
+
+    def set_weather(self, weather):
+        self.weather = weather
+        rain, thunder = self._weather_levels.get(weather, (0.0, 0.0))
+        for p in self.players.values():
+            if p.connected and hasattr(p, "_spawned"):
+                prof = p.session.profile
+                asyncio.ensure_future(self._send_many(p, [prof.game_state_change(7, rain),
+                                                          prof.game_state_change(8, thunder)]))
+
+    def _broadcast_time(self):
+        for p in self.players.values():
+            if p.connected and hasattr(p, "_spawned"):
+                asyncio.ensure_future(p.session.send_raw(
+                    p.session.profile.update_time(self.world_age, self.world_time)))
+
+    def broadcast_all(self, message):
+        for p in self.players.values():
+            if p.connected:
+                self._chat_to(p, message)
+
+    def give_items(self, p, items):
+        prof = p.session.profile
+        inv = getattr(p, "inventory", None) or {}
+        slot = 36
+        for name, count in items:
+            item_id = prof.reg.item_id(name)
+            if item_id is None:
+                continue
+            asyncio.ensure_future(p.session.send_raw(prof.set_slot(-2, slot, item_id, count)))
+            inv[name] = inv.get(name, 0) + count
+            slot += 1
+        p.inventory = inv
 
     def clear_world_bots(self, world):
         for b in list(self.bots.values()):

@@ -196,9 +196,11 @@ class PDRuntime:
         target = self._compare_value(spec.get("compareTo"), scopes)
         fields = spec.get("fields", {})
         key = _switch_key(target)
-        if key not in fields:
+        if key in fields:
+            t = fields[key]
+        else:
             key = "default"
-        t = fields.get(key, "void")
+            t = spec.get("default", "void")
         if t == "void":
             return
         if isinstance(t, list) and t[0] == "container":
@@ -366,8 +368,21 @@ class PDRuntime:
                 v = self.decode(f["type"], r, scopes)
                 if name:
                     out[name] = v
+                elif isinstance(v, dict):
+                    # anonymous inline field (e.g. switch splice): flatten
+                    # decoded container branches back into this scope.
+                    self._splice(out, v)
         finally:
             scopes.pop()
+        return out
+
+    @staticmethod
+    def _splice(out, v):
+        for k, val in v.items():
+            if isinstance(val, dict):
+                out.update(val)
+            elif val is not None:
+                out[k] = val
         return out
 
     def _dec_switch(self, spec, r, scopes):
@@ -375,9 +390,11 @@ class PDRuntime:
         target = self._compare_value(spec.get("compareTo"), scopes)
         fields = spec.get("fields", {})
         key = _switch_key(target)
-        if key not in fields:
+        if key in fields:
+            t = fields[key]
+        else:
             key = "default"
-        t = fields.get(key, "void")
+            t = spec.get("default", "void")
         return {key: self.decode(t, r, scopes)} if t != "void" else {key: None}
 
     def _dec_mapper(self, spec, r, scopes):

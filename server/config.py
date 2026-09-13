@@ -22,5 +22,12 @@ def load(args=None):
         "image_model": os.environ.get("IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell"),
         "favicon_path": os.environ.get("FAVICON_PATH", args.get("favicon_path") or "favicon.png"),
         "resource_pack_url": os.environ.get("RESOURCE_PACK_URL", ""),
+        # admin + site + gameplay tuning
+        "admin_password": os.environ.get("ADMIN_PASSWORD", args.get("admin_password") or ""),
+        "admin_names": os.environ.get("ADMIN_NAMES", args.get("admin_names") or ""),
+        "site_url": os.environ.get("SITE_URL", args.get("site_url") or ""),
+        "difficulty": os.environ.get("BOT_DIFFICULTY", args.get("difficulty") or "normal"),
+        "scoreboard": os.environ.get("SCOREBOARD", args.get("scoreboard") or "1") not in ("0", "false", "False"),
+        "state_path": os.environ.get("STATE_PATH", args.get("state_path") or ""),
     }
     return cfg

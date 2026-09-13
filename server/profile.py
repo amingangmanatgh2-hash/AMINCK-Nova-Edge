@@ -144,6 +144,8 @@ class Profile:
         return self.send("configuration", "select_known_packs", w.bytes_())
 
     def config_finish(self):
+        if not self.has_config or self.sid("configuration", "finish_configuration") is None:
+            return None
         return self.send("configuration", "finish_configuration", b"")
 
     # ── play: login (join game) ───────────────────────────────────────────
@@ -328,9 +330,91 @@ class Profile:
         return self.send("play", "abilities", w.bytes_())
 
     def update_time(self, world_age, time_of_day):
+        if self.proto >= 775:
+            # 1.21.6+ (26.x): independent clock updates
+            value = {
+                "age": world_age,
+                "clockUpdates": [
+                    {"id": 0, "totalTicks": time_of_day, "partialTick": 0.0, "rate": 20.0},
+                ],
+            }
+            payload = self.pd.enc_packet("packet_update_time", value)
+            return self.send("play", "update_time", payload)
+        if self.proto >= 770:
+            value = {"age": world_age, "time": time_of_day, "tickDayTime": True}
+            payload = self.pd.enc_packet("packet_update_time", value)
+            return self.send("play", "update_time", payload)
         w = Writer()
         w.i64(world_age); w.i64(time_of_day)
         return self.send("play", "update_time", w.bytes_())
+
+    # ── scoreboard (1.13+) ─────────────────────────────────────────────────
+    def scoreboard_objective(self, name, display_name, action=0):
+        """action: 0=create, 1=remove, 2=update."""
+        if self.proto < 393 or self.sid("play", "scoreboard_objective") is None:
+            return None
+        if self.proto >= 765:
+            value = {"name": name, "action": action,
+                     "displayText": nbt.compound(text=nbt.string_(display_name)),
+                     "type": 0, "number_format": None}
+        else:
+            value = {"name": name, "action": action, "displayText": display_name, "type": 0}
+        payload = self.pd.enc_packet("packet_scoreboard_objective", value)
+        return self.send("play", "scoreboard_objective", payload)
+
+    def scoreboard_display(self, position, name):
+        if self.proto < 393 or self.sid("play", "scoreboard_display_objective") is None:
+            return None
+        payload = self.pd.enc_packet("packet_scoreboard_display_objective",
+                                     {"position": position, "name": name})
+        return self.send("play", "scoreboard_display_objective", payload)
+
+    def scoreboard_score(self, item_name, objective, value, remove=False):
+        if self.proto < 393 or self.sid("play", "scoreboard_score") is None:
+            return None
+        if self.proto >= 765:
+            if remove:
+                return self.reset_score(item_name, objective)
+            payload = self.pd.enc_packet("packet_scoreboard_score", {
+                "itemName": item_name, "scoreName": objective, "value": value,
+                "display_name": None, "number_format": None})
+            return self.send("play", "scoreboard_score", payload)
+        payload = self.pd.enc_packet("packet_scoreboard_score", {
+            "itemName": item_name, "action": 1 if remove else 0,
+            "scoreName": objective, "value": value})
+        return self.send("play", "scoreboard_score", payload)
+
+    def reset_score(self, entity_name, objective_name):
+        if self.sid("play", "reset_score") is None:
+            return None
+        payload = self.pd.enc_packet("packet_reset_score",
+                                     {"entity_name": entity_name, "objective_name": objective_name})
+        return self.send("play", "reset_score", payload)
+
+    def experience(self, bar, level, total):
+        w = Writer()
+        w.f32(bar); w.varint(level); w.varint(total)
+        return self.send("play", "experience", w.bytes_())
+
+    def set_slot(self, window_id, slot, item_id, count=1):
+        if self.proto >= 766:
+            # 1.20.5+ item-components slot format (itemCount i8 in 766, varint ≥767)
+            if count <= 0:
+                value = {"windowId": window_id, "stateId": 0, "slot": slot,
+                         "item": {"itemCount": 0}}
+            else:
+                value = {"windowId": window_id, "stateId": 0, "slot": slot,
+                         "item": {"itemCount": count, "itemId": item_id,
+                                  "addedComponentCount": 0, "removedComponentCount": 0,
+                                  "components": [], "removeComponents": []}}
+        else:
+            value = {"windowId": window_id, "stateId": 0, "slot": slot,
+                     "item": {"present": count > 0, "itemId": item_id,
+                              "itemCount": count, "nbt": None}}
+        payload = self.pd.enc_packet("packet_set_slot", value)
+        return self.send("play", "set_slot", payload)
+
+
 
     def spawn_position(self, x, y, z, angle=0.0):
         w = Writer()
@@ -592,19 +676,20 @@ def _write_metadata_empty(w, proto):
 
 
 def _heightmap_bytes(proto, column):
-    from .chunk import encode_heightmap, pack_entries
-    hm = encode_heightmap(column)
+    from .chunk import encode_heightmap, heightmap_longs
     if proto >= 775:
-        # 26.1+: heightmaps are an array of {type, longs}
+        # 26.1+: heightmaps are an array of {type, data[]} entries
+        # type mapper: 1 = world_surface, 4 = motion_blocking
+        longs = heightmap_longs(column)
         w = Writer()
-        hvals = [hm["value"]["WORLD_SURFACE"]["value"], hm["value"]["MOTION_BLOCKING"]["value"]]
         w.varint(2)
-        for type_id, vals in ((1, hvals[0]), (4, hvals[1])):
+        for type_id in (1, 4):
             w.varint(type_id)
-            w.varint(len(vals))
-            for v in vals:
-                w.i64((v[0] << 32) | (v[1] & 0xFFFFFFFF))
+            w.varint(len(longs))
+            for v in longs:
+                w.i64(v & 0x7FFFFFFFFFFFFFFF)
         return w.bytes_()
+    hm = encode_heightmap(column)
     if proto >= 764:
         return nbt.encode_anon(hm)
     return nbt.encode(hm, with_name=True, name="")

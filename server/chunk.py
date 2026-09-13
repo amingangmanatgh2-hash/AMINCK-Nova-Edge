@@ -179,8 +179,8 @@ def encode_chunk_data(meta, column, biome_id, heightmap_fn=None):
     return bytes(buf)
 
 
-def encode_heightmap(column):
-    """Build MOTION_BLOCKING / WORLD_SURFACE heightmaps (9 bits/entry)."""
+def heightmap_longs(column):
+    """MOTION_BLOCKING / WORLD_SURFACE heights packed into 64-bit longs (9 bits/entry)."""
     h = [0] * 256
     for z in range(16):
         for x in range(16):
@@ -194,7 +194,12 @@ def encode_heightmap(column):
                     continue
                 break
             h[z * 16 + x] = top
-    longs = pack_entries(h, 9)
+    return pack_entries(h, 9)
+
+
+def encode_heightmap(column):
+    """Build MOTION_BLOCKING / WORLD_SURFACE heightmaps (9 bits/entry)."""
+    longs = heightmap_longs(column)
     la = [[int(l >> 32), int(l & 0xFFFFFFFF)] for l in longs]
     return nbt.compound(
         MOTION_BLOCKING=nbt.long_array(la),
