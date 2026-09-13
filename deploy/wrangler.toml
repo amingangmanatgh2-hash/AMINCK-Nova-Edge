@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  AMINCK Nova — Workers front (standalone, one-click deploy, no token)
+#
+#  🚀 دیپلوی یک‌کلیکی (بدون توکن):
+#     https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/main/deploy
+#
+#  یا دستی:  cd deploy && npx wrangler deploy
+# ═══════════════════════════════════════════════════════════════════════════
+name = "aminck-nova"
+main = "worker.js"
+compatibility_date = "2026-09-13"
+workers_dev = true
+
+# 🤖 هوش مصنوعی بومی کلادفلر (Workers AI) — بدون هیچ توکنی
+#    چت (llama) + ساخت لوگوی سرور (flux) از نام انتخابی شما
+[ai]
+binding = "AI"
+
+# 🗄️ ذخیرهٔ تنظیمات (نام سرور / دامنه / لوگو) در Durable Object + SQLite
+#    با دیپلوی خودکار ساخته می‌شود؛ هیچ کلید KV/D1 لازم نیست.
+[[durable_objects.bindings]]
+name = "STORE"
+class_name = "NovaStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NovaStore"]
+
+# ── متغیرها (اختیاری) ───────────────────────────────────────────────────────
+[vars]
+# آدرس پنل HTTP سرور بازی (Container) — وقتی خالی باشد پنل جلو به تنهایی کار می‌کند
+SERVER_HOST = ""
+# نام پیش‌فرض سرور (در صفحهٔ راه‌اندازی قابل تغییر است)
+SERVER_NAME = "AMINCK Nova"

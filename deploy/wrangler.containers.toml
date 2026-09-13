@@ -1,0 +1,44 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  AMINCK Nova — full stack (Cloudflare Containers, public beta)
+#
+#  Worker (panel + Workers AI)  +  Python game server in a Container.
+#
+#  🚀 دیپلوی:  node deploy/index.js            (پرسش نام + دامنه، سپس دیپلوی)
+#     یا دستی:  npx wrangler deploy --config deploy/wrangler.containers.toml
+#
+#  نیاز: حساب Cloudflare + `npx wrangler login`
+#  (کانتینرها در بتای عمومی هستند و صورتحساب دارند)
+# ═══════════════════════════════════════════════════════════════════════════
+name = "aminck-nova"
+main = "container_worker.js"
+compatibility_date = "2026-09-13"
+workers_dev = true
+
+# 🤖 Workers AI — بدون توکن (چت + ساخت لوگو)
+[ai]
+binding = "AI"
+
+# 📦 کانتینر بازی (Python) — ساخته و پوش می‌شود توسط `wrangler deploy`
+[[containers]]
+class_name = "NovaContainer"
+image = "../server/Dockerfile"
+max_instances = 1
+instance_type = "standard-2"   # قابل تنظیم: lite | basic | standard-1..4
+
+# 🔗 اتصال کانتینر به Worker (Durable Object + SQLite)
+[[durable_objects.bindings]]
+name = "NOVA"
+class_name = "NovaContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["NovaContainer"]
+
+# ── متغیرها — توسط `deploy/index.js` به‌صورت خودکار مقداردهی می‌شوند ───────
+[vars]
+SERVER_NAME = "AMINCK Nova"
+SERVER_DOMAIN = ""
+MOTD = "Minecraft God Server — Java 1.8 → 26.x"
+# آدرس عمومی Worker (برای هوش مصنوعی داخل بازی بدون توکن). بعد از اولین دیپلوی
+# به‌صورت خودکار توسط CLI پر می‌شود (یا دامنهٔ شخصی شما).
+AI_FALLBACK_URL = ""
