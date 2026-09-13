@@ -163,6 +163,15 @@ class Economy:
         return {"coins": rec["coins"], "xp": rec["xp"], "level": level_for_xp(rec["xp"]),
                 "kills": rec["kills"], "deaths": rec["deaths"], "rank": rec["rank"]}
 
+    # ── inventory (persisted across sessions) ───────────────────────────────
+    def inventory(self, name):
+        return dict(self.get(name).get("inventory", {}))
+
+    def set_inventory(self, name, inv):
+        rec = self.get(name)
+        rec["inventory"] = dict(inv or {})
+        self.save()
+
     # ── rank ────────────────────────────────────────────────────────────────
     def rank(self, name):
         return self.get(name)["rank"]

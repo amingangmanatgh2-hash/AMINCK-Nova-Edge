@@ -35,6 +35,14 @@ export class NovaContainer extends Container {
       BEDROCK_PORT: "19132",
       HTTP_PORT: String(PANEL_PORT),
       VIEW_DISTANCE: "4",
+      // deploy-time configured admin + site + shop
+      ADMIN_PASSWORD: this.env.ADMIN_PASSWORD || "",
+      ADMIN_NAMES: this.env.ADMIN_NAMES || "",
+      SITE_URL: this.env.SITE_URL || "",
+      BOT_DIFFICULTY: this.env.BOT_DIFFICULTY || "normal",
+      PAYMENT_CARD: this.env.PAYMENT_CARD || "",
+      PAYMENT_CARD_HOLDER: this.env.PAYMENT_CARD_HOLDER || "",
+      PAYMENT_NOTE: this.env.PAYMENT_NOTE || "",
     };
   }
 

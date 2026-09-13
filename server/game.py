@@ -161,7 +161,22 @@ class GameServer:
         self._send_chunks(p)
         self._queue(p, self._scoreboard_setup_frames(p))
         self._flush(p)
+        self._restore_inventory(p)
         self._welcome(p)
+
+    def _restore_inventory(self, p):
+        """Give the player their persisted items (survives reconnect)."""
+        inv = self.econ.inventory(p.name)
+        if not inv:
+            return
+        prof = p.session.profile
+        slot = 36
+        for name, count in list(inv.items())[:9]:
+            item_id = prof.reg.item_id(name)
+            if item_id is None:
+                continue
+            asyncio.ensure_future(p.session.send_raw(prof.set_slot(-2, slot, item_id, count)))
+            slot += 1
 
     def _welcome(self, p):
         lines = [f"§6§lWelcome to {self.name}§r §7— Java 1.8 → 26.x"]
@@ -992,6 +1007,9 @@ class GameServer:
             if m.id == "lobby":
                 continue
             lines.append(f"§f/{m.id:12s} §7— {m.desc}")
+        if self.site_url:
+            lines.append("")
+            lines.append(f"§b🛒 فروشگاه و سایت: §f{self.site_url}")
         return "\n".join(lines)
 
     def shop_text(self):
@@ -1236,11 +1254,7 @@ class GameServer:
         if item_id is None or item_id == 1 and name not in ("air",):
             reply(f"§cUnknown item '{name}'.")
             return
-        slot = 36 + (p.held_slot % 9)
-        await p.session.send_raw(prof.set_slot(-2, slot, item_id, count))
-        inv = getattr(p, "inventory", None) or {}
-        inv[name] = inv.get(name, 0) + count
-        p.inventory = inv
+        self.give_items(p, [(name, count)])
         reply(f"§aGave §f{count}× {name}§a.")
 
     async def cmd_kick(self, p, args, reply):
@@ -1311,6 +1325,7 @@ class GameServer:
             inv[name] = inv.get(name, 0) + count
             slot += 1
         p.inventory = inv
+        self.econ.set_inventory(p.name, inv)
 
     def clear_world_bots(self, world):
         for b in list(self.bots.values()):

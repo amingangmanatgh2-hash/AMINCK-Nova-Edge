@@ -31,6 +31,18 @@ export function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
+// Shop catalog — mirrors server/economy.py CATALOG so the site can list the
+// same items even when the game container isn't reachable yet.
+export const SHOP_CATALOG = [
+  { id: "coins_1000", type: "coins", amount: 1000, name: "۱۰۰۰ سکه", price_toman: 20000 },
+  { id: "coins_5000", type: "coins", amount: 5000, name: "۵۰۰۰ سکه", price_toman: 80000 },
+  { id: "rank_vip", type: "rank", rank: "vip", name: "رنک VIP", price_toman: 50000 },
+  { id: "rank_mvp", type: "rank", rank: "mvp", name: "رنک MVP", price_toman: 120000 },
+  { id: "rank_legend", type: "rank", rank: "legend", name: "رنک Legend", price_toman: 300000 },
+  { id: "rank_god", type: "rank", rank: "god", name: "رنک God", price_toman: 700000 },
+  { id: "kit_builder", type: "kit", kit: "builder", name: "کیت Builder", price_toman: 25000 },
+];
+
 export function buildIconPrompt(name) {
   return (
     `Epic Minecraft server logo icon, cubic voxel style, the word '${name}' ` +
@@ -162,3 +174,51 @@ export async function aiChat(env, messages, model = CHAT_MODEL, max_tokens = 160
   const text = (res && (res.response ?? res.result?.response)) || "";
   return String(text).trim();
 }
+
+export function shopPage(state) {
+  const items = (state.catalog || SHOP_CATALOG).map((c) => {
+    const price = c.price_toman ? `${Number(c.price_toman).toLocaleString("fa-IR")} تومان` : "فقط با سکه (در بازی)";
+    const btn = c.price_toman
+      ? `<button onclick="buy('${escapeHtml(c.id)}')">خرید</button>`
+      : "";
+    return `<div class="card"><div class="k">${escapeHtml(c.id)}</div><div class="v">${escapeHtml(c.name)}</div><div class="p">${price}</div>${btn}</div>`;
+  }).join("");
+  const pay = state.payment || {};
+  return `<!doctype html><html lang="fa"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(state.name)} — فروشگاه</title>
+<style>${CSS}
+.p{color:#cfe3ff;font-size:.95rem;margin-bottom:10px}
+#msg{margin-top:14px;white-space:pre-wrap}
+</style></head><body><div class="wrap dir">
+<h1>🛒 فروشگاه ${escapeHtml(state.name)}</h1>
+<div class="sub">${escapeHtml(state.motd || "")}</div>
+<div class="grid">${items}</div>
+<div class="note">
+<b>روش پرداخت:</b><br>
+شماره کارت: <code class="ltr">${escapeHtml(pay.card || "—")}</code> &nbsp; به نام <code>${escapeHtml(pay.card_holder || "—")}</code><br>
+${escapeHtml(pay.note || "پس از واریز، کد سفارش را به ادمین اطلاع دهید تا تأیید شود.")}<br>
+<b>نحوه فعال‌سازی:</b> بعد از تأیید پرداخت، کد فعال‌سازی دریافت می‌کنید. داخل بازی دستور <code>/redeem &lt;کد&gt;</code> را بزنید.
+</div>
+<div id="msg"></div>
+<div class="footer">AMINCK Nova • اتصال: <code class="ltr">${escapeHtml(state.site || "")}</code></div>
+</div>
+<script>
+async function buy(item){
+  const msg = document.getElementById('msg');
+  msg.textContent = 'در حال ثبت سفارش…';
+  const buyer = prompt('نام شما در بازی (IGN):') || 'guest';
+  const contact = prompt('راه ارتباطی (اختیاری):') || '';
+  try {
+    const r = await fetch('/site/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item,buyer,contact})});
+    const j = await r.json();
+    if(!j.ok){ msg.textContent = 'خطا: ' + (j.error||'نامشخص'); return; }
+    msg.textContent = '✅ سفارش ثبت شد!\\nکد سفارش: ' + j.order_id + '\\nمبلغ: ' + (j.price_toman||0) + ' تومان\\n' + (j.how||'');
+  } catch (e) {
+    msg.textContent = 'خطا در ارتباط با سرور: ' + e;
+  }
+}
+</script>
+</div></body></html>`;
+}
+

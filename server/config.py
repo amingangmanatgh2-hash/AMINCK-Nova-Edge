@@ -29,5 +29,9 @@ def load(args=None):
         "difficulty": os.environ.get("BOT_DIFFICULTY", args.get("difficulty") or "normal"),
         "scoreboard": os.environ.get("SCOREBOARD", args.get("scoreboard") or "1") not in ("0", "false", "False"),
         "state_path": os.environ.get("STATE_PATH", args.get("state_path") or ""),
+        # site shop / payment info (manual payment until a gateway is attached)
+        "payment_card": os.environ.get("PAYMENT_CARD", args.get("payment_card") or ""),
+        "payment_card_holder": os.environ.get("PAYMENT_CARD_HOLDER", args.get("payment_card_holder") or ""),
+        "payment_note": os.environ.get("PAYMENT_NOTE", args.get("payment_note") or ""),
     }
     return cfg

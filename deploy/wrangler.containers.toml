@@ -42,3 +42,14 @@ MOTD = "Minecraft God Server — Java 1.8 → 26.x"
 # آدرس عمومی Worker (برای هوش مصنوعی داخل بازی بدون توکن). بعد از اولین دیپلوی
 # به‌صورت خودکار توسط CLI پر می‌شود (یا دامنهٔ شخصی شما).
 AI_FALLBACK_URL = ""
+# 🔐 پنل ادمین — رمز در زمان دیپلوی توسط `deploy/index.js` پرسیده می‌شود
+ADMIN_PASSWORD = ""
+ADMIN_NAMES = ""
+# 🛒 سایت و فروشگاه (https://<domain>/site)
+SITE_URL = ""
+# 🤖 سختی ربات‌های AI: easy | normal | hard
+BOT_DIFFICULTY = "normal"
+# 💳 پرداخت دستی فروشگاه (اختیاری — تا اتصال درگاه)
+PAYMENT_CARD = ""
+PAYMENT_CARD_HOLDER = ""
+PAYMENT_NOTE = ""

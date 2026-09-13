@@ -18,6 +18,53 @@ import time
 import secrets
 
 from .server import enable_low_latency
+from . import economy as _econ
+
+SITE_HTML = """<!doctype html>
+<html lang="fa"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} — فروشگاه</title>
+<style>
+:root{{color-scheme:dark}}*{{box-sizing:border-box}}
+body{{margin:0;font-family:system-ui,"Vazirmatn",sans-serif;background:radial-gradient(1200px 800px at 50% -10%,#1b2a4a 0%,#0b1120 55%,#070a14 100%);color:#e8ecf4;min-height:100vh}}
+.wrap{{max-width:960px;margin:0 auto;padding:30px 20px 80px;direction:rtl;text-align:right}}
+h1{{margin:0;font-size:1.8rem;background:linear-gradient(90deg,#ffd76a,#ff8a5c);-webkit-background-clip:text;background-clip:text;color:transparent}}
+.sub{{color:#93a2bd;margin-top:6px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:24px}}
+.card{{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:16px 18px}}
+.card .k{{color:#7f8fb0;font-size:.75rem;letter-spacing:.05em}}
+.card .v{{font-size:1.2rem;font-weight:650;margin:6px 0}}
+.card .p{{color:#cfe3ff;font-size:.95rem;margin-bottom:10px}}
+button{{padding:9px 18px;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#ffd76a,#ff8a5c);color:#201300;font-weight:700}}
+.note{{background:rgba(255,170,60,.08);border:1px solid rgba(255,170,60,.25);border-radius:14px;padding:14px 18px;margin-top:22px;color:#ffd9a0;line-height:1.8}}
+code{{background:rgba(255,255,255,.08);padding:2px 7px;border-radius:6px}}
+#msg{{margin-top:14px;white-space:pre-wrap}}
+.footer{{margin-top:40px;color:#5f6f8c;font-size:.8rem}}
+</style></head><body><div class="wrap">
+<h1>🛒 فروشگاه {name}</h1>
+<div class="sub">{motd}</div>
+<div class="grid">{items}</div>
+<div class="note">
+<b>روش پرداخت:</b><br>
+شماره کارت: <code>{card}</code> &nbsp; به نام <code>{holder}</code><br>
+{note}<br>
+<b>نحوه فعال‌سازی:</b> بعد از تأیید پرداخت، کد فعال‌سازی دریافت می‌کنید. داخل بازی دستور <code>/redeem &lt;کد&gt;</code> را بزنید.
+</div>
+<div id="msg"></div>
+<div class="footer">AMINCK Nova • اتصال: <code>{site}</code></div>
+</div>
+<script>
+async function buy(item){{
+  const msg = document.getElementById('msg');
+  msg.textContent = 'در حال ثبت سفارش…';
+  const r = await fetch('/api/order',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+    body:JSON.stringify({{item:item,buyer:prompt('نام شما در بازی (IGN):')||'guest',contact:prompt('راه ارتباطی (اختیاری):')||''}})}});
+  const j = await r.json();
+  if(!j.ok){{ msg.textContent = 'خطا: ' + (j.error||'نامشخص'); return; }}
+  msg.textContent = '✅ سفارش ثبت شد!\\nکد سفارش: ' + j.order_id + '\\nمبلغ: ' + (j.price_toman||0) + ' تومان\\n' + j.how;
+}}
+</script>
+</body></html>"""
 
 PANEL_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -191,7 +238,7 @@ class HttpPanel:
         return tok
 
     def _authed(self, headers):
-        auth = headers.get("Authorization", "")
+        auth = headers.get("authorization", "") or headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return False
         tok = auth[7:]
@@ -236,6 +283,19 @@ class HttpPanel:
             return
         if path == "/api/status":
             await self._json(writer, 200, self.status())
+            return
+        if path == "/api/catalog":
+            await self._json(writer, 200, self.catalog_api())
+            return
+        if path in ("/api/order", "/site/order") and method == "POST":
+            try:
+                data = json.loads(body or "{}")
+            except Exception:
+                data = {}
+            await self._json(writer, 200, self.create_order_api(data))
+            return
+        if path == "/site":
+            await self._resp(writer, 200, "text/html; charset=utf-8", self.site_page().encode("utf-8"))
             return
         if path == "/admin":
             await self._resp(writer, 200, "text/html; charset=utf-8", ADMIN_HTML.encode("utf-8"))
@@ -351,6 +411,10 @@ class HttpPanel:
                                           data.get("value", 1000),
                                           int(data.get("uses", 1)))
                 return True, code
+            if action == "order_create":
+                oid = g.econ.create_order(str(data.get("item", "")),
+                                          str(data.get("buyer", "guest")))
+                return bool(oid), (oid or "unknown item")
             if action == "order_resolve":
                 code = g.econ.resolve_order(str(data.get("order_id", "")),
                                             str(data.get("gateway_ref", "")))
@@ -402,6 +466,66 @@ class HttpPanel:
             "site": g.site_url,
             "uptime": int(time.time() - g.started),
         }
+
+    # ── site shop ─────────────────────────────────────────────────────────
+    def catalog_api(self):
+        g = self.game
+        return {
+            "name": g.name,
+            "site": g.site_url,
+            "catalog": _econ.CATALOG,
+            "payment": {
+                "card": g.cfg.get("payment_card", ""),
+                "card_holder": g.cfg.get("payment_card_holder", ""),
+                "note": g.cfg.get("payment_note", ""),
+            },
+        }
+
+    def create_order_api(self, data):
+        g = self.game
+        item_id = str(data.get("item", "")).strip()
+        buyer = str(data.get("buyer", "")).strip() or "guest"
+        contact = str(data.get("contact", "")).strip()
+        oid = g.econ.create_order(item_id, buyer=buyer)
+        if not oid:
+            return {"ok": False, "error": "unknown item"}
+        item = _econ.CATALOG_BY_ID[item_id]
+        order = g.econ.data["orders"][oid]
+        order["contact"] = contact
+        g.econ.save()
+        return {
+            "ok": True,
+            "order_id": oid,
+            "item": item_id,
+            "item_name": item.get("name", item_id),
+            "price_toman": item.get("price_toman"),
+            "payment": self.catalog_api()["payment"],
+            "how": ("پس از پرداخت، کد سفارش را در پنل ادمین تأیید کنید؛ "
+                    "سپس کد فعال‌سازی را در بازی با /redeem وارد کنید."),
+        }
+
+    def site_page(self):
+        """Persian shop page served at /site (also used directly)."""
+        g = self.game
+        items = ""
+        for c in _econ.CATALOG:
+            if c.get("price_toman") is not None:
+                price = f"{c['price_toman']:,} تومان"
+                btn = ("<button onclick=\"buy('%s')\">خرید</button>" % c["id"])
+            else:
+                price = "فقط با سکه (در بازی)"
+                btn = ""
+            items += (
+                "<div class='card'><div class='k'>%s</div><div class='v'>%s</div>"
+                "<div class='p'>%s</div>%s</div>" %
+                (c["id"], c["name"], price, btn))
+        return SITE_HTML.format(
+            name=g.name, motd=g.motd, site=g.site_url or "",
+            card=g.cfg.get("payment_card", "") or "—",
+            holder=g.cfg.get("payment_card_holder", "") or "—",
+            note=g.cfg.get("payment_note", "") or
+                 "پس از واریز، کد سفارش را به ادمین اطلاع دهید تا تأیید شود.",
+            items=items)
 
     def render(self):
         g = self.game

@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   CHAT_MODEL, IMAGE_MODEL, setupPage, panelPage, escapeHtml,
-  generateIconPng, aiChat,
+  generateIconPng, aiChat, shopPage, SHOP_CATALOG,
 } from "./panel.js";
 
 // Persistent config (name / domain / icon) in a SQLite-backed Durable Object.
@@ -117,6 +117,43 @@ export default {
         ai: "on", // Workers AI binding always available here
         backend,
       });
+    }
+
+    // ── site shop ────────────────────────────────────────────────────────
+    if (path === "/site") {
+      const cfg = await store.load();
+      let catalog = SHOP_CATALOG;
+      let payment = {};
+      if (env.SERVER_HOST) {
+        try {
+          const r = await fetch(env.SERVER_HOST + "/api/catalog", { cf: { cacheTtl: 30 } });
+          if (r.ok) {
+            const j = await r.json();
+            catalog = j.catalog || catalog;
+            payment = j.payment || payment;
+          }
+        } catch { /* offline — static catalog */ }
+      }
+      return new Response(shopPage({
+        name: cfg.name || "AMINCK Nova", motd: cfg.motd || "",
+        catalog, payment, site: cfg.domain || "",
+      }), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    }
+
+    if (path === "/site/order" && request.method === "POST") {
+      if (!env.SERVER_HOST) {
+        return Response.json({ ok: false, error: "سرور بازی متصل نیست؛ لطفاً بعداً تلاش کنید." });
+      }
+      try {
+        const body = await request.json();
+        const r = await fetch(env.SERVER_HOST + "/api/order", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return Response.json(await r.json());
+      } catch (e) {
+        return Response.json({ ok: false, error: String(e) });
+      }
     }
 
     // ── panel ────────────────────────────────────────────────────────────
