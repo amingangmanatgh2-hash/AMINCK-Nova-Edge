@@ -87,12 +87,18 @@ export default {
 
   // Inbound Minecraft TCP via Spectrum → container 25565
   async connect(socket, env) {
-    const stub = env.NOVA.getByName("main");
-    const containerSocket = stub.connect(`${JAVA_PORT}`) ??
-      stub.connect(`10.0.0.1:${JAVA_PORT}`);
-    await Promise.all([
-      socket.readable.pipeTo(containerSocket.writable),
-      containerSocket.readable.pipeTo(socket.writable),
-    ]);
+    try {
+      const stub = env.NOVA.getByName("main");
+      // Beta socket RPC: connect a raw socket into the container network.
+      const containerSocket = stub.connect(`10.0.0.1:${JAVA_PORT}`) ??
+        stub.connect(`${JAVA_PORT}`);
+      await Promise.all([
+        socket.readable.pipeTo(containerSocket.writable),
+        containerSocket.readable.pipeTo(socket.writable),
+      ]);
+    } catch (e) {
+      // Spectrum/containers socket path unavailable — close gracefully.
+      try { await socket.writable.getWriter().close(); } catch { /* noop */ }
+    }
   },
 };
