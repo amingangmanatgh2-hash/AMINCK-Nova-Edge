@@ -1,0 +1,345 @@
+{
+ "47": {
+  "chunk_format": "pre17",
+  "data_key": "1.8",
+  "file": "p47.json",
+  "has_config": false,
+  "minecraft_version": "1.8.x"
+ },
+ "107": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.9",
+  "file": "p107.json",
+  "has_config": false,
+  "minecraft_version": "1.9"
+ },
+ "108": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.9.2",
+  "file": "p108.json",
+  "has_config": false,
+  "minecraft_version": "1.9.1"
+ },
+ "109": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.9.2",
+  "file": "p109.json",
+  "has_config": false,
+  "minecraft_version": "1.9.2"
+ },
+ "110": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.9.4",
+  "file": "p110.json",
+  "has_config": false,
+  "minecraft_version": "1.9.4"
+ },
+ "210": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.10.2",
+  "file": "p210.json",
+  "has_config": false,
+  "minecraft_version": "1.10.x"
+ },
+ "315": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.11.2",
+  "file": "p315.json",
+  "has_config": false,
+  "minecraft_version": "1.11"
+ },
+ "316": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.11.2",
+  "file": "p316.json",
+  "has_config": false,
+  "minecraft_version": "1.11.x"
+ },
+ "335": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.12.2",
+  "file": "p335.json",
+  "has_config": false,
+  "minecraft_version": "1.12"
+ },
+ "338": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.12.2",
+  "file": "p338.json",
+  "has_config": false,
+  "minecraft_version": "1.12.1"
+ },
+ "340": {
+  "chunk_format": "legacy_palette",
+  "data_key": "1.12.2",
+  "file": "p340.json",
+  "has_config": false,
+  "minecraft_version": "1.12.2"
+ },
+ "393": {
+  "chunk_format": "p113",
+  "data_key": "1.13.2",
+  "file": "p393.json",
+  "has_config": false,
+  "minecraft_version": "1.13"
+ },
+ "401": {
+  "chunk_format": "p113",
+  "data_key": "1.13.2",
+  "file": "p401.json",
+  "has_config": false,
+  "minecraft_version": "1.13.1"
+ },
+ "404": {
+  "chunk_format": "p113",
+  "data_key": "1.13.2",
+  "file": "p404.json",
+  "has_config": false,
+  "minecraft_version": "1.13.2"
+ },
+ "477": {
+  "chunk_format": "p114",
+  "data_key": "1.14.4",
+  "file": "p477.json",
+  "has_config": false,
+  "minecraft_version": "1.14"
+ },
+ "480": {
+  "chunk_format": "p114",
+  "data_key": "1.14.4",
+  "file": "p480.json",
+  "has_config": false,
+  "minecraft_version": "1.14.1"
+ },
+ "485": {
+  "chunk_format": "p114",
+  "data_key": "1.14.4",
+  "file": "p485.json",
+  "has_config": false,
+  "minecraft_version": "1.14.2"
+ },
+ "490": {
+  "chunk_format": "p114",
+  "data_key": "1.14.4",
+  "file": "p490.json",
+  "has_config": false,
+  "minecraft_version": "1.14.3"
+ },
+ "498": {
+  "chunk_format": "p114",
+  "data_key": "1.14.4",
+  "file": "p498.json",
+  "has_config": false,
+  "minecraft_version": "1.14.4"
+ },
+ "573": {
+  "chunk_format": "p114",
+  "data_key": "1.15.2",
+  "file": "p573.json",
+  "has_config": false,
+  "minecraft_version": "1.15"
+ },
+ "575": {
+  "chunk_format": "p114",
+  "data_key": "1.15.2",
+  "file": "p575.json",
+  "has_config": false,
+  "minecraft_version": "1.15.1"
+ },
+ "578": {
+  "chunk_format": "p114",
+  "data_key": "1.15.2",
+  "file": "p578.json",
+  "has_config": false,
+  "minecraft_version": "1.15.2"
+ },
+ "735": {
+  "chunk_format": "p116",
+  "data_key": "1.16.5",
+  "file": "p735.json",
+  "has_config": false,
+  "minecraft_version": "1.16"
+ },
+ "736": {
+  "chunk_format": "p116",
+  "data_key": "1.16.5",
+  "file": "p736.json",
+  "has_config": false,
+  "minecraft_version": "1.16.1"
+ },
+ "751": {
+  "chunk_format": "p116",
+  "data_key": "1.16.5",
+  "file": "p751.json",
+  "has_config": false,
+  "minecraft_version": "1.16.2"
+ },
+ "753": {
+  "chunk_format": "p116",
+  "data_key": "1.16.5",
+  "file": "p753.json",
+  "has_config": false,
+  "minecraft_version": "1.16.3"
+ },
+ "754": {
+  "chunk_format": "p116",
+  "data_key": "1.16.5",
+  "file": "p754.json",
+  "has_config": false,
+  "minecraft_version": "1.16.4/5"
+ },
+ "755": {
+  "chunk_format": "p117",
+  "data_key": "1.17.1",
+  "file": "p755.json",
+  "has_config": false,
+  "minecraft_version": "1.17"
+ },
+ "756": {
+  "chunk_format": "p117",
+  "data_key": "1.17.1",
+  "file": "p756.json",
+  "has_config": false,
+  "minecraft_version": "1.17.1"
+ },
+ "757": {
+  "chunk_format": "p118",
+  "data_key": "1.18.2",
+  "file": "p757.json",
+  "has_config": false,
+  "minecraft_version": "1.18/1.18.1"
+ },
+ "758": {
+  "chunk_format": "p118",
+  "data_key": "1.18.2",
+  "file": "p758.json",
+  "has_config": false,
+  "minecraft_version": "1.18.2"
+ },
+ "759": {
+  "chunk_format": "p118",
+  "data_key": "1.19.4",
+  "file": "p759.json",
+  "has_config": false,
+  "minecraft_version": "1.19"
+ },
+ "760": {
+  "chunk_format": "p118",
+  "data_key": "1.19.4",
+  "file": "p760.json",
+  "has_config": false,
+  "minecraft_version": "1.19.2"
+ },
+ "761": {
+  "chunk_format": "p118",
+  "data_key": "1.19.4",
+  "file": "p761.json",
+  "has_config": false,
+  "minecraft_version": "1.19.3"
+ },
+ "762": {
+  "chunk_format": "p118",
+  "data_key": "1.19.4",
+  "file": "p762.json",
+  "has_config": false,
+  "minecraft_version": "1.19.4"
+ },
+ "763": {
+  "chunk_format": "p118",
+  "data_key": "1.20.1",
+  "file": "p763.json",
+  "has_config": false,
+  "minecraft_version": "1.20/1.20.1"
+ },
+ "764": {
+  "chunk_format": "p118",
+  "data_key": "1.20.2",
+  "file": "p764.json",
+  "has_config": true,
+  "minecraft_version": "1.20.2"
+ },
+ "765": {
+  "chunk_format": "p118",
+  "data_key": "1.20.4",
+  "file": "p765.json",
+  "has_config": true,
+  "minecraft_version": "1.20.3/4"
+ },
+ "766": {
+  "chunk_format": "p118",
+  "data_key": "1.20.6",
+  "file": "p766.json",
+  "has_config": true,
+  "minecraft_version": "1.20.5/6"
+ },
+ "767": {
+  "chunk_format": "p118",
+  "data_key": "1.21.1",
+  "file": "p767.json",
+  "has_config": true,
+  "minecraft_version": "1.21/1.21.1"
+ },
+ "768": {
+  "chunk_format": "p118",
+  "data_key": "1.21.3",
+  "file": "p768.json",
+  "has_config": true,
+  "minecraft_version": "1.21.2/3"
+ },
+ "769": {
+  "chunk_format": "p118",
+  "data_key": "1.21.4",
+  "file": "p769.json",
+  "has_config": true,
+  "minecraft_version": "1.21.4"
+ },
+ "770": {
+  "chunk_format": "p118",
+  "data_key": "1.21.5",
+  "file": "p770.json",
+  "has_config": true,
+  "minecraft_version": "1.21.5"
+ },
+ "771": {
+  "chunk_format": "p118",
+  "data_key": "1.21.6",
+  "file": "p771.json",
+  "has_config": true,
+  "minecraft_version": "1.21.6"
+ },
+ "772": {
+  "chunk_format": "p118",
+  "data_key": "1.21.8",
+  "file": "p772.json",
+  "has_config": true,
+  "minecraft_version": "1.21.7/8"
+ },
+ "773": {
+  "chunk_format": "p118",
+  "data_key": "1.21.9",
+  "file": "p773.json",
+  "has_config": true,
+  "minecraft_version": "1.21.9/10"
+ },
+ "774": {
+  "chunk_format": "p118",
+  "data_key": "1.21.11",
+  "file": "p774.json",
+  "has_config": true,
+  "minecraft_version": "1.21.11"
+ },
+ "775": {
+  "chunk_format": "p118",
+  "data_key": "26.1",
+  "file": "p775.json",
+  "has_config": true,
+  "minecraft_version": "26.1"
+ },
+ "776": {
+  "chunk_format": "p118",
+  "data_key": "26.1",
+  "file": "p776.json",
+  "has_config": true,
+  "minecraft_version": "26.2"
+ }
+}

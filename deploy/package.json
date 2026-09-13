@@ -1,0 +1,33 @@
+{
+  "name": "aminck-nova",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "🎮 AMINCK Nova — سرور گاد ماینکرافت (Java 1.8 → 26.x + Bedrock) روی Cloudflare Workers — پنل، فروشگاه /site، پنل ادمین و هوش مصنوعی بدون توکن",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:full": "wrangler deploy --config wrangler.containers.toml",
+    "setup": "node index.js",
+    "types": "wrangler types"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.125.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "AI": {
+        "description": "هوش مصنوعی بومی کلادفلر (Workers AI) — چت داخل بازی و ساخت خودکار آیکون سرور از نامی که انتخاب می‌کنید. هیچ توکن یا کلید خارجی لازم نیست."
+      },
+      "STORE": {
+        "description": "Durable Object + SQLite برای ذخیرهٔ تنظیمات سرور (نام، دامنه، آیکون، سفارش‌ها و کدهای فروشگاه). با دیپلوی خودکار ساخته می‌شود."
+      }
+    }
+  }
+}

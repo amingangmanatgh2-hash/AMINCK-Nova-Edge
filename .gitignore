@@ -1,6 +1,9 @@
 # Secrets — never commit
 .dev.vars
 .dev.vars.*
+deploy/.deploy/
+deploy/.generated.toml
+
 
 # Dependencies
 node_modules/
@@ -13,3 +16,9 @@ coverage/
 .DS_Store
 tmp/
 assets/
+__pycache__/
+*.pyc
+
+# runtime server state
+server/state.json
+server/state.json.tmp
