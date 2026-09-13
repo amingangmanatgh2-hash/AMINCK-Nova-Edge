@@ -222,3 +222,222 @@ async function buy(item){
 </div></body></html>`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Admin panel UI (front Worker). Password comes from ADMIN_PASSWORD at
+//  deploy time; the session token is an HMAC signed with that same password,
+//  so both the Worker and the Python container accept identical credentials.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function adminLoginPage(msg = "") {
+  return `<!doctype html><html lang="fa"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ورود ادمین — AMINCK Nova</title>
+<style>${CSS}</style></head><body><div class="wrap dir">
+<h1>🔐 پنل ادمین</h1>
+<div class="sub">رمز ادمین را در زمان دیپلوی تعیین کرده‌اید (ADMIN_PASSWORD).</div>
+${msg ? `<div class="note">${escapeHtml(msg)}</div>` : ""}
+<form method="POST" action="/admin/login">
+<label>رمز ادمین</label>
+<input name="password" type="password" autocomplete="current-password" autofocus required>
+<button type="submit">ورود</button>
+</form>
+<div class="footer"><a href="/">بازگشت به پنل</a> • <a href="/site">فروشگاه</a></div>
+</div></body></html>`;
+}
+
+export function adminNoPasswordPage() {
+  return `<!doctype html><html lang="fa"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>پنل ادمین — نیاز به رمز</title>
+<style>${CSS}</style></head><body><div class="wrap dir">
+<h1>🔐 پنل ادمین غیرفعال است</h1>
+<div class="note">
+متغیر <code>ADMIN_PASSWORD</code> خالی است. برای فعال‌سازی پنل ادمین:<br>
+۱) در داشبورد Cloudflare → Worker شما → <b>Settings → Variables and Secrets</b> مقدار
+<code>ADMIN_PASSWORD</code> را به‌صورت <b>Secret</b> تنظیم کنید،<br>
+۲) یا دوباره با <code>npx wrangler deploy</code> و مقداردهی <code>ADMIN_PASSWORD</code> دیپلوی کنید،<br>
+۳) یا از ویزارد <code>node deploy/index.js</code> استفاده کنید که رمز را از شما می‌پرسد.
+</div>
+<div class="footer"><a href="/">بازگشت به پنل</a></div>
+</div></body></html>`;
+}
+
+export function adminPage(state) {
+  const s = state || {};
+  const backend = s.backend || null;
+  const backendBadge = backend
+    ? '<span class="badge">سرور بازی متصل ✓</span>'
+    : '<span class="badge off">سرور بازی متصل نیست</span>';
+  const orderRows = (s.orders || []).map((o) => `
+    <tr>
+      <td><code class="ltr">${escapeHtml(o.id)}</code></td>
+      <td>${escapeHtml(o.item)}</td>
+      <td>${escapeHtml(o.buyer)}</td>
+      <td>${escapeHtml(String(o.price_toman ?? ""))}</td>
+      <td>${o.status === "paid" ? "✅ پرداخت‌شده" : "⏳ در انتظار"}</td>
+      <td>${o.status === "paid"
+        ? `<code class="ltr">${escapeHtml(o.code || "")}</code>`
+        : `<button class="mini" onclick="run('order_resolve',{order_id:'${escapeHtml(o.id)}',gateway_ref:'manual'})">تأیید</button>`}</td>
+    </tr>`).join("") || `<tr><td colspan="6" class="sub">سفارشی ثبت نشده است.</td></tr>`;
+
+  return `<!doctype html><html lang="fa"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>پنل ادمین — ${escapeHtml(s.name || "AMINCK Nova")}</title>
+<style>${CSS}
+button.mini{margin:0;padding:6px 12px;font-size:.85rem}
+h2{margin-top:34px;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:8px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;align-items:end}
+.row label{margin:0}
+.sec{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);
+  border-radius:16px;padding:20px;margin-top:14px;max-width:none}
+#log{margin-top:18px;white-space:pre-wrap;background:rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:14px;
+  font-family:ui-monospace,monospace;font-size:.85rem;min-height:52px}
+select,textarea{width:100%;padding:11px 13px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.3);color:#fff;font-size:1rem}
+</style></head><body><div class="wrap dir">
+<header><img class="icon" src="/favicon.png" alt="icon"><div>
+<h1>🛠️ پنل ادمین</h1>
+<div class="sub">${escapeHtml(s.name || "AMINCK Nova")} &nbsp;•&nbsp; ${backendBadge}</div>
+</div></header>
+
+<div class="grid">
+<div class="card"><div class="k">بازیکنان آنلاین</div><div class="v">${backend?.online ?? 0}</div></div>
+<div class="card"><div class="k">ربات‌های AI</div><div class="v">${backend?.bots ?? 0}</div></div>
+<div class="card"><div class="k">TPS</div><div class="v">${backend?.tps ?? "—"}</div></div>
+<div class="card"><div class="k">آپتایم</div><div class="v">${backend?.uptime ?? "—"}</div></div>
+<div class="card"><div class="k">سفارش‌های باز</div><div class="v">${(s.orders || []).filter((o) => o.status !== "paid").length}</div></div>
+<div class="card"><div class="k">دامنه</div><div class="v" style="font-size:1rem">${escapeHtml(s.domain || "—")}</div></div>
+</div>
+
+<h2>📣 برادکست و پیام</h2>
+<div class="sec"><div class="row">
+<div><label>متن پیام (به همهٔ بازیکنان)</label><input id="bc_text" placeholder="مثلاً: ایونت امشب ساعت ۲۲"></div>
+<div><button onclick="run('broadcast',{text:val('bc_text')})">ارسال برادکست</button></div>
+</div></div>
+
+<h2>👤 مدیریت بازیکن</h2>
+<div class="sec"><div class="row">
+<div><label>نام بازیکن</label><input id="pl_name" placeholder="Notch"></div>
+<div><label>مقدار</label><input id="pl_amount" placeholder="۱۰۰۰"></div>
+<div><label>رنک</label><select id="pl_rank">
+<option value="player">Player</option><option value="vip">VIP</option>
+<option value="mvp">MVP</option><option value="legend">Legend</option>
+<option value="god">God</option></select></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><button onclick="run('coins_add',{player:val('pl_name'),amount:Number(val('pl_amount')||0)})">+ سکه</button></div>
+<div><button onclick="run('coins_set',{player:val('pl_name'),amount:Number(val('pl_amount')||0)})">تنظیم سکه</button></div>
+<div><button onclick="run('rank_set',{player:val('pl_name'),rank:val('pl_rank')})">تنظیم رنک</button></div>
+<div><button onclick="run('xp_add',{player:val('pl_name'),amount:Number(val('pl_amount')||0)})">+ XP</button></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><button onclick="run('kick',{player:val('pl_name')})">کیک</button></div>
+<div><button onclick="run('mute',{player:val('pl_name'),minutes:Number(val('pl_amount')||10)})">میوت</button></div>
+<div><button onclick="run('ban',{player:val('pl_name'),reason:'ban by admin'})">بن</button></div>
+<div><button onclick="run('unban',{player:val('pl_name')})">آن‌بن</button></div>
+<div><button onclick="run('unmute',{player:val('pl_name')})">آن‌میوت</button></div>
+<div><button onclick="run('heal',{player:val('pl_name')})">هیل</button></div>
+<div><button onclick="run('fly',{player:val('pl_name')})">تغییر پرواز</button></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><label>بررسی کامل بازیکن (سکه، رنک، اینونتوری، خانه‌ها، بن/میوت)</label>
+<button onclick="run('player_info',{player:val('pl_name')})">نمایش پروندهٔ بازیکن</button></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><label>آیتم (برای /give)</label><input id="pl_item" placeholder="diamond_sword"></div>
+<div><label>تعداد</label><input id="pl_itemn" value="1"></div>
+<div><button onclick="run('give',{player:val('pl_name'),item:val('pl_item'),count:Number(val('pl_itemn')||1)})">دادن آیتم</button></div>
+</div></div>
+
+<h2>🌍 دنیا و زمان</h2>
+<div class="sec"><div class="row">
+<div><label>چرخهٔ زمان</label><select id="w_time">
+<option value="day">روز</option><option value="night">شب</option>
+<option value="noon">ظهر</option><option value="midnight">نیمه‌شب</option></select></div>
+<div><label>آب‌وهوا</label><select id="w_weather">
+<option value="clear">صاف</option><option value="rain">باران</option>
+<option value="thunder">رعدوبرق</option></select></div>
+<div><button onclick="run('world',{time:val('w_time'),weather:val('w_weather')})">اعمال</button></div>
+</div></div>
+
+<h2>🤖 ربات‌های AI</h2>
+<div class="sec"><div class="row">
+<div><label>تعداد</label><input id="b_n" value="2"></div>
+<div><label>سختی</label><select id="b_diff">
+<option value="easy">easy</option><option value="normal" selected>normal</option>
+<option value="hard">hard</option></select></div>
+<div><label>نوع</label><select id="b_kind">
+<option value="enemy">دشمن (PvP)</option><option value="companion">رفیق</option></select></div>
+<div><button onclick="run('bots_spawn',{count:Number(val('b_n')||1),difficulty:val('b_diff'),kind:val('b_kind')})">اسپاون</button></div>
+<div><button onclick="run('bots_clear',{})">حذف همه</button></div>
+</div></div>
+
+<h2>⚙️ تنظیمات سرور</h2>
+<div class="sec"><div class="row">
+<div><label>نام سرور</label><input id="c_name" value="${escapeHtml(s.name || "")}"></div>
+<div><label>دامنه</label><input id="c_domain" class="ltr" value="${escapeHtml(s.domain || "")}"></div>
+<div><label>MOTD</label><input id="c_motd" value="${escapeHtml(s.motd || "")}"></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><button onclick="run('config_set',{name:val('c_name'),domain:val('c_domain'),motd:val('c_motd')})">ذخیره</button></div>
+<div><button onclick="run('icon_regenerate',{name:val('c_name')})">ساخت دوبارهٔ لوگو با AI</button></div>
+<div><button onclick="run('restart',{})">ری‌استارت سرور بازی</button></div>
+</div></div>
+
+<h2>🛒 سفارش‌ها و کدها</h2>
+<div class="sec">
+<table><thead><tr><th>شناسه</th><th>آیتم</th><th>خریدار</th><th>مبلغ</th><th>وضعیت</th><th>کد / عملیات</th></tr></thead>
+<tbody>${orderRows}</tbody></table>
+<div class="row" style="margin-top:16px">
+<div><label>کد دلخواه</label><input id="k_code" class="ltr" placeholder="NOVA-2026"></div>
+<div><label>نوع</label><select id="k_type">
+<option value="coins">سکه</option><option value="rank">رنک</option>
+<option value="kit">کیت</option></select></div>
+<div><label>مقدار / رنک / کیت</label><input id="k_value" placeholder="5000 یا god یا builder"></div>
+<div><button onclick="run('code_create',{code:val('k_code'),type:val('k_type'),value:val('k_value')})">ساخت کد</button></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><label>آیتم فروشگاه</label><input id="k_item" placeholder="rank_vip"></div>
+<div><label>قیمت (تومان)</label><input id="k_price" placeholder="50000"></div>
+<div><button onclick="run('catalog_add',{id:val('k_item'),name:val('k_item'),price_toman:Number(val('k_price')||0)})">افزودن آیتم</button></div>
+<div><button onclick="run('catalog_remove',{id:val('k_item')})">حذف آیتم</button></div>
+</div>
+<div class="row" style="margin-top:14px">
+<div><label>شماره کارت فروشگاه</label><input id="p_card" class="ltr" value="${escapeHtml(s.payment?.card || "")}"></div>
+<div><label>به نام</label><input id="p_holder" value="${escapeHtml(s.payment?.card_holder || "")}"></div>
+<div><label>توضیح پرداخت</label><input id="p_note" value="${escapeHtml(s.payment?.note || "")}"></div>
+<div><button onclick="run('payment_set',{card:val('p_card'),card_holder:val('p_holder'),note:val('p_note')})">ذخیره</button></div>
+</div></div>
+
+<h2>🖥️ اجرای دستور خام</h2>
+<div class="sec"><div class="row">
+<div><label>دستور کنسول (بدون /)</label><input id="raw_cmd" class="ltr" placeholder="say hello"></div>
+<div><button onclick="run('console',{command:val('raw_cmd')})">اجرا</button></div>
+</div></div>
+
+<div id="log">آماده…</div>
+<p><a href="/admin/logout">خروج از پنل ادمین</a> &nbsp;•&nbsp; <a href="/">پنل عمومی</a> &nbsp;•&nbsp; <a href="/site">فروشگاه</a></p>
+<div class="footer">AMINCK Nova • ${new Date().toISOString()}</div>
+</div>
+<script>
+function val(id){const e=document.getElementById(id);return e?e.value:''}
+async function run(action,payload){
+  const log=document.getElementById('log');
+  log.textContent='در حال اجرای '+action+' …';
+  try{
+    const r=await fetch('/admin/api/action',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({action:action},payload||{}))});
+    const j=await r.json();
+    log.textContent=(r.ok&&j.ok!==false)
+      ? '✅ '+action+' → '+JSON.stringify(j.result!==undefined?j.result:j,null,1)
+      : '❌ '+action+' → '+(j.error||('HTTP '+r.status));
+    if(['order_resolve','code_create','catalog_add','catalog_remove','config_set','payment_set'].indexOf(action)>=0){
+      setTimeout(()=>location.reload(),900);
+    }
+  }catch(e){log.textContent='❌ خطای ارتباط: '+e}
+}
+</script>
+</div></body></html>`;
+}

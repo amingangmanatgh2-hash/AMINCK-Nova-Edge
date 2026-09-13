@@ -3,6 +3,8 @@
 #
 #  🚀 دیپلوی یک‌کلیکی (بدون توکن):
 #     https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/main/deploy
+#     (تا قبل از merge، از tree/<branch>/deploy استفاده کنید — پوشهٔ deploy/
+#      باید روی ref مورد نظر وجود داشته باشد)
 #
 #  یا دستی:  cd deploy && npx wrangler deploy
 # ═══════════════════════════════════════════════════════════════════════════
@@ -26,9 +28,24 @@ class_name = "NovaStore"
 tag = "v1"
 new_sqlite_classes = ["NovaStore"]
 
-# ── متغیرها (اختیاری) ───────────────────────────────────────────────────────
+# ── متغیرها ─────────────────────────────────────────────────────────────────
+# در جریان دیپلوی یک‌کلیکی، Cloudflare این مقادیر را از شما می‌پرسد.
+# توصیه: ADMIN_PASSWORD را بعد از دیپلوی به Secret تغییر دهید.
 [vars]
 # آدرس پنل HTTP سرور بازی (Container) — وقتی خالی باشد پنل جلو به تنهایی کار می‌کند
 SERVER_HOST = ""
 # نام پیش‌فرض سرور (در صفحهٔ راه‌اندازی قابل تغییر است)
 SERVER_NAME = "AMINCK Nova"
+# 🔐 رمز پنل ادمین (/admin) — در زمان دیپلوی از شما پرسیده می‌شود
+ADMIN_PASSWORD = ""
+# نام‌های ادمین داخل بازی (اختیاری، جدا شده با کاما)
+ADMIN_NAMES = ""
+# 🛒 آدرس فروشگاه — اگر خالی باشد از آدرس خود Worker استفاده می‌شود (/site)
+SITE_URL = ""
+# 🤖 سختی پیش‌فرض ربات‌های AI: easy | normal | hard
+BOT_DIFFICULTY = "normal"
+# 💳 پرداخت دستی فروشگاه (اختیاری — تا اتصال درگاه پرداخت)
+PAYMENT_CARD = ""
+PAYMENT_CARD_HOLDER = ""
+PAYMENT_NOTE = ""
+

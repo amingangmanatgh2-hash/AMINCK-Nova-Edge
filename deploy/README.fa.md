@@ -10,20 +10,47 @@
 
 **[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/main/deploy)**
 
-یا مستقیم:
+لینک پایدار (بعد از merge شدن PR روی `main`):
 
 ```
 https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/main/deploy
 ```
 
+لینک **همین حالا** قابل استفاده (تا وقتی PR #25 merge نشده، کد روی این برنچ است):
+
+```
+https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge/tree/arena/01a0970d-aminck-nova-edge/deploy
+```
+
+> ⚠️ دکمهٔ دیپلوی باید به پوشهٔ `deploy/` اشاره کند، نه به روت ریپو.
+> لینک روت ریپو، **ربات تلگرام** قدیمی (`aminck-nova-bot`) را دیپلوی می‌کند نه سرور بازی را.
+
 روی دکمه بزنید، با اکانت GitHub/Cloudflare وارد شوید — **هیچ توکنی لازم نیست**.
+جریان دیپلوی این متغیرها را از شما می‌پرسد (همه در `[vars]` فایل `deploy/wrangler.toml`
+تعریف شده‌اند):
+
+| متغیر | کاربرد |
+|---|---|
+| `SERVER_NAME` | نام سرور — لوگو از روی همین نام ساخته می‌شود |
+| `ADMIN_PASSWORD` | 🔐 رمز ورود به پنل ادمین `/admin` |
+| `ADMIN_NAMES` | نام‌های ادمین داخل بازی (اختیاری) |
+| `SITE_URL` | آدرس فروشگاه (پیش‌فرض: `<آدرس ورکر>/site`) |
+| `BOT_DIFFICULTY` | سختی ربات‌های AI: `easy` / `normal` / `hard` |
+| `PAYMENT_CARD` / `PAYMENT_CARD_HOLDER` / `PAYMENT_NOTE` | 💳 اطلاعات پرداخت فروشگاه |
+| `SERVER_HOST` | آدرس پنل کانتینر بازی (برای دیپلوی کامل پر می‌شود) |
+
 بعد از دیپلوی، اولین بار که پنل را باز کنید از شما **«نام سرور» و «دامنه»** می‌پرسد
 و سپس **لوگوی سرور را با Workers AI (مدل Flux) می‌سازد و ذخیره می‌کند** — دقیقاً از روی
 نامی که انتخاب کرده‌اید. هوش مصنوعی پنل و لوگو از طریق `[ai] binding` کار می‌کند که
 رایگان است و نیاز به توکن ندارد.
 
-> این لینک **ورکر جلو** (پنل + هوش مصنوعی + ساخت لوگو) را دیپلوی می‌کند.
-> برای اجرای خودِ سرور بازی روی Cloudflare، بخش «دیپلوی کامل (Container)» را ببینید.
+> این لینک **ورکر جلو** را دیپلوی می‌کند: پنل عمومی `/`، فروشگاه `/site`،
+> پنل ادمین `/admin` (با رمز زمان دیپلوی)، `/ai/chat` و ساخت لوگو.
+> خودِ سرور بازی (پایتون) روی Cloudflare Container اجرا می‌شود — بخش
+> «دیپلوی کامل (Container)» را ببینید. تا وقتی کانتینر بالا نیامده، فروشگاه و
+> پنل ادمین به‌صورت مستقل روی خود ورکر کار می‌کنند (دفتر سفارش و کدها داخل
+> Durable Object ذخیره می‌شود) و اکشن‌هایی که به سرورِ در حال اجرا نیاز دارند
+> با پیام صادقانهٔ «سرور بازی متصل نیست» پاسخ می‌گیرند — نه موفقیت جعلی.
 
 ---
 

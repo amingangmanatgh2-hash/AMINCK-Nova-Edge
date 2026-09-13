@@ -44,6 +44,34 @@ CATALOG = [
 
 CATALOG_BY_ID = {c["id"]: c for c in CATALOG}
 
+# Pristine copy of the built-in catalog. Admin edits (add/remove/price) are
+# stored as overrides in state.json and re-applied on boot by rebuild_catalog,
+# so the shop survives restarts without mutating the defaults in the source.
+BASE_CATALOG = [dict(c) for c in CATALOG]
+
+
+def rebuild_catalog(extra):
+    """Rebuild CATALOG / CATALOG_BY_ID in place from BASE_CATALOG + overrides.
+
+    `extra` entries are either `{"removed": True, "id": ...}` tombstones or
+    full item dicts added/overridden by the admin panel.
+    """
+    extra = extra or []
+    removed = {e.get("id") for e in extra if e.get("removed")}
+    added = []
+    for e in extra:
+        if e.get("removed"):
+            continue
+        item = {k: v for k, v in e.items() if k != "removed"}
+        if item.get("id"):
+            added.append(item)
+    overridden = {a["id"] for a in added}
+    CATALOG[:] = ([dict(c) for c in BASE_CATALOG
+                   if c["id"] not in removed and c["id"] not in overridden] + added)
+    CATALOG_BY_ID.clear()
+    CATALOG_BY_ID.update({c["id"]: c for c in CATALOG})
+    return CATALOG
+
 # XP: xp needed to go from level L to L+1
 def xp_for_level(level):
     return 100 + (level - 1) * 50
@@ -70,7 +98,8 @@ class Economy:
     def __init__(self, game, path=None):
         self.game = game
         self.path = path or os.environ.get("STATE_PATH") or DEFAULT_STATE_PATH
-        self.data = {"players": {}, "warps": {}, "codes": {}, "orders": {}}
+        self.data = {"players": {}, "warps": {}, "codes": {}, "orders": {},
+                     "catalog_extra": [], "payment": {}, "config": {}}
         self._lock = threading.Lock()
         self.load()
 
@@ -84,8 +113,13 @@ class Economy:
             self.data.setdefault("warps", {})
             self.data.setdefault("codes", {})
             self.data.setdefault("orders", {})
+            self.data.setdefault("catalog_extra", [])
+            self.data.setdefault("payment", {})
+            self.data.setdefault("config", {})
         except Exception:
             pass
+        # re-apply admin shop edits so /site and /shop match what was saved
+        rebuild_catalog(self.data.get("catalog_extra", []))
 
     def save(self):
         try:
@@ -315,3 +349,73 @@ class Economy:
 
     def orders(self):
         return self.data["orders"]
+
+    # ── admin-managed shop catalog & payment details ────────────────────────
+    def catalog(self):
+        """Live catalog (built-ins + persisted admin overrides)."""
+        return list(CATALOG)
+
+    def catalog_add(self, entry):
+        """Add or replace a shop item. Persists and rebuilds the live catalog."""
+        item = dict(entry or {})
+        iid = str(item.get("id") or "").strip()
+        if not iid:
+            return None
+        item["id"] = iid
+        item.setdefault("name", iid)
+        item.setdefault("type", "coins")
+        item["price_toman"] = int(item.get("price_toman") or 0)
+        if item.get("price_coins") is not None:
+            try:
+                item["price_coins"] = int(item["price_coins"])
+            except (TypeError, ValueError):
+                item["price_coins"] = None
+        extra = [e for e in self.data["catalog_extra"]
+                 if not (e.get("id") == iid)]
+        extra.append(item)
+        self.data["catalog_extra"] = extra
+        rebuild_catalog(extra)
+        self.save()
+        return item
+
+    def catalog_remove(self, item_id):
+        """Remove an item (tombstoned so a restart does not restore it)."""
+        item_id = str(item_id or "").strip()
+        if not item_id:
+            return False
+        extra = [e for e in self.data["catalog_extra"] if e.get("id") != item_id]
+        extra.append({"id": item_id, "removed": True})
+        self.data["catalog_extra"] = extra
+        rebuild_catalog(extra)
+        self.save()
+        return True
+
+    def payment(self):
+        """Payment details shown on /site; admin overrides beat env config."""
+        saved = self.data.get("payment") or {}
+        cfg = getattr(self.game, "cfg", {}) or {}
+        return {
+            "card": saved.get("card", cfg.get("payment_card", "")) or "",
+            "card_holder": saved.get("card_holder",
+                                     cfg.get("payment_card_holder", "")) or "",
+            "note": saved.get("note", cfg.get("payment_note", "")) or "",
+        }
+
+    def set_payment(self, card=None, card_holder=None, note=None):
+        cur = self.data.get("payment") or {}
+        if card is not None:
+            cur["card"] = str(card)[:40]
+        if card_holder is not None:
+            cur["card_holder"] = str(card_holder)[:60]
+        if note is not None:
+            cur["note"] = str(note)[:200]
+        self.data["payment"] = cur
+        self.save()
+        return self.payment()
+
+    def set_coins(self, name, amount):
+        """Set an exact coin balance (bypasses the rank multiplier)."""
+        rec = self.get(name)
+        rec["coins"] = max(0, int(amount))
+        self.save()
+        return rec["coins"]
