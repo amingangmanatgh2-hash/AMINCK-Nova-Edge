@@ -1,0 +1,46 @@
+{
+  "version": 2,
+  "note": "Server economy. Two currencies: coins (earned by playing, spent in-game and on coin-shop cosmetics) and gems (premium, bought with USD or earned rarely). All USD prices live in cosmetics.json / ranks.json and are shown in the web shop only after OTP verification.",
+  "coins": {
+    "starting_balance": 500,
+    "daily_login_bonus": [50, 75, 100, 125, 150, 200, 300],
+    "win_streak_bonus_pct": 10,
+    "max_win_streak_bonus_pct": 50,
+    "weekly_cap": 60000,
+    "referral_reward": 250,
+    "report_valid_reward": 100
+  },
+  "gems": {
+    "starting_balance": 0,
+    "free_per_season": 100,
+    "earned_per_level_up": 25,
+    "battlepass_reward_total": 900
+  },
+  "xp": {
+    "level_formula": "level = floor(sqrt(total_xp / 100))",
+    "xp_per_level_base": 100,
+    "max_level": 200,
+    "prestige_at": [50, 100, 150, 200],
+    "prestige_reward_gems": [100, 250, 500, 1000]
+  },
+  "in_game_shops": [
+    { "mode": "bedwars", "currency": "resources" },
+    { "mode": "kitpvp", "currency": "coins", "items": ["kit_archer", "kit_tank", "kit_assassin", "kit_pyro", "kit_necro", "kit_frost", "kit_vampire"] },
+    { "mode": "skywars", "currency": "coins", "items": ["kit_knight", "kit_archer", "kit_engineer", "kit_enderman", "kit_slime"] },
+    { "mode": "zombiesurvival", "currency": "coins", "items": ["kit_gunner", "kit_engineer", "kit_medic"] }
+  ],
+  "coin_sinks": ["kits", "cosmetics", "luck_chests", "boosters", "rename", "party_privates"],
+  "luck_chest": { "price_coins": 800, "pool": ["coins", "xp", "gems_small", "cosmetic_common", "cosmetic_rare", "dust"], "weights": [40, 25, 10, 15, 8, 2], "dust_to_cosmetic": 40 },
+  "boosters": [
+    { "id": "coin_x2", "price_gems": 150, "duration_min": 60, "scope": "network" },
+    { "id": "xp_x2", "price_gems": 150, "duration_min": 60, "scope": "network" },
+    { "id": "coin_x3_self", "price_gems": 90, "duration_min": 30, "scope": "self" }
+  ],
+  "anti_abuse": {
+    "min_match_minutes_for_reward": 2,
+    "no_reward_if_afk_pct": 60,
+    "max_coin_transfers_per_day": 10,
+    "transfer_tax_pct": 5,
+    "self_kill_farming_penalty": true
+  }
+}

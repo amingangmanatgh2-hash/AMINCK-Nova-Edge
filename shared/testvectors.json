@@ -1,0 +1,3124 @@
+{
+ "name": "Nova Edge engine golden vectors",
+ "version": 1,
+ "generated_at": "2026-09-15T07:19:16.359Z",
+ "note": "خروجی‌ها از موتور مرجع JS تولید شده‌اند. پیاده‌سازی Java/PHP باید دقیقاً همین مقادیر را برگرداند (تلورانس 1e-6).",
+ "tolerance": 0.000001,
+ "vectors": [
+  {
+   "group": "rng",
+   "fn": "mulberry32_seq",
+   "args": [
+    12345,
+    6
+   ],
+   "expect": [
+    0.97972827,
+    0.30675226,
+    0.48420542,
+    0.81793441,
+    0.50942837,
+    0.34747186
+   ],
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "mulberry32_first",
+   "args": [
+    999
+   ],
+   "expect": 0.96990582,
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "hashSeed",
+   "args": [
+    "nova-edge-bedwars"
+   ],
+   "expect": 632114778,
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "hashSeed_empty",
+   "args": [
+    ""
+   ],
+   "expect": 2166136261,
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "clamp",
+   "args": [
+    5,
+    1,
+    3
+   ],
+   "expect": 3,
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "clamp_neg",
+   "args": [
+    -4,
+    0,
+    10
+   ],
+   "expect": 0,
+   "note": ""
+  },
+  {
+   "group": "rng",
+   "fn": "round",
+   "args": [
+    3.14159,
+    2
+   ],
+   "expect": 3.14,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "expectedScore",
+   "args": [
+    1500,
+    1600
+   ],
+   "expect": 0.359935,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "expectedScore_equal",
+   "args": [
+    1200,
+    1200
+   ],
+   "expect": 0.5,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "teamRating",
+   "args": [
+    [
+     1500,
+     1700,
+     1300
+    ]
+   ],
+   "expect": 1500,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "effectiveK_new",
+   "args": [
+    32,
+    5,
+    1400
+   ],
+   "expect": 48,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "effectiveK_vet",
+   "args": [
+    32,
+    400,
+    2400
+   ],
+   "expect": 24,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "placementScore_first",
+   "args": [
+    1,
+    16
+   ],
+   "expect": 1,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "placementScore_last",
+   "args": [
+    16,
+    16
+   ],
+   "expect": 0,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "eloDelta_win",
+   "args": [
+    {
+     "rating": 1500,
+     "opponentRating": 1600,
+     "score": 1,
+     "baseK": 32,
+     "gamesPlayed": 30
+    }
+   ],
+   "expect": {
+    "delta": 20,
+    "expected": 0.3599,
+    "k": 32,
+    "rating": 1520
+   },
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "eloDelta_loss",
+   "args": [
+    {
+     "rating": 1600,
+     "opponentRating": 1500,
+     "score": 0,
+     "baseK": 32,
+     "gamesPlayed": 300
+    }
+   ],
+   "expect": {
+    "delta": -20,
+    "expected": 0.6401,
+    "k": 32,
+    "rating": 1580
+   },
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "eloDelta_provisional",
+   "args": [
+    {
+     "rating": 1000,
+     "opponentRating": 1400,
+     "score": 1,
+     "baseK": 24,
+     "gamesPlayed": 2
+    }
+   ],
+   "expect": {
+    "delta": 33,
+    "expected": 0.0909,
+    "k": 36,
+    "rating": 1033
+   },
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "settleMatch_teams",
+   "args": [
+    {
+     "mode": "bedwars",
+     "players": [
+      {
+       "id": "a",
+       "rating": 1500,
+       "games": 30,
+       "won": true,
+       "score_points": 900
+      },
+      {
+       "id": "b",
+       "rating": 1600,
+       "games": 80,
+       "won": true,
+       "score_points": 700
+      },
+      {
+       "id": "c",
+       "rating": 1400,
+       "games": 10,
+       "won": false,
+       "score_points": 400
+      },
+      {
+       "id": "d",
+       "rating": 1550,
+       "games": 50,
+       "won": false,
+       "score_points": 350
+      },
+      {
+       "id": "bot1",
+       "is_bot": true,
+       "rating": 1500,
+       "games": 0,
+       "won": false
+      }
+     ],
+     "teams": [
+      {
+       "index": 0,
+       "players": [
+        {
+         "id": "a"
+        },
+        {
+         "id": "b"
+        }
+       ]
+      },
+      {
+       "index": 1,
+       "players": [
+        {
+         "id": "c"
+        },
+        {
+         "id": "d"
+        },
+        {
+         "id": "bot1"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "expect": {
+    "category": "team",
+    "base_k": 32,
+    "human_count": 4,
+    "results": [
+     {
+      "id": "a",
+      "is_bot": false,
+      "before": 1500,
+      "after": 1515,
+      "delta": 15,
+      "expected": 0.524,
+      "score": 1,
+      "rp": 93
+     },
+     {
+      "id": "b",
+      "is_bot": false,
+      "before": 1600,
+      "after": 1611,
+      "delta": 11,
+      "expected": 0.6619,
+      "score": 1,
+      "rp": 72
+     },
+     {
+      "id": "c",
+      "is_bot": false,
+      "before": 1400,
+      "after": 1391,
+      "delta": -9,
+      "expected": 0.2966,
+      "score": 0,
+      "rp": 40
+     },
+     {
+      "id": "d",
+      "is_bot": false,
+      "before": 1550,
+      "after": 1534,
+      "delta": -16,
+      "expected": 0.5,
+      "score": 0,
+      "rp": 35
+     },
+     {
+      "id": "bot1",
+      "is_bot": true,
+      "before": 1500,
+      "after": 1479,
+      "delta": -21,
+      "expected": 0.4285,
+      "score": 0,
+      "rp": 0
+     }
+    ]
+   },
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "rankPointsFrom",
+   "args": [
+    {
+     "score_points": 2450,
+     "elo_delta": 18
+    }
+   ],
+   "expect": 249,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "rankForRp_low",
+   "args": [
+    600
+   ],
+   "expect": "free",
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "rankForRp_mid",
+   "args": [
+    2600
+   ],
+   "expect": "noob",
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "rankForRp_top",
+   "args": [
+    20000
+   ],
+   "expect": "normal",
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "effectiveRank_buy_lower",
+   "args": [
+    2600,
+    "god"
+   ],
+   "expect": "god",
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "effectiveRank_earn_higher",
+   "args": [
+    20000,
+    "pro"
+   ],
+   "expect": "pro",
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "rankProgress",
+   "args": [
+    1400
+   ],
+   "expect": {
+    "current": "free",
+    "next": "noob",
+    "pct": 56,
+    "remaining_rp": 1100
+   },
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "levelForXp",
+   "args": [
+    5400
+   ],
+   "expect": 7,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "xpForLevel",
+   "args": [
+    12
+   ],
+   "expect": 14400,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "skillIndex",
+   "args": [
+    {
+     "rating": 1850,
+     "level": 40,
+     "rank_index": 3,
+     "games": 220,
+     "bias": 0.5
+    }
+   ],
+   "expect": 1,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "decayRating",
+   "args": [
+    1800,
+    45
+   ],
+   "expect": 1776,
+   "note": ""
+  },
+  {
+   "group": "elo",
+   "fn": "decayRating_none",
+   "args": [
+    1800,
+    3
+   ],
+   "expect": 1800,
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "tallyEvents",
+   "args": [
+    [
+     {
+      "type": "kill",
+      "count": 4
+     },
+     {
+      "type": "final_kill",
+      "count": 2
+     },
+     {
+      "type": "bed_break",
+      "count": 1
+     },
+     {
+      "type": "death",
+      "count": 3
+     },
+     {
+      "type": "resource_collected",
+      "count": 120
+     },
+     {
+      "type": "team_upgrade",
+      "count": 1
+     }
+    ]
+   ],
+   "expect": {
+    "kill": 4,
+    "final_kill": 2,
+    "bed_break": 1,
+    "death": 3,
+    "resource_collected": 120,
+    "team_upgrade": 1
+   },
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "parkourSpeedBonus_fast",
+   "args": [
+    42,
+    60,
+    200
+   ],
+   "expect": 60,
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "parkourSpeedBonus_slow",
+   "args": [
+    95,
+    60,
+    200
+   ],
+   "expect": 0,
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "computePlayerResult_bedwars",
+   "args": [
+    {
+     "mode": "bedwars",
+     "events": [
+      {
+       "type": "kill",
+       "count": 4
+      },
+      {
+       "type": "final_kill",
+       "count": 2
+      },
+      {
+       "type": "bed_break",
+       "count": 1
+      },
+      {
+       "type": "death",
+       "count": 3
+      },
+      {
+       "type": "resource_collected",
+       "count": 120
+      },
+      {
+       "type": "team_upgrade",
+       "count": 1
+      }
+     ],
+     "won": true,
+     "placement": 1,
+     "player_count": 16,
+     "afk_pct": 3,
+     "rating": 1500,
+     "games": 30,
+     "duration_sec": 900
+    }
+   ],
+   "expect": {
+    "mode": "bedwars",
+    "won": true,
+    "placement": 1,
+    "points": 1075,
+    "points_raw": 1075,
+    "coins": 520,
+    "xp": 413,
+    "rp": 107,
+    "breakdown": [
+     {
+      "label": "kill",
+      "key": "kill",
+      "count": 4,
+      "each": 20,
+      "value": 80
+     },
+     {
+      "label": "death",
+      "key": "death",
+      "count": 3,
+      "each": -5,
+      "value": -15
+     },
+     {
+      "label": "final_kill",
+      "key": "final_kill",
+      "count": 2,
+      "each": 75,
+      "value": 150
+     },
+     {
+      "label": "bed_break",
+      "key": "bed_break",
+      "count": 1,
+      "each": 150,
+      "value": 150
+     },
+     {
+      "label": "resource_collected",
+      "key": "resource_collected",
+      "count": 120,
+      "each": 1,
+      "value": 120
+     },
+     {
+      "label": "team_upgrade",
+      "key": "team_upgrade",
+      "count": 1,
+      "each": 15,
+      "value": 15
+     },
+     {
+      "label": "win",
+      "key": "win",
+      "count": 1,
+      "each": 500,
+      "value": 500
+     },
+     {
+      "label": "survive_min",
+      "key": "survive_min",
+      "count": 15,
+      "each": 5,
+      "value": 75
+     }
+    ],
+    "flags": [],
+    "rewarded": true
+   },
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "computePlayerResult_skywars",
+   "args": [
+    {
+     "mode": "skywars",
+     "events": [
+      {
+       "type": "kill",
+       "count": 2
+      },
+      {
+       "type": "death",
+       "count": 1
+      },
+      {
+       "type": "chest_looted",
+       "count": 5
+      }
+     ],
+     "won": false,
+     "placement": 7,
+     "player_count": 12,
+     "afk_pct": 0,
+     "rating": 1200,
+     "games": 8,
+     "duration_sec": 480
+    }
+   ],
+   "expect": {
+    "mode": "skywars",
+    "won": false,
+    "placement": 1,
+    "points": 178,
+    "points_raw": 178,
+    "coins": 76,
+    "xp": 48,
+    "rp": 17,
+    "breakdown": [
+     {
+      "label": "kill",
+      "key": "kill",
+      "count": 2,
+      "each": 40,
+      "value": 80
+     },
+     {
+      "label": "death",
+      "key": "death",
+      "count": 1,
+      "each": -10,
+      "value": -10
+     },
+     {
+      "label": "chest_looted",
+      "key": "chest_looted",
+      "count": 5,
+      "each": 6,
+      "value": 30
+     },
+     {
+      "label": "lose",
+      "key": "lose",
+      "count": 1,
+      "each": 30,
+      "value": 30
+     },
+     {
+      "label": "survive_min",
+      "key": "survive_min",
+      "count": 8,
+      "each": 6,
+      "value": 48
+     }
+    ],
+    "flags": [],
+    "rewarded": true
+   },
+   "note": ""
+  },
+  {
+   "group": "scoring",
+   "fn": "pickMvp",
+   "args": [
+    [
+     {
+      "id": "a",
+      "points": 900,
+      "kills": 5,
+      "won": true
+     },
+     {
+      "id": "b",
+      "points": 1200,
+      "kills": 3,
+      "won": false
+     },
+     {
+      "id": "c",
+      "points": 400,
+      "kills": 1,
+      "won": true
+     }
+    ]
+   ],
+   "expect": "b",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierForSkill",
+   "args": [
+    0.2
+   ],
+   "expect": "T0",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierForSkill_high",
+   "args": [
+    0.92
+   ],
+   "expect": "T4",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "shiftTier_up",
+   "args": [
+    "T1",
+    2
+   ],
+   "expect": "T3",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "shiftTier_cap",
+   "args": [
+    "T3",
+    5
+   ],
+   "expect": "T4",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "shiftTier_floor",
+   "args": [
+    "T1",
+    -4
+   ],
+   "expect": "T0",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "maxTier",
+   "args": [
+    "T2",
+    "T4"
+   ],
+   "expect": "T4",
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "percentile",
+   "args": [
+    [
+     10,
+     20,
+     30,
+     40,
+     50
+    ],
+    0.6
+   ],
+   "expect": 30,
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "playerSkill",
+   "args": [
+    {
+     "rating": 1900,
+     "level": 55,
+     "rank_index": 4,
+     "games": 300
+    }
+   ],
+   "expect": 0.627,
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "chooseMatchTier_mixed",
+   "args": [
+    {
+     "mode": "bedwars",
+     "players": [
+      {
+       "id": "h1",
+       "is_bot": false,
+       "rating": 2050,
+       "level": 70,
+       "rank_id": "god",
+       "games": 500
+      },
+      {
+       "id": "h2",
+       "is_bot": false,
+       "rating": 1200,
+       "level": 9,
+       "rank_id": "noob",
+       "games": 20
+      }
+     ],
+     "fill_slots": 6,
+     "seed": 4242,
+     "ranks": [
+      {
+       "id": "free",
+       "index": 0,
+       "name_fa": "رایگان",
+       "name_en": "Free",
+       "tag": "",
+       "prefix": "",
+       "color": "#9AA3AD",
+       "rgb": [
+        154,
+        163,
+        173
+       ],
+       "rp_required": 0,
+       "price_usd": 0,
+       "purchasable": false,
+       "bot_min_tier": "T0",
+       "bot_skill_bias": 0,
+       "coin_multiplier": 1,
+       "xp_multiplier": 1,
+       "max_gems_held": 500,
+       "cosmetic_slots": 1,
+       "party_max": 3,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "shop.browse"
+       ],
+       "perks_fa": [
+        "دسترسی به همهٔ گیم‌مودها",
+        "یک اسلات کازمتیک",
+        "چت معمولی"
+       ],
+       "art": {
+        "icon": "rank-free"
+       }
+      },
+      {
+       "id": "noob",
+       "index": 1,
+       "name_fa": "نوب",
+       "name_en": "Noob",
+       "tag": "[NOOB]",
+       "prefix": "نوب",
+       "color": "#7ED957",
+       "rgb": [
+        126,
+        217,
+        87
+       ],
+       "rp_required": 2500,
+       "price_usd": 1.99,
+       "purchasable": true,
+       "bot_min_tier": "T0",
+       "bot_skill_bias": 0.05,
+       "coin_multiplier": 1.05,
+       "xp_multiplier": 1.05,
+       "max_gems_held": 1000,
+       "cosmetic_slots": 2,
+       "party_max": 4,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "shop.browse",
+        "party.create",
+        "kit.basic"
+       ],
+       "perks_fa": [
+        "تگ سبز [NOOB] در چت",
+        "+۵٪ سکه و تجربه",
+        "دو اسلات کازمتیک",
+        "رنگ چت پایه",
+        "ساخت پارتی"
+       ],
+       "art": {
+        "icon": "rank-noob"
+       }
+      },
+      {
+       "id": "normal",
+       "index": 2,
+       "name_fa": "معمولی",
+       "name_en": "Normal",
+       "tag": "[PRO-]",
+       "prefix": "معمولی",
+       "color": "#3FA9F5",
+       "rgb": [
+        63,
+        169,
+        245
+       ],
+       "rp_required": 10000,
+       "price_usd": 3.99,
+       "purchasable": true,
+       "bot_min_tier": "T1",
+       "bot_skill_bias": 0.1,
+       "coin_multiplier": 1.15,
+       "xp_multiplier": 1.15,
+       "max_gems_held": 2500,
+       "cosmetic_slots": 3,
+       "party_max": 6,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "nick.custom",
+        "queue.priority_1"
+       ],
+       "perks_fa": [
+        "تگ آبی",
+        "+۱۵٪ سکه و تجربه",
+        "سه اسلات کازمتیک",
+        "رنگ هگز نیک‌نیم",
+        "صف اولویت‌دار",
+        "کیت‌های پریمیوم ۱"
+       ],
+       "art": {
+        "icon": "rank-normal"
+       }
+      },
+      {
+       "id": "pro",
+       "index": 3,
+       "name_fa": "پرو",
+       "name_en": "Pro",
+       "tag": "[PRO]",
+       "prefix": "پرو",
+       "color": "#A55EEA",
+       "rgb": [
+        165,
+        94,
+        234
+       ],
+       "rp_required": 30000,
+       "price_usd": 7.99,
+       "purchasable": true,
+       "bot_min_tier": "T2",
+       "bot_skill_bias": 0.2,
+       "coin_multiplier": 1.3,
+       "xp_multiplier": 1.3,
+       "max_gems_held": 6000,
+       "cosmetic_slots": 5,
+       "party_max": 8,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "nick.custom",
+        "queue.priority_2",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "report.priority"
+       ],
+       "perks_fa": [
+        "تگ بنفش و بولد چت",
+        "+۳۰٪ سکه و تجربه",
+        "پنج اسلات کازمتیک",
+        "بال و کلاه",
+        "پرواز در لابی",
+        "کیت‌های پریمیوم ۲"
+       ],
+       "art": {
+        "icon": "rank-pro"
+       }
+      },
+      {
+       "id": "god",
+       "index": 4,
+       "name_fa": "گاد",
+       "name_en": "God",
+       "tag": "[GOD]",
+       "prefix": "گاد",
+       "color": "#FFB020",
+       "rgb": [
+        255,
+        176,
+        32
+       ],
+       "rp_required": 75000,
+       "price_usd": 14.99,
+       "purchasable": true,
+       "bot_min_tier": "T3",
+       "bot_skill_bias": 0.32,
+       "coin_multiplier": 1.5,
+       "xp_multiplier": 1.5,
+       "max_gems_held": 15000,
+       "cosmetic_slots": 8,
+       "party_max": 12,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "chat.rainbow",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "kit.god",
+        "nick.custom",
+        "nick.animated",
+        "queue.priority_3",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "cosmetic.cape",
+        "cosmetic.killeffect",
+        "report.priority",
+        "arena.private"
+       ],
+       "perks_fa": [
+        "تگ طلایی و چت رنگین‌کمانی",
+        "+۵۰٪ سکه و تجربه",
+        "هشت اسلات کازمتیک",
+        "کیپ و افکت کشتن",
+        "آرنای خصوصی",
+        "نیک‌نیم متحرک"
+       ],
+       "art": {
+        "icon": "rank-god"
+       }
+      },
+      {
+       "id": "ultragod",
+       "index": 5,
+       "name_fa": "الترا گاد",
+       "name_en": "Ultra God",
+       "tag": "[ULTRA]",
+       "prefix": "الترا گاد",
+       "color": "#FF3B6B",
+       "rgb": [
+        255,
+        59,
+        107
+       ],
+       "rp_required": 160000,
+       "price_usd": 24.99,
+       "purchasable": true,
+       "bot_min_tier": "T4",
+       "bot_skill_bias": 0.45,
+       "coin_multiplier": 1.8,
+       "xp_multiplier": 1.8,
+       "max_gems_held": 50000,
+       "cosmetic_slots": 12,
+       "party_max": 16,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "chat.rainbow",
+        "chat.gradient",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "kit.god",
+        "kit.ultra",
+        "nick.custom",
+        "nick.animated",
+        "queue.priority_4",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "cosmetic.cape",
+        "cosmetic.killeffect",
+        "cosmetic.portal",
+        "cosmetic.pet",
+        "cosmetic.trail",
+        "report.priority",
+        "arena.private",
+        "beta.features",
+        "season.skin"
+       ],
+       "perks_fa": [
+        "تگ قرمز الترا با گرادیانت چت",
+        "+۸۰٪ سکه و تجربه",
+        "دوازده اسلات کازمتیک",
+        "افکت پرتال، پت و دنباله",
+        "دسترسی به امکانات بتا",
+        "پوستهٔ فصلی اختصاصی"
+       ],
+       "art": {
+        "icon": "rank-ultragod"
+       }
+      }
+     ],
+     "tiersSpec": {
+      "version": 3,
+      "note": "Adaptive bot brain tiers. T0/T1 = deterministic behaviour tree only (cheap, offline-safe). From T1 upward the match also consults a Workers AI model at low frequency for STRATEGIC decisions. Model ids are Cloudflare Workers AI models that are NOT deprecated as of 2026-09 (see src/ai.js DEPRECATED_MODELS).",
+      "models": {
+       "none": null,
+       "small": "@cf/meta/llama-3.2-3b-instruct",
+       "medium": "@cf/meta/llama-3.1-8b-instruct-fp8",
+       "large": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+       "vision": "@cf/meta/llama-3.2-11b-vision-instruct",
+       "image": "@cf/black-forest-labs/flux-1-schnell"
+      },
+      "tiers": [
+       {
+        "id": "T0",
+        "name_fa": "تازه‌کار",
+        "name_en": "Rookie",
+        "skill": 0.15,
+        "model": "none",
+        "llm_enabled": false,
+        "prompt_tokens": 0,
+        "max_tokens": 0,
+        "temperature": 0.9,
+        "reaction_ms": {
+         "min": 520,
+         "max": 900
+        },
+        "aim_error_deg": {
+         "min": 9,
+         "max": 22
+        },
+        "mistake_rate": 0.22,
+        "decision_hz": 3,
+        "bridge_quality": 0.35,
+        "combo_chance": 0.05,
+        "strafe_quality": 0.25,
+        "teamwork": 0.15,
+        "retreat_hp": 0.15,
+        "resource_efficiency": 0.4,
+        "build_skill": 0.2,
+        "deception": 0,
+        "notes_fa": "بات‌های ساده: مسیر مستقیم، حملهٔ دیرهنگام، اشتباه زیاد. هیچ هزینهٔ AI ندارد."
+       },
+       {
+        "id": "T1",
+        "name_fa": "معمولی",
+        "name_en": "Casual",
+        "skill": 0.38,
+        "model": "small",
+        "llm_enabled": true,
+        "prompt_tokens": 900,
+        "max_tokens": 160,
+        "temperature": 0.8,
+        "reaction_ms": {
+         "min": 380,
+         "max": 700
+        },
+        "aim_error_deg": {
+         "min": 5,
+         "max": 14
+        },
+        "mistake_rate": 0.15,
+        "decision_hz": 5,
+        "bridge_quality": 0.55,
+        "combo_chance": 0.15,
+        "strafe_quality": 0.4,
+        "teamwork": 0.35,
+        "retreat_hp": 0.22,
+        "resource_efficiency": 0.55,
+        "build_skill": 0.4,
+        "deception": 0.15,
+        "notes_fa": "مدل سبک و ارزان (llama-3.2-3b) فقط هر چند ثانیه یک‌بار برای تصمیم سطح بالا؛ حرکت و جنگ درجا روی سرور محاسبه می‌شود."
+       },
+       {
+        "id": "T2",
+        "name_fa": "ماهر",
+        "name_en": "Skilled",
+        "skill": 0.6,
+        "model": "medium",
+        "llm_enabled": true,
+        "prompt_tokens": 1400,
+        "max_tokens": 240,
+        "temperature": 0.7,
+        "reaction_ms": {
+         "min": 260,
+         "max": 520
+        },
+        "aim_error_deg": {
+         "min": 3,
+         "max": 9
+        },
+        "mistake_rate": 0.09,
+        "decision_hz": 8,
+        "bridge_quality": 0.72,
+        "combo_chance": 0.3,
+        "strafe_quality": 0.6,
+        "teamwork": 0.55,
+        "retreat_hp": 0.28,
+        "resource_efficiency": 0.7,
+        "build_skill": 0.62,
+        "deception": 0.35,
+        "notes_fa": "مدل ۸B: خرید بهینه در بدوارز، چرخش منابع، حمایت تیمی."
+       },
+       {
+        "id": "T3",
+        "name_fa": "تاکتیسین",
+        "name_en": "Tactician",
+        "skill": 0.8,
+        "model": "large",
+        "llm_enabled": true,
+        "prompt_tokens": 2200,
+        "max_tokens": 320,
+        "temperature": 0.55,
+        "reaction_ms": {
+         "min": 180,
+         "max": 380
+        },
+        "aim_error_deg": {
+         "min": 1.5,
+         "max": 6
+        },
+        "mistake_rate": 0.05,
+        "decision_hz": 12,
+        "bridge_quality": 0.86,
+        "combo_chance": 0.5,
+        "strafe_quality": 0.78,
+        "teamwork": 0.78,
+        "retreat_hp": 0.33,
+        "resource_efficiency": 0.85,
+        "build_skill": 0.8,
+        "deception": 0.6,
+        "notes_fa": "مدل ۷۰B: نقشه‌خوانی، هماهنگی حملهٔ هم‌زمان دو تیم، بلوف در ماردِر میستری."
+       },
+       {
+        "id": "T4",
+        "name_fa": "خدایی",
+        "name_en": "Godlike",
+        "skill": 0.95,
+        "model": "large",
+        "llm_enabled": true,
+        "prompt_tokens": 2600,
+        "max_tokens": 420,
+        "temperature": 0.4,
+        "reaction_ms": {
+         "min": 130,
+         "max": 280
+        },
+        "aim_error_deg": {
+         "min": 0.8,
+         "max": 3.5
+        },
+        "mistake_rate": 0.03,
+        "decision_hz": 16,
+        "bridge_quality": 0.95,
+        "combo_chance": 0.68,
+        "strafe_quality": 0.9,
+        "teamwork": 0.92,
+        "retreat_hp": 0.38,
+        "resource_efficiency": 0.95,
+        "build_skill": 0.95,
+        "deception": 0.85,
+        "notes_fa": "بالاترین سطح: نگاه به جلو (lookahead)، استراتژی تیمی کامل، ساخت‌وساز دقیق. عمداً خطای انسانی دارد تا غیرقابل‌تشخیص نباشد اما غیرعادلانه هم نشود."
+       }
+      ],
+      "escalation": {
+       "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+       "start_offset": -1,
+       "ramp_steps": [
+        {
+         "at_pct_of_duration": 0,
+         "delta": 0
+        },
+        {
+         "at_pct_of_duration": 25,
+         "delta": 0
+        },
+        {
+         "at_pct_of_duration": 45,
+         "delta": 1
+        },
+        {
+         "at_pct_of_duration": 70,
+         "delta": 1
+        },
+        {
+         "at_pct_of_duration": 88,
+         "delta": 1
+        }
+       ],
+       "max_tier": "T4",
+       "comeback_rubbery": {
+        "enabled": true,
+        "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+        "dominating_threshold": 0.65,
+        "crushed_threshold": 0.25
+       }
+      },
+      "humanization": {
+       "note": "Every tier is jittered per-bot so 4 bots of the same tier do not move identically.",
+       "per_bot_jitter": 0.18,
+       "fatigue": {
+        "enabled": true,
+        "skill_decay_after_sec": 420,
+        "decay": 0.06
+       },
+       "chat": {
+        "enabled_from_tier": "T2",
+        "messages_per_min_max": 2,
+        "safe": true
+       },
+       "never": [
+        "perfect_aim_lock",
+        "through_wall_hits",
+        "instant_bridge",
+        "zero_reaction_time"
+       ]
+      },
+      "cost_guard": {
+       "max_llm_calls_per_bot_per_match": 90,
+       "max_llm_calls_per_match": 400,
+       "cache_identical_states": true,
+       "fallback": "heuristic_tree",
+       "fallback_reason_fa": "اگر Workers AI در دسترس نبود یا سهمیه تمام شد، بات به درخت رفتار محلی برمی‌گردد و بازی هرگز نمی‌خوابد."
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T4",
+    "start_tier": "T3",
+    "tier_def": {
+     "id": "T4",
+     "name_fa": "خدایی",
+     "name_en": "Godlike",
+     "skill": 0.95,
+     "model": "large",
+     "llm_enabled": true,
+     "prompt_tokens": 2600,
+     "max_tokens": 420,
+     "temperature": 0.4,
+     "reaction_ms": {
+      "min": 130,
+      "max": 280
+     },
+     "aim_error_deg": {
+      "min": 0.8,
+      "max": 3.5
+     },
+     "mistake_rate": 0.03,
+     "decision_hz": 16,
+     "bridge_quality": 0.95,
+     "combo_chance": 0.68,
+     "strafe_quality": 0.9,
+     "teamwork": 0.92,
+     "retreat_hp": 0.38,
+     "resource_efficiency": 0.95,
+     "build_skill": 0.95,
+     "deception": 0.85,
+     "notes_fa": "بالاترین سطح: نگاه به جلو (lookahead)، استراتژی تیمی کامل، ساخت‌وساز دقیق. عمداً خطای انسانی دارد تا غیرقابل‌تشخیص نباشد اما غیرعادلانه هم نشود."
+    },
+    "start_tier_def": {
+     "id": "T3",
+     "name_fa": "تاکتیسین",
+     "name_en": "Tactician",
+     "skill": 0.8,
+     "model": "large",
+     "llm_enabled": true,
+     "prompt_tokens": 2200,
+     "max_tokens": 320,
+     "temperature": 0.55,
+     "reaction_ms": {
+      "min": 180,
+      "max": 380
+     },
+     "aim_error_deg": {
+      "min": 1.5,
+      "max": 6
+     },
+     "mistake_rate": 0.05,
+     "decision_hz": 12,
+     "bridge_quality": 0.86,
+     "combo_chance": 0.5,
+     "strafe_quality": 0.78,
+     "teamwork": 0.78,
+     "retreat_hp": 0.33,
+     "resource_efficiency": 0.85,
+     "build_skill": 0.8,
+     "deception": 0.6,
+     "notes_fa": "مدل ۷۰B: نقشه‌خوانی، هماهنگی حملهٔ هم‌زمان دو تیم، بلوف در ماردِر میستری."
+    },
+    "model": "large",
+    "llm_enabled": true,
+    "skill_human": 1,
+    "human_count": 2,
+    "bot_count": 0,
+    "reasons": [
+     "شروع از T3 و ترفیع تدریجی تا T4 در طول مچ"
+    ],
+    "cap": "T4"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "chooseMatchTier_newbie",
+   "args": [
+    {
+     "mode": "duels",
+     "players": [
+      {
+       "id": "n",
+       "is_bot": false,
+       "rating": 950,
+       "level": 2,
+       "rank_id": "free",
+       "games": 3
+      }
+     ],
+     "fill_slots": 1,
+     "seed": 7,
+     "ranks": [
+      {
+       "id": "free",
+       "index": 0,
+       "name_fa": "رایگان",
+       "name_en": "Free",
+       "tag": "",
+       "prefix": "",
+       "color": "#9AA3AD",
+       "rgb": [
+        154,
+        163,
+        173
+       ],
+       "rp_required": 0,
+       "price_usd": 0,
+       "purchasable": false,
+       "bot_min_tier": "T0",
+       "bot_skill_bias": 0,
+       "coin_multiplier": 1,
+       "xp_multiplier": 1,
+       "max_gems_held": 500,
+       "cosmetic_slots": 1,
+       "party_max": 3,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "shop.browse"
+       ],
+       "perks_fa": [
+        "دسترسی به همهٔ گیم‌مودها",
+        "یک اسلات کازمتیک",
+        "چت معمولی"
+       ],
+       "art": {
+        "icon": "rank-free"
+       }
+      },
+      {
+       "id": "noob",
+       "index": 1,
+       "name_fa": "نوب",
+       "name_en": "Noob",
+       "tag": "[NOOB]",
+       "prefix": "نوب",
+       "color": "#7ED957",
+       "rgb": [
+        126,
+        217,
+        87
+       ],
+       "rp_required": 2500,
+       "price_usd": 1.99,
+       "purchasable": true,
+       "bot_min_tier": "T0",
+       "bot_skill_bias": 0.05,
+       "coin_multiplier": 1.05,
+       "xp_multiplier": 1.05,
+       "max_gems_held": 1000,
+       "cosmetic_slots": 2,
+       "party_max": 4,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "shop.browse",
+        "party.create",
+        "kit.basic"
+       ],
+       "perks_fa": [
+        "تگ سبز [NOOB] در چت",
+        "+۵٪ سکه و تجربه",
+        "دو اسلات کازمتیک",
+        "رنگ چت پایه",
+        "ساخت پارتی"
+       ],
+       "art": {
+        "icon": "rank-noob"
+       }
+      },
+      {
+       "id": "normal",
+       "index": 2,
+       "name_fa": "معمولی",
+       "name_en": "Normal",
+       "tag": "[PRO-]",
+       "prefix": "معمولی",
+       "color": "#3FA9F5",
+       "rgb": [
+        63,
+        169,
+        245
+       ],
+       "rp_required": 10000,
+       "price_usd": 3.99,
+       "purchasable": true,
+       "bot_min_tier": "T1",
+       "bot_skill_bias": 0.1,
+       "coin_multiplier": 1.15,
+       "xp_multiplier": 1.15,
+       "max_gems_held": 2500,
+       "cosmetic_slots": 3,
+       "party_max": 6,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "nick.custom",
+        "queue.priority_1"
+       ],
+       "perks_fa": [
+        "تگ آبی",
+        "+۱۵٪ سکه و تجربه",
+        "سه اسلات کازمتیک",
+        "رنگ هگز نیک‌نیم",
+        "صف اولویت‌دار",
+        "کیت‌های پریمیوم ۱"
+       ],
+       "art": {
+        "icon": "rank-normal"
+       }
+      },
+      {
+       "id": "pro",
+       "index": 3,
+       "name_fa": "پرو",
+       "name_en": "Pro",
+       "tag": "[PRO]",
+       "prefix": "پرو",
+       "color": "#A55EEA",
+       "rgb": [
+        165,
+        94,
+        234
+       ],
+       "rp_required": 30000,
+       "price_usd": 7.99,
+       "purchasable": true,
+       "bot_min_tier": "T2",
+       "bot_skill_bias": 0.2,
+       "coin_multiplier": 1.3,
+       "xp_multiplier": 1.3,
+       "max_gems_held": 6000,
+       "cosmetic_slots": 5,
+       "party_max": 8,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "nick.custom",
+        "queue.priority_2",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "report.priority"
+       ],
+       "perks_fa": [
+        "تگ بنفش و بولد چت",
+        "+۳۰٪ سکه و تجربه",
+        "پنج اسلات کازمتیک",
+        "بال و کلاه",
+        "پرواز در لابی",
+        "کیت‌های پریمیوم ۲"
+       ],
+       "art": {
+        "icon": "rank-pro"
+       }
+      },
+      {
+       "id": "god",
+       "index": 4,
+       "name_fa": "گاد",
+       "name_en": "God",
+       "tag": "[GOD]",
+       "prefix": "گاد",
+       "color": "#FFB020",
+       "rgb": [
+        255,
+        176,
+        32
+       ],
+       "rp_required": 75000,
+       "price_usd": 14.99,
+       "purchasable": true,
+       "bot_min_tier": "T3",
+       "bot_skill_bias": 0.32,
+       "coin_multiplier": 1.5,
+       "xp_multiplier": 1.5,
+       "max_gems_held": 15000,
+       "cosmetic_slots": 8,
+       "party_max": 12,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "chat.rainbow",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "kit.god",
+        "nick.custom",
+        "nick.animated",
+        "queue.priority_3",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "cosmetic.cape",
+        "cosmetic.killeffect",
+        "report.priority",
+        "arena.private"
+       ],
+       "perks_fa": [
+        "تگ طلایی و چت رنگین‌کمانی",
+        "+۵۰٪ سکه و تجربه",
+        "هشت اسلات کازمتیک",
+        "کیپ و افکت کشتن",
+        "آرنای خصوصی",
+        "نیک‌نیم متحرک"
+       ],
+       "art": {
+        "icon": "rank-god"
+       }
+      },
+      {
+       "id": "ultragod",
+       "index": 5,
+       "name_fa": "الترا گاد",
+       "name_en": "Ultra God",
+       "tag": "[ULTRA]",
+       "prefix": "الترا گاد",
+       "color": "#FF3B6B",
+       "rgb": [
+        255,
+        59,
+        107
+       ],
+       "rp_required": 160000,
+       "price_usd": 24.99,
+       "purchasable": true,
+       "bot_min_tier": "T4",
+       "bot_skill_bias": 0.45,
+       "coin_multiplier": 1.8,
+       "xp_multiplier": 1.8,
+       "max_gems_held": 50000,
+       "cosmetic_slots": 12,
+       "party_max": 16,
+       "permissions": [
+        "lobby.join",
+        "mode.play",
+        "chat.normal",
+        "chat.color.basic",
+        "chat.color.hex",
+        "chat.bold",
+        "chat.rainbow",
+        "chat.gradient",
+        "shop.browse",
+        "shop.buy",
+        "party.create",
+        "kit.basic",
+        "kit.premium_1",
+        "kit.premium_2",
+        "kit.god",
+        "kit.ultra",
+        "nick.custom",
+        "nick.animated",
+        "queue.priority_4",
+        "lobby.fly",
+        "cosmetic.wings",
+        "cosmetic.hat",
+        "cosmetic.cape",
+        "cosmetic.killeffect",
+        "cosmetic.portal",
+        "cosmetic.pet",
+        "cosmetic.trail",
+        "report.priority",
+        "arena.private",
+        "beta.features",
+        "season.skin"
+       ],
+       "perks_fa": [
+        "تگ قرمز الترا با گرادیانت چت",
+        "+۸۰٪ سکه و تجربه",
+        "دوازده اسلات کازمتیک",
+        "افکت پرتال، پت و دنباله",
+        "دسترسی به امکانات بتا",
+        "پوستهٔ فصلی اختصاصی"
+       ],
+       "art": {
+        "icon": "rank-ultragod"
+       }
+      }
+     ],
+     "tiersSpec": {
+      "version": 3,
+      "note": "Adaptive bot brain tiers. T0/T1 = deterministic behaviour tree only (cheap, offline-safe). From T1 upward the match also consults a Workers AI model at low frequency for STRATEGIC decisions. Model ids are Cloudflare Workers AI models that are NOT deprecated as of 2026-09 (see src/ai.js DEPRECATED_MODELS).",
+      "models": {
+       "none": null,
+       "small": "@cf/meta/llama-3.2-3b-instruct",
+       "medium": "@cf/meta/llama-3.1-8b-instruct-fp8",
+       "large": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+       "vision": "@cf/meta/llama-3.2-11b-vision-instruct",
+       "image": "@cf/black-forest-labs/flux-1-schnell"
+      },
+      "tiers": [
+       {
+        "id": "T0",
+        "name_fa": "تازه‌کار",
+        "name_en": "Rookie",
+        "skill": 0.15,
+        "model": "none",
+        "llm_enabled": false,
+        "prompt_tokens": 0,
+        "max_tokens": 0,
+        "temperature": 0.9,
+        "reaction_ms": {
+         "min": 520,
+         "max": 900
+        },
+        "aim_error_deg": {
+         "min": 9,
+         "max": 22
+        },
+        "mistake_rate": 0.22,
+        "decision_hz": 3,
+        "bridge_quality": 0.35,
+        "combo_chance": 0.05,
+        "strafe_quality": 0.25,
+        "teamwork": 0.15,
+        "retreat_hp": 0.15,
+        "resource_efficiency": 0.4,
+        "build_skill": 0.2,
+        "deception": 0,
+        "notes_fa": "بات‌های ساده: مسیر مستقیم، حملهٔ دیرهنگام، اشتباه زیاد. هیچ هزینهٔ AI ندارد."
+       },
+       {
+        "id": "T1",
+        "name_fa": "معمولی",
+        "name_en": "Casual",
+        "skill": 0.38,
+        "model": "small",
+        "llm_enabled": true,
+        "prompt_tokens": 900,
+        "max_tokens": 160,
+        "temperature": 0.8,
+        "reaction_ms": {
+         "min": 380,
+         "max": 700
+        },
+        "aim_error_deg": {
+         "min": 5,
+         "max": 14
+        },
+        "mistake_rate": 0.15,
+        "decision_hz": 5,
+        "bridge_quality": 0.55,
+        "combo_chance": 0.15,
+        "strafe_quality": 0.4,
+        "teamwork": 0.35,
+        "retreat_hp": 0.22,
+        "resource_efficiency": 0.55,
+        "build_skill": 0.4,
+        "deception": 0.15,
+        "notes_fa": "مدل سبک و ارزان (llama-3.2-3b) فقط هر چند ثانیه یک‌بار برای تصمیم سطح بالا؛ حرکت و جنگ درجا روی سرور محاسبه می‌شود."
+       },
+       {
+        "id": "T2",
+        "name_fa": "ماهر",
+        "name_en": "Skilled",
+        "skill": 0.6,
+        "model": "medium",
+        "llm_enabled": true,
+        "prompt_tokens": 1400,
+        "max_tokens": 240,
+        "temperature": 0.7,
+        "reaction_ms": {
+         "min": 260,
+         "max": 520
+        },
+        "aim_error_deg": {
+         "min": 3,
+         "max": 9
+        },
+        "mistake_rate": 0.09,
+        "decision_hz": 8,
+        "bridge_quality": 0.72,
+        "combo_chance": 0.3,
+        "strafe_quality": 0.6,
+        "teamwork": 0.55,
+        "retreat_hp": 0.28,
+        "resource_efficiency": 0.7,
+        "build_skill": 0.62,
+        "deception": 0.35,
+        "notes_fa": "مدل ۸B: خرید بهینه در بدوارز، چرخش منابع، حمایت تیمی."
+       },
+       {
+        "id": "T3",
+        "name_fa": "تاکتیسین",
+        "name_en": "Tactician",
+        "skill": 0.8,
+        "model": "large",
+        "llm_enabled": true,
+        "prompt_tokens": 2200,
+        "max_tokens": 320,
+        "temperature": 0.55,
+        "reaction_ms": {
+         "min": 180,
+         "max": 380
+        },
+        "aim_error_deg": {
+         "min": 1.5,
+         "max": 6
+        },
+        "mistake_rate": 0.05,
+        "decision_hz": 12,
+        "bridge_quality": 0.86,
+        "combo_chance": 0.5,
+        "strafe_quality": 0.78,
+        "teamwork": 0.78,
+        "retreat_hp": 0.33,
+        "resource_efficiency": 0.85,
+        "build_skill": 0.8,
+        "deception": 0.6,
+        "notes_fa": "مدل ۷۰B: نقشه‌خوانی، هماهنگی حملهٔ هم‌زمان دو تیم، بلوف در ماردِر میستری."
+       },
+       {
+        "id": "T4",
+        "name_fa": "خدایی",
+        "name_en": "Godlike",
+        "skill": 0.95,
+        "model": "large",
+        "llm_enabled": true,
+        "prompt_tokens": 2600,
+        "max_tokens": 420,
+        "temperature": 0.4,
+        "reaction_ms": {
+         "min": 130,
+         "max": 280
+        },
+        "aim_error_deg": {
+         "min": 0.8,
+         "max": 3.5
+        },
+        "mistake_rate": 0.03,
+        "decision_hz": 16,
+        "bridge_quality": 0.95,
+        "combo_chance": 0.68,
+        "strafe_quality": 0.9,
+        "teamwork": 0.92,
+        "retreat_hp": 0.38,
+        "resource_efficiency": 0.95,
+        "build_skill": 0.95,
+        "deception": 0.85,
+        "notes_fa": "بالاترین سطح: نگاه به جلو (lookahead)، استراتژی تیمی کامل، ساخت‌وساز دقیق. عمداً خطای انسانی دارد تا غیرقابل‌تشخیص نباشد اما غیرعادلانه هم نشود."
+       }
+      ],
+      "escalation": {
+       "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+       "start_offset": -1,
+       "ramp_steps": [
+        {
+         "at_pct_of_duration": 0,
+         "delta": 0
+        },
+        {
+         "at_pct_of_duration": 25,
+         "delta": 0
+        },
+        {
+         "at_pct_of_duration": 45,
+         "delta": 1
+        },
+        {
+         "at_pct_of_duration": 70,
+         "delta": 1
+        },
+        {
+         "at_pct_of_duration": 88,
+         "delta": 1
+        }
+       ],
+       "max_tier": "T4",
+       "comeback_rubbery": {
+        "enabled": true,
+        "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+        "dominating_threshold": 0.65,
+        "crushed_threshold": 0.25
+       }
+      },
+      "humanization": {
+       "note": "Every tier is jittered per-bot so 4 bots of the same tier do not move identically.",
+       "per_bot_jitter": 0.18,
+       "fatigue": {
+        "enabled": true,
+        "skill_decay_after_sec": 420,
+        "decay": 0.06
+       },
+       "chat": {
+        "enabled_from_tier": "T2",
+        "messages_per_min_max": 2,
+        "safe": true
+       },
+       "never": [
+        "perfect_aim_lock",
+        "through_wall_hits",
+        "instant_bridge",
+        "zero_reaction_time"
+       ]
+      },
+      "cost_guard": {
+       "max_llm_calls_per_bot_per_match": 90,
+       "max_llm_calls_per_match": 400,
+       "cache_identical_states": true,
+       "fallback": "heuristic_tree",
+       "fallback_reason_fa": "اگر Workers AI در دسترس نبود یا سهمیه تمام شد، بات به درخت رفتار محلی برمی‌گردد و بازی هرگز نمی‌خوابد."
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T0",
+    "start_tier": "T0",
+    "tier_def": {
+     "id": "T0",
+     "name_fa": "تازه‌کار",
+     "name_en": "Rookie",
+     "skill": 0.15,
+     "model": "none",
+     "llm_enabled": false,
+     "prompt_tokens": 0,
+     "max_tokens": 0,
+     "temperature": 0.9,
+     "reaction_ms": {
+      "min": 520,
+      "max": 900
+     },
+     "aim_error_deg": {
+      "min": 9,
+      "max": 22
+     },
+     "mistake_rate": 0.22,
+     "decision_hz": 3,
+     "bridge_quality": 0.35,
+     "combo_chance": 0.05,
+     "strafe_quality": 0.25,
+     "teamwork": 0.15,
+     "retreat_hp": 0.15,
+     "resource_efficiency": 0.4,
+     "build_skill": 0.2,
+     "deception": 0,
+     "notes_fa": "بات‌های ساده: مسیر مستقیم، حملهٔ دیرهنگام، اشتباه زیاد. هیچ هزینهٔ AI ندارد."
+    },
+    "start_tier_def": {
+     "id": "T0",
+     "name_fa": "تازه‌کار",
+     "name_en": "Rookie",
+     "skill": 0.15,
+     "model": "none",
+     "llm_enabled": false,
+     "prompt_tokens": 0,
+     "max_tokens": 0,
+     "temperature": 0.9,
+     "reaction_ms": {
+      "min": 520,
+      "max": 900
+     },
+     "aim_error_deg": {
+      "min": 9,
+      "max": 22
+     },
+     "mistake_rate": 0.22,
+     "decision_hz": 3,
+     "bridge_quality": 0.35,
+     "combo_chance": 0.05,
+     "strafe_quality": 0.25,
+     "teamwork": 0.15,
+     "retreat_hp": 0.15,
+     "resource_efficiency": 0.4,
+     "build_skill": 0.2,
+     "deception": 0,
+     "notes_fa": "بات‌های ساده: مسیر مستقیم، حملهٔ دیرهنگام، اشتباه زیاد. هیچ هزینهٔ AI ندارد."
+    },
+    "model": "none",
+    "llm_enabled": false,
+    "skill_human": 0.067,
+    "human_count": 1,
+    "bot_count": 0,
+    "reasons": [],
+    "cap": "T4"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierAtTime_early",
+   "args": [
+    "T3",
+    "T1",
+    {
+     "duration_sec": 1800,
+     "elapsed_sec": 60,
+     "human_share": 0.5,
+     "escalation": {
+      "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+      "start_offset": -1,
+      "ramp_steps": [
+       {
+        "at_pct_of_duration": 0,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 25,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 45,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 70,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 88,
+        "delta": 1
+       }
+      ],
+      "max_tier": "T4",
+      "comeback_rubbery": {
+       "enabled": true,
+       "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+       "dominating_threshold": 0.65,
+       "crushed_threshold": 0.25
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T1",
+    "delta": 0,
+    "reason": "بدون ترفیع"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierAtTime_mid",
+   "args": [
+    "T3",
+    "T1",
+    {
+     "duration_sec": 1800,
+     "elapsed_sec": 900,
+     "human_share": 0.5,
+     "escalation": {
+      "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+      "start_offset": -1,
+      "ramp_steps": [
+       {
+        "at_pct_of_duration": 0,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 25,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 45,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 70,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 88,
+        "delta": 1
+       }
+      ],
+      "max_tier": "T4",
+      "comeback_rubbery": {
+       "enabled": true,
+       "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+       "dominating_threshold": 0.65,
+       "crushed_threshold": 0.25
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T2",
+    "delta": 1,
+    "reason": "50% از مچ → +1 سطح"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierAtTime_late_winning",
+   "args": [
+    "T3",
+    "T1",
+    {
+     "duration_sec": 1800,
+     "elapsed_sec": 1650,
+     "human_share": 0.8,
+     "escalation": {
+      "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+      "start_offset": -1,
+      "ramp_steps": [
+       {
+        "at_pct_of_duration": 0,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 25,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 45,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 70,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 88,
+        "delta": 1
+       }
+      ],
+      "max_tier": "T4",
+      "comeback_rubbery": {
+       "enabled": true,
+       "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+       "dominating_threshold": 0.65,
+       "crushed_threshold": 0.25
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T3",
+    "delta": 3,
+    "reason": "92% از مچ → +3 سطح"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "tierAtTime_late_losing",
+   "args": [
+    "T3",
+    "T1",
+    {
+     "duration_sec": 1800,
+     "elapsed_sec": 1650,
+     "human_share": 0.1,
+     "escalation": {
+      "note": "A match does not start at the final tier. It ramps so a lobby of high-ranked players feels pressure grow over time.",
+      "start_offset": -1,
+      "ramp_steps": [
+       {
+        "at_pct_of_duration": 0,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 25,
+        "delta": 0
+       },
+       {
+        "at_pct_of_duration": 45,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 70,
+        "delta": 1
+       },
+       {
+        "at_pct_of_duration": 88,
+        "delta": 1
+       }
+      ],
+      "max_tier": "T4",
+      "comeback_rubbery": {
+       "enabled": true,
+       "note": "Rubber-banding: if the human team/player is being crushed, bots do NOT escalate; if they are dominating, bots escalate one step earlier.",
+       "dominating_threshold": 0.65,
+       "crushed_threshold": 0.25
+      }
+     }
+    }
+   ],
+   "expect": {
+    "tier": "T3",
+    "delta": 3,
+    "reason": "92% از مچ → +3 سطح"
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "humanizeBot",
+   "args": [
+    "T2",
+    777,
+    {
+     "humanization": {
+      "note": "Every tier is jittered per-bot so 4 bots of the same tier do not move identically.",
+      "per_bot_jitter": 0.18,
+      "fatigue": {
+       "enabled": true,
+       "skill_decay_after_sec": 420,
+       "decay": 0.06
+      },
+      "chat": {
+       "enabled_from_tier": "T2",
+       "messages_per_min_max": 2,
+       "safe": true
+      },
+      "never": [
+       "perfect_aim_lock",
+       "through_wall_hits",
+       "instant_bridge",
+       "zero_reaction_time"
+      ]
+     }
+    }
+   ],
+   "expect": {
+    "skill": 0.6,
+    "reaction_ms": {
+     "min": 234,
+     "max": 468
+    },
+    "aim_error_deg": {
+     "min": 2.7,
+     "max": 8.1
+    },
+    "mistake_rate": 0.081,
+    "bridge_quality": 0.792,
+    "combo_chance": 0.33,
+    "strafe_quality": 0.66,
+    "teamwork": 0.605,
+    "retreat_hp": 0.308,
+    "build_skill": 0.682,
+    "deception": 0.315,
+    "resource_efficiency": 0.77,
+    "decision_hz": 9,
+    "fatigue": 0,
+    "chat_enabled": true,
+    "chat_per_min": 2
+   },
+   "note": ""
+  },
+  {
+   "group": "bottier",
+   "fn": "llmBudget",
+   "args": [
+    "T2",
+    "bedwars",
+    4,
+    {}
+   ],
+   "expect": {
+    "interval_sec": 5,
+    "per_bot": 90,
+    "per_match": 400,
+    "theoretical": 1440,
+    "allowed": 360,
+    "llm_used": true
+   },
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "reachLimit_low_ping",
+   "args": [
+    40
+   ],
+   "expect": 3.44,
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "reachLimit_high_ping",
+   "args": [
+    350
+   ],
+   "expect": 3.65,
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "speedLimit_sprint",
+   "args": [
+    true,
+    120
+   ],
+   "expect": 0.634,
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "inspect_clean",
+   "args": [
+    {
+     "cps": 7,
+     "reach": 3.1,
+     "speed": 5.2,
+     "ping": 60,
+     "snap_streak": 0
+    }
+   ],
+   "expect": null,
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "inspect_cheat",
+   "args": [
+    {
+     "cps": 24,
+     "reach": 5.4,
+     "speed": 11.5,
+     "ping": 45,
+     "snap_streak": 6
+    }
+   ],
+   "expect": null,
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "tracker_sequence",
+   "args": [
+    [
+     {
+      "check": "reach",
+      "value": 4.9,
+      "ping": 40
+     },
+     {
+      "check": "cps",
+      "value": 22,
+      "ping": 40
+     },
+     {
+      "check": "reach",
+      "value": 5.1,
+      "ping": 40
+     },
+     {
+      "check": "rotation_snap",
+      "value": 1,
+      "snap_streak": 7,
+      "ping": 40
+     }
+    ],
+    "duels",
+    1767225600000
+   ],
+   "expect": [
+    {
+     "id": "cheater",
+     "score": 15,
+     "violation": {
+      "check": "reach",
+      "weight": 15,
+      "value": 4.9,
+      "limit": 3.24,
+      "detail": "reach=4.90 > 3.24"
+     },
+     "action": "none",
+     "reasons": [
+      "reach: reach=4.90 > 3.24"
+     ],
+     "tempban_hours": 0
+    },
+    {
+     "id": "cheater",
+     "score": 20,
+     "violation": {
+      "check": "cps",
+      "weight": 5,
+      "value": 22,
+      "limit": 18,
+      "detail": "cps=22"
+     },
+     "action": "warn",
+     "reasons": [
+      "reach: reach=4.90 > 3.24",
+      "cps: cps=22"
+     ],
+     "tempban_hours": 0
+    },
+    {
+     "id": "cheater",
+     "score": 35,
+     "violation": {
+      "check": "reach",
+      "weight": 15,
+      "value": 5.1,
+      "limit": 3.24,
+      "detail": "reach=5.10 > 3.24"
+     },
+     "action": "warn",
+     "reasons": [
+      "reach: reach=4.90 > 3.24",
+      "cps: cps=22",
+      "reach: reach=5.10 > 3.24"
+     ],
+     "tempban_hours": 0
+    },
+    {
+     "id": "cheater",
+     "score": 45,
+     "violation": {
+      "check": "rotation_snap",
+      "weight": 10,
+      "value": 1,
+      "limit": 40,
+      "detail": "snap_streak=7 err=1°"
+     },
+     "action": "kick",
+     "reasons": [
+      "reach: reach=4.90 > 3.24",
+      "cps: cps=22",
+      "reach: reach=5.10 > 3.24",
+      "rotation_snap: snap_streak=7 err=1°"
+     ],
+     "tempban_hours": 0
+    }
+   ],
+   "note": ""
+  },
+  {
+   "group": "anticheat",
+   "fn": "summarize",
+   "args": [
+    [
+     {
+      "check": "reach",
+      "value": 4.9,
+      "ping": 40
+     },
+     {
+      "check": "cps",
+      "value": 22,
+      "ping": 40
+     },
+     {
+      "check": "reach",
+      "value": 5.1,
+      "ping": 40
+     },
+     {
+      "check": "rotation_snap",
+      "value": 1,
+      "snap_streak": 7,
+      "ping": 40
+     }
+    ],
+    "duels",
+    1767225600000
+   ],
+   "expect": {
+    "players_tracked": 1,
+    "flagged": 1,
+    "by_check": {
+     "reach": 2,
+     "cps": 1,
+     "rotation_snap": 1
+    }
+   },
+   "note": ""
+  },
+  {
+   "group": "matchmaking",
+   "fn": "botName",
+   "args": [
+    3,
+    31337
+   ],
+   "expect": "KianCraft",
+   "note": ""
+  },
+  {
+   "group": "matchmaking",
+   "fn": "balanceTeams",
+   "args": [
+    {
+     "humans": 2,
+     "bots": 6,
+     "team_count": 2,
+     "team_size": 4,
+     "mode": "bedwars",
+     "seed": 909
+    }
+   ],
+   "expect": {
+    "teams": [
+     [
+      {
+       "id": "a",
+       "is_bot": false,
+       "rating": 1800
+      },
+      {
+       "id": "bot_nimax_1",
+       "is_bot": true,
+       "rating": 1472,
+       "platform": "java"
+      },
+      {
+       "id": "bot_kiancraft19_3",
+       "is_bot": true,
+       "rating": 1472,
+       "platform": "java"
+      },
+      {
+       "id": "bot_miladyt_5",
+       "is_bot": true,
+       "rating": 1407,
+       "platform": "bedrock"
+      }
+     ],
+     [
+      {
+       "id": "b",
+       "is_bot": false,
+       "rating": 1100
+      },
+      {
+       "id": "bot_arash77_0",
+       "is_bot": true,
+       "rating": 1370,
+       "platform": "bedrock"
+      },
+      {
+       "id": "bot_sinapvp_2",
+       "is_bot": true,
+       "rating": 1378,
+       "platform": "java"
+      },
+      {
+       "id": "bot_parsagod_4",
+       "is_bot": true,
+       "rating": 1399,
+       "platform": "java"
+      }
+     ]
+    ],
+    "avg_ratings": [
+     1538,
+     1312
+    ],
+    "colors": [
+     "red",
+     "blue"
+    ]
+   },
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "heuristicDecide",
+   "args": [
+    {
+     "mode": "bedwars",
+     "tier": "T2",
+     "seed": 555,
+     "bot": {
+      "id": "b1",
+      "team": 0,
+      "hp": 8,
+      "max_hp": 20,
+      "inventory": {
+       "obsidian": 1,
+       "ender_pearl": 2
+      },
+      "resources": {
+       "iron": 40,
+       "gold": 8
+      }
+     },
+     "world": {
+      "elapsed_sec": 420,
+      "duration_sec": 1800,
+      "alive_enemies": [
+       {
+        "id": "e1",
+        "dist": 9,
+        "hp": 16
+       }
+      ],
+      "alive_allies": [
+       {
+        "id": "a1",
+        "dist": 4,
+        "hp": 18
+       }
+      ],
+      "objectives": {
+       "my_bed": {
+        "obsidian": false
+       },
+       "bed_threat_dist": 8,
+       "enemy_beds": [
+        {
+         "team": 2,
+         "dist": 44,
+         "obsidian": false
+        }
+       ]
+      },
+      "scores": {
+       "my_team": 1,
+       "enemy_team": 2
+      },
+      "resources": [
+       {
+        "id": "gen",
+        "dist": 2
+       }
+      ],
+      "shop_affordable": [
+       "iron_sword",
+       "obsidian"
+      ],
+      "gear_gap": 0.4
+     },
+     "params": {
+      "reaction_ms": {
+       "min": 120,
+       "max": 260
+      },
+      "aim_error_deg": {
+       "min": 1,
+       "max": 4
+      },
+      "mistake_chance": 0.06
+     }
+    }
+   ],
+   "expect": {
+    "action": "defend_bed",
+    "target": null,
+    "score": 4.7,
+    "why": "تهدید نزدیک تخت",
+    "source": "heuristic",
+    "confidence": 1,
+    "alternatives": [
+     {
+      "action": "defend_bed",
+      "score": 4.7
+     },
+     {
+      "action": "team_up_push",
+      "score": 3
+     },
+     {
+      "action": "buy_item",
+      "score": 2.6
+     },
+     {
+      "action": "place_obsidian",
+      "score": 2.4
+     }
+    ]
+   },
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "stateHash",
+   "args": [
+    {
+     "mode": "bedwars",
+     "tier": "T2",
+     "seed": 555,
+     "bot": {
+      "id": "b1",
+      "team": 0,
+      "hp": 8,
+      "max_hp": 20,
+      "inventory": {
+       "obsidian": 1,
+       "ender_pearl": 2
+      },
+      "resources": {
+       "iron": 40,
+       "gold": 8
+      }
+     },
+     "world": {
+      "elapsed_sec": 420,
+      "duration_sec": 1800,
+      "alive_enemies": [
+       {
+        "id": "e1",
+        "dist": 9,
+        "hp": 16
+       }
+      ],
+      "alive_allies": [
+       {
+        "id": "a1",
+        "dist": 4,
+        "hp": 18
+       }
+      ],
+      "objectives": {
+       "my_bed": {
+        "obsidian": false
+       },
+       "bed_threat_dist": 8,
+       "enemy_beds": [
+        {
+         "team": 2,
+         "dist": 44,
+         "obsidian": false
+        }
+       ]
+      },
+      "scores": {
+       "my_team": 1,
+       "enemy_team": 2
+      },
+      "resources": [
+       {
+        "id": "gen",
+        "dist": 2
+       }
+      ],
+      "shop_affordable": [
+       "iron_sword",
+       "obsidian"
+      ],
+      "gear_gap": 0.4
+     },
+     "params": {
+      "reaction_ms": {
+       "min": 120,
+       "max": 260
+      },
+      "aim_error_deg": {
+       "min": 1,
+       "max": 4
+      },
+      "mistake_chance": 0.06
+     }
+    }
+   ],
+   "expect": "1lx1x1n",
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "humanizeAction",
+   "args": [
+    {
+     "action": "defend_bed",
+     "target": null,
+     "score": 4.7,
+     "why": "تهدید نزدیک تخت",
+     "source": "heuristic",
+     "confidence": 1,
+     "alternatives": [
+      {
+       "action": "defend_bed",
+       "score": 4.7
+      },
+      {
+       "action": "team_up_push",
+       "score": 3
+      },
+      {
+       "action": "buy_item",
+       "score": 2.6
+      },
+      {
+       "action": "place_obsidian",
+       "score": 2.4
+      }
+     ]
+    },
+    {
+     "reaction_ms": {
+      "min": 120,
+      "max": 260
+     },
+     "aim_error_deg": {
+      "min": 1,
+      "max": 4
+     },
+     "mistake_chance": 0.06
+    },
+    555
+   ],
+   "expect": {
+    "action": "defend_bed",
+    "target": null,
+    "score": 4.7,
+    "why": "تهدید نزدیک تخت",
+    "source": "heuristic",
+    "confidence": 1,
+    "alternatives": [
+     {
+      "action": "defend_bed",
+      "score": 4.7
+     },
+     {
+      "action": "team_up_push",
+      "score": 3
+     },
+     {
+      "action": "buy_item",
+      "score": 2.6
+     },
+     {
+      "action": "place_obsidian",
+      "score": 2.4
+     }
+    ],
+    "reaction_ms": 180,
+    "aim_error_deg": 4,
+    "fumble": true,
+    "fumble_kind": "wrong_direction",
+    "should_chat": false
+   },
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "mergeDecisions_prefers_cloud",
+   "args": [
+    {
+     "action": "defend_bed",
+     "target": null,
+     "score": 4.7,
+     "why": "تهدید نزدیک تخت",
+     "source": "heuristic",
+     "confidence": 1,
+     "alternatives": [
+      {
+       "action": "defend_bed",
+       "score": 4.7
+      },
+      {
+       "action": "team_up_push",
+       "score": 3
+      },
+      {
+       "action": "buy_item",
+       "score": 2.6
+      },
+      {
+       "action": "place_obsidian",
+       "score": 2.4
+      }
+     ]
+    },
+    {
+     "action": "defend_bed",
+     "target": "my_bed",
+     "reason": "llm"
+    }
+   ],
+   "expect": {
+    "action": "defend_bed",
+    "target": null,
+    "score": 4.7,
+    "why": "تهدید نزدیک تخت",
+    "source": "heuristic",
+    "confidence": 1,
+    "alternatives": [
+     {
+      "action": "defend_bed",
+      "score": 4.7
+     },
+     {
+      "action": "team_up_push",
+      "score": 3
+     },
+     {
+      "action": "buy_item",
+      "score": 2.6
+     },
+     {
+      "action": "place_obsidian",
+      "score": 2.4
+     }
+    ],
+    "cloud_used": false
+   },
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "mergeDecisions_bad_cloud",
+   "args": [
+    {
+     "action": "defend_bed",
+     "target": null,
+     "score": 4.7,
+     "why": "تهدید نزدیک تخت",
+     "source": "heuristic",
+     "confidence": 1,
+     "alternatives": [
+      {
+       "action": "defend_bed",
+       "score": 4.7
+      },
+      {
+       "action": "team_up_push",
+       "score": 3
+      },
+      {
+       "action": "buy_item",
+       "score": 2.6
+      },
+      {
+       "action": "place_obsidian",
+       "score": 2.4
+      }
+     ]
+    },
+    {
+     "action": "not_an_action"
+    }
+   ],
+   "expect": {
+    "action": "defend_bed",
+    "target": null,
+    "score": 4.7,
+    "why": "تهدید نزدیک تخت",
+    "source": "heuristic",
+    "confidence": 1,
+    "alternatives": [
+     {
+      "action": "defend_bed",
+      "score": 4.7
+     },
+     {
+      "action": "team_up_push",
+      "score": 3
+     },
+     {
+      "action": "buy_item",
+      "score": 2.6
+     },
+     {
+      "action": "place_obsidian",
+      "score": 2.4
+     }
+    ],
+    "cloud_used": false
+   },
+   "note": ""
+  },
+  {
+   "group": "brain",
+   "fn": "shouldConsultLlm",
+   "args": [
+    {
+     "mode": "bedwars",
+     "tier": "T2",
+     "world": {
+      "elapsed_sec": 40
+     },
+     "bot": {
+      "hp": 8
+     },
+     "params": {}
+    },
+    {
+     "interval_sec": 5,
+     "per_bot": 90,
+     "per_match": 400,
+     "theoretical": 1440,
+     "allowed": 360,
+     "llm_used": true,
+     "llm_enabled": true,
+     "used": 0,
+     "last_call_sec": -1000000000
+    }
+   ],
+   "expect": true,
+   "note": ""
+  }
+ ]
+}

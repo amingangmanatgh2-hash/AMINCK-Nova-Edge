@@ -1,0 +1,32 @@
+name: NovaEdge
+main: NovaEdge\NovaEdgePlugin
+version: 1.0.0
+api: 5.0.0
+load: POSTWORLD
+author: AMINCK Nova Edge
+description: >
+  God-server layer for PocketMine-MP: adaptive AI bots (local utility brain +
+  optional Cloudflare Workers AI strategy), shared scoring/ELO engine with the
+  Java plugin and the Workers backend, bridge to /api/mc/v1/* with HMAC auth.
+website: https://nova-edge.example
+commands:
+  novaedge:
+    description: Nova Edge match/bot control
+    aliases: [ne]
+    usage: "/novaedge <status|start <mode> [bots]|tiers>"
+    permission: novaedge.command
+permissions:
+  novaedge.command:
+    default: true
+  novaedge.admin:
+    default: op
+  novaedge.rank.noob:
+    default: false
+  novaedge.rank.normal:
+    default: false
+  novaedge.rank.pro:
+    default: false
+  novaedge.rank.god:
+    default: false
+  novaedge.rank.ultragod:
+    default: false

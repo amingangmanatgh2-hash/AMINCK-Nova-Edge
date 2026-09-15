@@ -1,23 +1,23 @@
 # ═══════════════════════════════════════════════════════════════════
-#  AMINCK Nova Bot — ربات فروش کانفیگ روی Cloudflare Workers
+#  AMINCK Nova Edge — Minecraft God Server on Cloudflare Workers
 #
-#  🚀 دیپلوی با یک کلیک (بدون ساخت دستی KV/D1):
+#  Deploy button:
 #     https://deploy.workers.cloudflare.com/?url=https://github.com/amingangmanatgh2-hash/AMINCK-Nova-Edge
 #
-#  یا دستی:  npx wrangler deploy
+#  Manual deploy:
+#     npx wrangler deploy
 # ═══════════════════════════════════════════════════════════════════
-name = "aminck-nova-bot"
+name = "aminck-nova-edge"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# هر ۱۵ دقیقه: کش نرخ ارز + سلامت سرورها + یادآوری + تبلیغ گروه‌ها + لیگ
+# Lightweight keep-warm/status job. Game/economy logic is request-driven.
 [triggers]
 crons = ["*/15 * * * *"]
 
-# دیتابیس + کش داخل Durable Object (SQLite) — با دیپلوی خودکار ساخته می‌شود؛
-# هیچ کلید KV/D1 لازم نیست.
+# SQLite Durable Object: no D1/KV project needs to be created manually.
 [[durable_objects.bindings]]
 name = "STORE"
 class_name = "NovaStore"
@@ -26,7 +26,12 @@ class_name = "NovaStore"
 tag = "v1"
 new_sqlite_classes = ["NovaStore"]
 
-# 🤖 هوش مصنوعی بومی کلادفلر (Workers AI) — چت، پشتیبانی و بررسی فیش
-#    هیچ کلید خارجی لازم نیست؛ با دیپلوی خودکار فعال می‌شود.
+# Cloudflare Workers AI: bot escalation, AI brand generation, receipt review.
 [ai]
 binding = "AI"
+
+# Static Minecraft assets: generated mode/rank/shop/cosmetic art.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "none"
