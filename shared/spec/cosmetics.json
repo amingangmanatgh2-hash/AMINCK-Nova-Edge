@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "note": "Cosmetic catalogue sold in the web shop (USD) and in the in-game coin shop. slot = which cosmetic slot it occupies; rank_min = lowest rank allowed to equip it.",
+  "slots": ["cape", "hat", "wings", "killeffect", "portaleffect", "nickcolor", "chattag", "trail", "pet", "victorydance", "projectile"],
+  "items": [
+    { "id": "cape_nova", "slot": "cape", "name_fa": "کیپ نوا", "name_en": "Nova Cape", "price_usd": 1.49, "price_coins": 2500, "rank_min": "free", "art": "cosmetic-cape", "tags": ["cape", "animated"] },
+    { "id": "cape_godflame", "slot": "cape", "name_fa": "کیپ شعلهٔ ایزدی", "name_en": "Godflame Cape", "price_usd": 2.99, "price_coins": 6000, "rank_min": "pro", "art": "cosmetic-cape", "tags": ["cape", "particle"] },
+    { "id": "cape_void", "slot": "cape", "name_fa": "کیپ پوچی", "name_en": "Void Cape", "price_usd": 3.49, "price_coins": 7000, "rank_min": "god", "art": "cosmetic-cape", "tags": ["cape", "rare"] },
+    { "id": "hat_crown", "slot": "hat", "name_fa": "تاج پادشاهی", "name_en": "Royal Crown", "price_usd": 1.99, "price_coins": 3500, "rank_min": "noob", "art": "cosmetic-hat" },
+    { "id": "hat_halo", "slot": "hat", "name_fa": "هالهٔ فرشته", "name_en": "Angel Halo", "price_usd": 2.49, "price_coins": 4500, "rank_min": "pro", "art": "cosmetic-hat" },
+    { "id": "hat_horns", "slot": "hat", "name_fa": "شاخ‌های شیطانی", "name_en": "Demon Horns", "price_usd": 2.49, "price_coins": 4500, "rank_min": "pro", "art": "cosmetic-hat" },
+    { "id": "hat_top", "slot": "hat", "name_fa": "کلاه سیلندر", "name_en": "Top Hat", "price_usd": 0.99, "price_coins": 1500, "rank_min": "free", "art": "cosmetic-hat" },
+    { "id": "wings_dragon", "slot": "wings", "name_fa": "بال اژدها", "name_en": "Dragon Wings", "price_usd": 3.99, "price_coins": 8000, "rank_min": "pro", "art": "cosmetic-wings" },
+    { "id": "wings_angel", "slot": "wings", "name_fa": "بال فرشته", "name_en": "Angel Wings", "price_usd": 3.99, "price_coins": 8000, "rank_min": "pro", "art": "cosmetic-wings" },
+    { "id": "wings_mecha", "slot": "wings", "name_fa": "بال مکانیکی", "name_en": "Mecha Wings", "price_usd": 4.99, "price_coins": 10000, "rank_min": "god", "art": "cosmetic-wings" },
+    { "id": "kill_lightning", "slot": "killeffect", "name_fa": "افکت صاعقه", "name_en": "Lightning Strike", "price_usd": 1.99, "price_coins": 3000, "rank_min": "noob", "art": "cosmetic-kill" },
+    { "id": "kill_heart", "slot": "killeffect", "name_fa": "افکت قلب", "name_en": "Heart Burst", "price_usd": 1.49, "price_coins": 2500, "rank_min": "noob", "art": "cosmetic-kill" },
+    { "id": "kill_explosion", "slot": "killeffect", "name_fa": "انفجار طلایی", "name_en": "Golden Boom", "price_usd": 2.99, "price_coins": 5500, "rank_min": "pro", "art": "cosmetic-kill" },
+    { "id": "kill_blackhole", "slot": "killeffect", "name_fa": "سیاه‌چاله", "name_en": "Black Hole", "price_usd": 4.49, "price_coins": 9000, "rank_min": "god", "art": "cosmetic-kill" },
+    { "id": "portal_nether", "slot": "portaleffect", "name_fa": "افکت پرتال ندر", "name_en": "Nether Portal FX", "price_usd": 2.49, "price_coins": 4800, "rank_min": "normal", "art": "cosmetic-portal" },
+    { "id": "portal_galaxy", "slot": "portaleffect", "name_fa": "افکت پرتال کهکشانی", "name_en": "Galaxy Portal FX", "price_usd": 3.49, "price_coins": 6800, "rank_min": "pro", "art": "cosmetic-portal" },
+    { "id": "portal_emerald", "slot": "portaleffect", "name_fa": "افکت پرتال زمردی", "name_en": "Emerald Portal FX", "price_usd": 1.99, "price_coins": 3600, "rank_min": "normal", "art": "cosmetic-portal" },
+    { "id": "nick_rainbow", "slot": "nickcolor", "name_fa": "رنگ نیک‌نیم رنگین‌کمانی", "name_en": "Rainbow Nickname", "price_usd": 1.99, "price_coins": 3200, "rank_min": "pro", "art": "cosmetic-nick" },
+    { "id": "nick_gold", "slot": "nickcolor", "name_fa": "رنگ نیک‌نیم طلایی", "name_en": "Gold Nickname", "price_usd": 0.99, "price_coins": 1600, "rank_min": "noob", "art": "cosmetic-nick" },
+    { "id": "nick_aqua", "slot": "nickcolor", "name_fa": "رنگ نیک‌نیم فیروزه‌ای", "name_en": "Aqua Nickname", "price_usd": 0.79, "price_coins": 1200, "rank_min": "free", "art": "cosmetic-nick" },
+    { "id": "nick_gradient_sunset", "slot": "nickcolor", "name_fa": "گرادیانت غروب", "name_en": "Sunset Gradient", "price_usd": 2.99, "price_coins": 5800, "rank_min": "god", "art": "cosmetic-nick" },
+    { "id": "tag_mvp", "slot": "chattag", "name_fa": "تگ چت MVP", "name_en": "MVP Chat Tag", "price_usd": 1.49, "price_coins": 2400, "rank_min": "noob", "art": "cosmetic-tag" },
+    { "id": "tag_veteran", "slot": "chattag", "name_fa": "تگ چت کهنه‌سرباز", "name_en": "Veteran Tag", "price_usd": 1.99, "price_coins": 3400, "rank_min": "normal", "art": "cosmetic-tag" },
+    { "id": "tag_streamer", "slot": "chattag", "name_fa": "تگ چت استریمر", "name_en": "Streamer Tag", "price_usd": 2.49, "price_coins": 4400, "rank_min": "pro", "art": "cosmetic-tag" },
+    { "id": "trail_fire", "slot": "trail", "name_fa": "دنبالهٔ آتش", "name_en": "Fire Trail", "price_usd": 1.29, "price_coins": 2100, "rank_min": "noob", "art": "cosmetic-trail" },
+    { "id": "trail_star", "slot": "trail", "name_fa": "دنبالهٔ ستاره", "name_en": "Star Trail", "price_usd": 1.79, "price_coins": 2900, "rank_min": "normal", "art": "cosmetic-trail" },
+    { "id": "pet_wolf", "slot": "pet", "name_fa": "پت گرگ", "name_en": "Wolf Pet", "price_usd": 2.99, "price_coins": 5200, "rank_min": "pro", "art": "cosmetic-pet" },
+    { "id": "pet_dragon", "slot": "pet", "name_fa": "پت بچه‌اژدها", "name_en": "Baby Dragon Pet", "price_usd": 4.99, "price_coins": 9800, "rank_min": "ultragod", "art": "cosmetic-pet" },
+    { "id": "dance_floss", "slot": "victorydance", "name_fa": "رقص پیروزی", "name_en": "Victory Dance", "price_usd": 1.49, "price_coins": 2300, "rank_min": "noob", "art": "cosmetic-dance" },
+    { "id": "proj_flame", "slot": "projectile", "name_fa": "تیر آتشین", "name_en": "Flaming Arrow", "price_usd": 1.29, "price_coins": 2000, "rank_min": "normal", "art": "cosmetic-proj" }
+  ],
+  "bundles": [
+    { "id": "starter_pack", "name_fa": "باندل شروع", "name_en": "Starter Pack", "items": ["hat_top", "nick_aqua", "cape_nova"], "price_usd": 2.49, "compare_at_usd": 3.27, "art": "bundle-starter" },
+    { "id": "god_pack", "name_fa": "باندل خدایی", "name_en": "God Pack", "items": ["wings_dragon", "kill_blackhole", "cape_void", "nick_gradient_sunset"], "price_usd": 12.99, "compare_at_usd": 14.96, "art": "bundle-god" },
+    { "id": "pvp_pack", "name_fa": "باندل پی‌وی‌پی", "name_en": "PvP Pack", "items": ["kill_lightning", "trail_fire", "proj_flame", "tag_mvp"], "price_usd": 4.99, "compare_at_usd": 6.26, "art": "bundle-pvp" },
+    { "id": "season_pack", "name_fa": "باندل فصلی", "name_en": "Season Pack", "items": ["portal_galaxy", "hat_halo", "dance_floss", "pet_wolf"], "price_usd": 8.49, "compare_at_usd": 9.96, "art": "bundle-season" }
+  ],
+  "gem_packs": [
+    { "id": "gems_500", "gems": 500, "price_usd": 0.99 },
+    { "id": "gems_1500", "gems": 1500, "price_usd": 2.49, "bonus_pct": 5 },
+    { "id": "gems_4000", "gems": 4000, "price_usd": 5.99, "bonus_pct": 12 },
+    { "id": "gems_10000", "gems": 10000, "price_usd": 12.99, "bonus_pct": 20 }
+  ]
+}

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nova Edge — پلاگین Paper/Spigot
+  ساخت: mvn -f server/java/pom.xml clean package
+  تست برابری موتور با بردارهای طلایی: mvn -f server/java/pom.xml test
+  نکات:
+  * paper-api و gson روی سرور موجودند (provided) — چیزی shade نمی‌شود.
+  * فایل‌های spec و testvectors از shared/ پروژه بیلد می‌شوند (منبع واحد حقیقت).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>ir.novaedge</groupId>
+  <artifactId>nova-edge-paper</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+  <name>NovaEdge Paper Plugin</name>
+
+  <properties>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>papermc</id>
+      <url>https://repo.papermc.io/repository/maven-public/</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.papermc.paper</groupId>
+      <artifactId>paper-api</artifactId>
+      <version>1.21.1-R0.1-SNAPSHOT</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- Gson در Paper موجود است -->
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
+      <version>2.10.1</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>NovaEdge-${project.version}</finalName>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- کاتالوگ مود/تیر از shared — همان فایل‌هایی که JS/PHP می‌خوانند -->
+      <resource>
+        <directory>../../shared/spec</directory>
+        <targetPath>spec</targetPath>
+      </resource>
+    </resources>
+    <testResources>
+      <testResource>
+        <directory>src/test/resources</directory>
+      </testResource>
+      <testResource>
+        <directory>../../shared</directory>
+        <targetPath>.</targetPath>
+        <includes>
+          <include>testvectors.json</include>
+        </includes>
+      </testResource>
+      <!-- specها هم در classpath تست لازم‌اند (Spec.modeById/ranks/tiersSpec) -->
+      <testResource>
+        <directory>../../shared/spec</directory>
+        <targetPath>spec</targetPath>
+      </testResource>
+    </testResources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

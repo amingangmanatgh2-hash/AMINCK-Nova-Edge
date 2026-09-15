@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════
+#  Nova Edge — کانفیگ پلاگین Paper/Spigot
+#  worker_url و bridge_key را از پنل مدیریت سایت کپی کنید.
+# ═══════════════════════════════════════════════════════════════
+
+# آدرس Worker (Cloudflare) — مثلاً https://your-worker.workers.dev
+worker_url: ""
+
+# کلید مشترک HMAC (از پنل مدیریت) — خالی = حالت آفلاین
+bridge_key: ""
+
+# شناسهٔ یکتای این سرور در داشبورد
+server_id: nova-java-main
+
+# فاصلهٔ ضربان (ثانیه)
+heartbeat_sec: 30
+
+# حداقل بازیکن برای شروع صف محلی
+queue_min_players: 1
+
+# تعداد کل بازیکنان هر مچ (بقیه با بات پر می‌شود)
+bots_fill_to: 8
+
+# اندازهٔ تیم
+team_size: 4
+
+# تیر پیش‌فرض بات‌ها وقتی Worker در دسترس نیست
+default_tier: t1
+
+# رایزنی ابری از Worker برای بات‌ها
+cloud_llm_enabled: true
+
+# اگر Worker قطع بود، بات‌ها با مغز هیوریستیک محلی بازی کنند
+offline_bots_local_brain: true

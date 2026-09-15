@@ -1,0 +1,18 @@
+# ═══════════════════════════════════════════════════════════════════
+#  Nova Edge — تنظیمات پلاگین Bedrock
+#  ⚠️ worker_url و bridge_key را از پنل مالک وب بگیرید:
+#     /mc/admin → تب «API پلاگین» (کلید را می‌توانید همان‌جا بچرخانید)
+# ═══════════════════════════════════════════════════════════════════
+worker_url: "https://aminck-nova-bot.workers.dev"
+bridge_key: ""
+server_id: "bedrock-main"
+
+# هر چند ثانیه یک‌بار وضعیت سرور به ورکر گزارش شود
+heartbeat_sec: 30
+
+# اگر پل قطع شد، بات‌ها فقط با مغز محلی ادامه می‌دهند (هرگز نمی‌خوابند)
+offline_bots_local_brain: true
+
+# سقف فراخوانی LLM در هر مچ (محافظ هزینه — با ورکر هم هماهنگ است)
+max_llm_calls_per_match: 400
+max_llm_calls_per_bot_per_match: 90

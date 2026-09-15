@@ -1,0 +1,18 @@
+name: NovaEdge
+version: 1.0.0
+main: ir.novaedge.NovaEdgePlugin
+api-version: '1.20'
+author: AMINCK
+description: Nova Edge God Server — مینی‌گیم‌ها، بات‌های AI، اقتصاد و آنتی‌چیت (Paper/Spigot)
+commands:
+  novaedge:
+    description: دستورات Nova Edge
+    usage: /novaedge <status|join|start|sessions|reload>
+    aliases: [ne]
+permissions:
+  novaedge.admin:
+    description: دسترسی مدیریتی Nova Edge
+    default: op
+  novaedge.play:
+    description: بازی و ورود به صف
+    default: true
